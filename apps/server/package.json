@@ -1,0 +1,31 @@
+{
+  "name": "@loop/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "prisma generate",
+    "build": "prisma generate && tsc",
+    "dev": "tsx watch --env-file=../../.env src/server.ts",
+    "start": "node --env-file=../../.env dist/server.js",
+    "db:migrate": "node --env-file-if-exists=../../.env node_modules/prisma/build/index.js migrate dev",
+    "db:deploy": "node --env-file-if-exists=../../.env node_modules/prisma/build/index.js migrate deploy",
+    "test": "prisma generate && vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "prisma": "^6.19.3",
+    "socket.io-client": "^4.8.4",
+    "tsx": "^4.23.15",
+    "vitest": "^2.1.9"
+  },
+  "dependencies": {
+    "@loop/shared": "workspace:*",
+    "@prisma/client": "^6.19.3",
+    "argon2": "^0.45.1",
+    "fastify": "^5.12.5",
+    "jose": "^6.2.12",
+    "socket.io": "^4.8.4",
+    "zod": "^3.25.76"
+  }
+}

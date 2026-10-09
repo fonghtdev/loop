@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique // stored lowercase (normalized by the shared zod schema)
+  username     String    @unique
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+  ownedGuilds  Guild[]
+  memberships  Member[]
+  invites      Invite[]
+  messages     Message[]
+}
+
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String    @unique
+  expiresAt        DateTime
+  createdAt        DateTime  @default(now())
+  revokedAt        DateTime?
+
+  @@index([userId])
+}
+
+model Guild {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  ownerId   String    @db.Uuid
+  owner     User      @relation(fields: [ownerId], references: [id])
+  createdAt DateTime  @default(now())
+  channels  Channel[]
+  members   Member[]
+  invites   Invite[]
+}
+
+enum ChannelType {
+  TEXT
+  VOICE
+}
+
+model Channel {
+  id        String      @id @default(uuid()) @db.Uuid
+  guildId   String      @db.Uuid
+  guild     Guild       @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  name      String
+  type      ChannelType
+  position  Int
+  createdAt DateTime    @default(now())
+  messages  Message[]
+
+  @@unique([guildId, name])
+}
+
+model Member {
+  id       String   @id @default(uuid()) @db.Uuid
+  guildId  String   @db.Uuid
+  guild    Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  userId   String   @db.Uuid
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
+
+  @@unique([guildId, userId])
+  @@index([userId])
+}
+
+model Invite {
+  code        String    @id
+  guildId     String    @db.Uuid
+  guild       Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  createdById String    @db.Uuid
+  createdBy   User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  expiresAt   DateTime?
+  maxUses     Int?
+  uses        Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([guildId])
+}
+
+model Message {
+  id        String    @id @default(uuid()) @db.Uuid
+  // Strictly increasing pagination cursor; createdAt can tie within a millisecond.
+  seq       BigInt    @unique @default(autoincrement())
+  channelId String    @db.Uuid
+  channel   Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  authorId  String    @db.Uuid
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  content   String
+  createdAt DateTime  @default(now())
+  editedAt  DateTime?
+
+  @@index([channelId, seq])
+}
