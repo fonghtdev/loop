@@ -22,8 +22,10 @@
   "dependencies": {
     "@loop/shared": "workspace:*",
     "@prisma/client": "^6.19.3",
+    "@socket.io/redis-adapter": "^8.3.0",
     "argon2": "^0.45.1",
     "fastify": "^5.12.5",
+    "ioredis": "^6.0.0",
     "jose": "^6.2.12",
     "socket.io": "^4.8.4",
     "zod": "^3.25.76"

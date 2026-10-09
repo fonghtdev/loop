@@ -8,16 +8,23 @@ datasource db {
 }
 
 model User {
-  id           String    @id @default(uuid()) @db.Uuid
-  email        String    @unique // stored lowercase (normalized by the shared zod schema)
-  username     String    @unique
-  passwordHash String
-  createdAt    DateTime  @default(now())
-  sessions     Session[]
-  ownedGuilds  Guild[]
-  memberships  Member[]
-  invites      Invite[]
-  messages     Message[]
+  id              String       @id @default(uuid()) @db.Uuid
+  email           String       @unique // stored lowercase (normalized by the shared zod schema)
+  username        String       @unique
+  passwordHash    String
+  createdAt       DateTime     @default(now())
+  sessions        Session[]
+  ownedGuilds     Guild[]
+  memberships     Member[]
+  invites         Invite[]
+  messages        Message[]
+  friendshipsLow  Friendship[] @relation("FriendLow")
+  friendshipsHigh Friendship[] @relation("FriendHigh")
+  friendRequests  Friendship[] @relation("FriendRequester")
+  blocksMade      Block[]      @relation("Blocker")
+  blocksReceived  Block[]      @relation("Blocked")
+  dmsLow          DmChannel[]  @relation("DmLow")
+  dmsHigh         DmChannel[]  @relation("DmHigh")
 }
 
 model Session {
@@ -41,6 +48,7 @@ model Guild {
   channels  Channel[]
   members   Member[]
   invites   Invite[]
+  roles     Role[]
 }
 
 enum ChannelType {
@@ -49,25 +57,28 @@ enum ChannelType {
 }
 
 model Channel {
-  id        String      @id @default(uuid()) @db.Uuid
-  guildId   String      @db.Uuid
-  guild     Guild       @relation(fields: [guildId], references: [id], onDelete: Cascade)
-  name      String
-  type      ChannelType
-  position  Int
-  createdAt DateTime    @default(now())
-  messages  Message[]
+  id         String             @id @default(uuid()) @db.Uuid
+  guildId    String             @db.Uuid
+  guild      Guild              @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  name       String
+  type       ChannelType
+  position   Int
+  createdAt  DateTime           @default(now())
+  messages   Message[]
+  overwrites ChannelOverwrite[]
 
   @@unique([guildId, name])
+  @@unique([guildId, id]) // target of composite FKs that keep overwrites inside one guild
 }
 
 model Member {
-  id       String   @id @default(uuid()) @db.Uuid
-  guildId  String   @db.Uuid
-  guild    Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
-  userId   String   @db.Uuid
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  joinedAt DateTime @default(now())
+  id       String       @id @default(uuid()) @db.Uuid
+  guildId  String       @db.Uuid
+  guild    Guild        @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  userId   String       @db.Uuid
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime     @default(now())
+  roles    MemberRole[]
 
   @@unique([guildId, userId])
   @@index([userId])
@@ -88,16 +99,106 @@ model Invite {
 }
 
 model Message {
-  id        String    @id @default(uuid()) @db.Uuid
+  id          String     @id @default(uuid()) @db.Uuid
   // Strictly increasing pagination cursor; createdAt can tie within a millisecond.
-  seq       BigInt    @unique @default(autoincrement())
-  channelId String    @db.Uuid
-  channel   Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  authorId  String    @db.Uuid
-  author    User      @relation(fields: [authorId], references: [id], onDelete: Restrict)
-  content   String
-  createdAt DateTime  @default(now())
-  editedAt  DateTime?
+  seq         BigInt     @unique @default(autoincrement())
+  // Exactly one of channelId / dmChannelId is set (CHECK in the social migration).
+  channelId   String?    @db.Uuid
+  channel     Channel?   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  dmChannelId String?    @db.Uuid
+  dmChannel   DmChannel? @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
+  authorId    String     @db.Uuid
+  author      User       @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  content     String
+  createdAt   DateTime   @default(now())
+  editedAt    DateTime?
 
   @@index([channelId, seq])
+  @@index([dmChannelId, seq])
+}
+
+/// A guild's @everyone role has id = guildId and position 0 (CHECK in the migration); every member has it implicitly.
+model Role {
+  id          String             @id @default(uuid()) @db.Uuid
+  guildId     String             @db.Uuid
+  guild       Guild              @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  name        String
+  permissions Int // bitmask, see Permission in @loop/shared
+  position    Int // higher = more powerful; non-@everyone roles are >= 1
+  createdAt   DateTime           @default(now())
+  members     MemberRole[]
+  overwrites  ChannelOverwrite[]
+
+  @@unique([guildId, id])
+}
+
+/// Composite FKs on (guildId, ...) make a cross-guild assignment impossible; @everyone is never stored here (CHECK).
+model MemberRole {
+  guildId String @db.Uuid
+  userId  String @db.Uuid
+  roleId  String @db.Uuid
+  member  Member @relation(fields: [guildId, userId], references: [guildId, userId], onDelete: Cascade)
+  role    Role   @relation(fields: [guildId, roleId], references: [guildId, id], onDelete: Cascade)
+
+  @@id([guildId, userId, roleId])
+  @@index([roleId])
+}
+
+model ChannelOverwrite {
+  guildId   String  @db.Uuid
+  channelId String  @db.Uuid
+  roleId    String  @db.Uuid
+  allow     Int
+  deny      Int
+  channel   Channel @relation(fields: [guildId, channelId], references: [guildId, id], onDelete: Cascade)
+  role      Role    @relation(fields: [guildId, roleId], references: [guildId, id], onDelete: Cascade)
+
+  @@id([channelId, roleId])
+  @@index([roleId])
+}
+
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+}
+
+/// One row per unordered pair: userLowId < userHighId (CHECK), so A->B and B->A can never both exist.
+model Friendship {
+  userLowId   String       @db.Uuid
+  userLow     User         @relation("FriendLow", fields: [userLowId], references: [id], onDelete: Cascade)
+  userHighId  String       @db.Uuid
+  userHigh    User         @relation("FriendHigh", fields: [userHighId], references: [id], onDelete: Cascade)
+  requesterId String       @db.Uuid // one of the two (CHECK)
+  requester   User         @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  status      FriendStatus
+  createdAt   DateTime     @default(now())
+
+  @@id([userLowId, userHighId])
+  @@index([userHighId])
+}
+
+model Block {
+  blockerId String   @db.Uuid
+  blocker   User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String   @db.Uuid
+  blocked   User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([blockerId, blockedId])
+  @@index([blockedId])
+}
+
+/// Two participants, stored as userLowId < userHighId (CHECK) so get-or-create cannot race into two channels.
+model DmChannel {
+  id            String    @id @default(uuid()) @db.Uuid
+  userLowId     String    @db.Uuid
+  userLow       User      @relation("DmLow", fields: [userLowId], references: [id], onDelete: Cascade)
+  userHighId    String    @db.Uuid
+  userHigh      User      @relation("DmHigh", fields: [userHighId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  lastMessageAt DateTime? // set with each message insert; orders GET /dms
+  messages      Message[]
+
+  @@unique([userLowId, userHighId])
+  @@index([userHighId])
 }

@@ -2,7 +2,8 @@ import { io, type Socket } from "socket.io-client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../app.js";
 import { prisma } from "../db.js";
-import { caller, env, resetDb, signUp as signUpUser } from "../../test/helpers.js";
+import { DEFAULT_EVERYONE_PERMISSIONS, Permission as P } from "@loop/shared";
+import { caller, env, makeRole, resetDb, setEveryone, signUp as signUpUser } from "../../test/helpers.js";
 
 const app = buildApp(env);
 const call = caller(app);
@@ -128,13 +129,14 @@ describe("events", () => {
 });
 
 describe("losing access cuts the live feed", () => {
-  /** A subscribed former-member-to-be and a still-subscribed owner as control. */
-  async function subscribed() {
+  /** A subscribed former-member-to-be and a still-subscribed owner as control; `prepare` runs before subscribing. */
+  async function subscribed(prepare?: (s: Awaited<ReturnType<typeof setup>>) => Promise<unknown>) {
     const s = await setup();
+    const prepared = await prepare?.(s);
     const member = await connect(s.member.token);
     const owner = await connect(s.owner.token);
     await Promise.all([subscribe(member, s.channel.id), subscribe(owner, s.channel.id)]);
-    return { ...s, memberSock: member, ownerSock: owner };
+    return { ...s, memberSock: member, ownerSock: owner, prepared };
   }
   const expectSilent = async (sock: Client, control: Client, post: () => unknown) => {
     const before = control.got["message:new"]!.length;
@@ -148,6 +150,73 @@ describe("losing access cuts the live feed", () => {
     const s = await subscribed();
     expect((await call("DELETE", `/guilds/${s.guild.id}/members/me`, s.member.token)).statusCode).toBe(204);
     await expectSilent(s.memberSock, s.ownerSock, () => call("POST", s.url, s.owner.token, { content: "private" }));
+  });
+
+  it("being kicked", async () => {
+    const s = await subscribed();
+    expect((await call("DELETE", `/guilds/${s.guild.id}/members/${s.member.id}`, s.owner.token)).statusCode).toBe(204);
+    await expectSilent(s.memberSock, s.ownerSock, () => call("POST", s.url, s.owner.token, { content: "private" }));
+  });
+
+  describe("losing VIEW_CHANNEL while subscribed", () => {
+    const NO_VIEW = DEFAULT_EVERYONE_PERMISSIONS & ~P.VIEW_CHANNEL;
+    /** @everyone cannot see; the member sees only through a role. */
+    const viaRole = async (s: Awaited<ReturnType<typeof setup>>) => {
+      await setEveryone(s.guild.id, NO_VIEW);
+      return makeRole(s.guild.id, 1, P.VIEW_CHANNEL, [s.member.id]);
+    };
+    const post = (s: Awaited<ReturnType<typeof subscribed>>) => () => call("POST", s.url, s.owner.token, { content: "private" });
+
+    it("@everyone permissions edited", async () => {
+      const s = await subscribed();
+      const res = await call("PATCH", `/guilds/${s.guild.id}/roles/${s.guild.id}`, s.owner.token, { permissions: NO_VIEW });
+      expect(res.statusCode).toBe(200);
+      await expectSilent(s.memberSock, s.ownerSock, post(s));
+    });
+
+    it("a held role's permissions edited", async () => {
+      const s = await subscribed(viaRole);
+      await call("PATCH", `/guilds/${s.guild.id}/roles/${s.prepared!.id}`, s.owner.token, { permissions: 0 });
+      await expectSilent(s.memberSock, s.ownerSock, post(s));
+    });
+
+    it("role unassigned", async () => {
+      const s = await subscribed(viaRole);
+      const res = await call("DELETE", `/guilds/${s.guild.id}/members/${s.member.id}/roles/${s.prepared!.id}`, s.owner.token);
+      expect(res.statusCode).toBe(204);
+      await expectSilent(s.memberSock, s.ownerSock, post(s));
+    });
+
+    it("role deleted", async () => {
+      const s = await subscribed(viaRole);
+      await call("DELETE", `/guilds/${s.guild.id}/roles/${s.prepared!.id}`, s.owner.token);
+      await expectSilent(s.memberSock, s.ownerSock, post(s));
+    });
+
+    it("overwrite set on the channel", async () => {
+      const s = await subscribed();
+      const res = await call("PUT", `/channels/${s.channel.id}/overwrites/${s.guild.id}`, s.owner.token, { allow: 0, deny: P.VIEW_CHANNEL });
+      expect(res.statusCode).toBe(200);
+      await expectSilent(s.memberSock, s.ownerSock, post(s));
+    });
+
+    it("ownership transferred away from a subscriber who only saw it as owner", async () => {
+      const s = await subscribed(async (s) => {
+        await call("PUT", `/channels/${s.channel.id}/overwrites/${s.guild.id}`, s.owner.token, { allow: 0, deny: P.VIEW_CHANNEL });
+        await makeRole(s.guild.id, 1, 0, [s.member.id]).then((r) =>
+          call("PUT", `/channels/${s.channel.id}/overwrites/${r.id}`, s.owner.token, { allow: P.VIEW_CHANNEL, deny: 0 }),
+        );
+      });
+      await call("POST", `/guilds/${s.guild.id}/transfer`, s.owner.token, { userId: s.member.id });
+      // roles swap: the new owner (member socket) is the control, the old owner must go silent
+      await expectSilent(s.ownerSock, s.memberSock, () => call("POST", s.url, s.member.token, { content: "mine now" }));
+    });
+
+    it("subscribing to a channel without VIEW is refused like an unknown one", async () => {
+      const s = await setup();
+      await call("PUT", `/channels/${s.channel.id}/overwrites/${s.guild.id}`, s.owner.token, { allow: 0, deny: P.VIEW_CHANNEL });
+      expect(await subscribe(await connect(s.member.token), s.channel.id)).toEqual({ ok: false, error: "Not found" });
+    });
   });
 
   it("deleting the guild", async () => {

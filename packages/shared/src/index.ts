@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ALL_PERMISSIONS, CHANNEL_PERMISSIONS } from "./permissions.js";
 
 export const usernameSchema = z
   .string()
@@ -63,3 +64,41 @@ export const historyQuerySchema = z
     limit: z.coerce.number().int().min(1).max(100).default(50),
   })
   .refine((q) => !(q.before && q.after), { message: "before and after are mutually exclusive" });
+
+export * from "./permissions.js";
+
+// Only known bits; anything else is a client bug or a probe, so 400 rather than silently masking.
+const bitmaskSchema = (known: number) =>
+  z
+    .number()
+    .int()
+    .min(0)
+    .max(known)
+    .refine((n) => (n & ~known) === 0, "unknown permission bits");
+
+export const roleNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .refine((n) => n !== "@everyone", "tên này dành cho vai trò mặc định");
+
+export const createRoleSchema = z.object({
+  name: roleNameSchema,
+  permissions: bitmaskSchema(ALL_PERMISSIONS).default(0),
+});
+
+export const updateRoleSchema = z
+  .object({ name: roleNameSchema.optional(), permissions: bitmaskSchema(ALL_PERMISSIONS).optional() })
+  .refine((b) => b.name !== undefined || b.permissions !== undefined, "nothing to update");
+
+export const overwriteSchema = z
+  .object({ allow: bitmaskSchema(CHANNEL_PERMISSIONS), deny: bitmaskSchema(CHANNEL_PERMISSIONS) })
+  .refine((o) => (o.allow & o.deny) === 0, "a bit cannot be both allowed and denied");
+
+export const transferOwnershipSchema = z.object({ userId: z.string().uuid() });
+
+export const friendRequestSchema = z.object({ username: usernameSchema });
+
+// Ids stay plain strings here: a malformed id is a 404 at the route (like a missing one), not a 400.
+export const openDmSchema = z.object({ userId: z.string() });

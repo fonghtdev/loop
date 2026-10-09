@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
-import { createInviteSchema } from "@loop/shared";
+import { createInviteSchema, Permission } from "@loop/shared";
 import { prisma } from "../db.js";
 import { parse } from "../http.js";
-import { NOT_FOUND, requireMember } from "./access.js";
+import { NOT_FOUND, requireGuildPermission } from "./access.js";
 
 // 6 random bytes -> 8 URL-safe chars. ponytail: a collision (2^48 space) would surface as a 500; retry if invites ever get dense
 const newInviteCode = () => randomBytes(6).toString("base64url");
@@ -35,7 +35,7 @@ async function joinWithInvite(code: string, userId: string) {
 
 export function inviteRoutes(app: FastifyInstance) {
   app.post<{ Params: { guildId: string } }>("/guilds/:guildId/invites", async (req, reply) => {
-    const guild = await requireMember(req.params.guildId, req.userId);
+    const { guild } = await requireGuildPermission(req.params.guildId, req.userId, Permission.CREATE_INVITE);
     const body = parse(createInviteSchema, req.body ?? {}, reply);
     if (!body) return;
     const invite = await prisma.invite.create({

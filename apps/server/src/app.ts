@@ -3,9 +3,11 @@ import { authRoutes } from "./auth/routes.js";
 import type { Env } from "./env.js";
 import { guildRoutes } from "./guilds/routes.js";
 import { inviteRoutes } from "./guilds/invites.js";
+import { roleRoutes } from "./guilds/roles.js";
 import { HttpError, requireUser } from "./http.js";
 import { messageRoutes } from "./messages/routes.js";
 import { registerRealtime } from "./realtime.js";
+import { socialRoutes } from "./social/routes.js";
 
 export function buildApp(env: Env, logger = false) {
   const app = Fastify({ logger });
@@ -23,13 +25,15 @@ export function buildApp(env: Env, logger = false) {
     app.log.error({ err: err.message }, "unhandled error"); // message only: never log request bodies
     return reply.code(err.statusCode && err.statusCode < 500 ? err.statusCode : 500).send({ error: "Internal error" });
   });
-  registerRealtime(app, env.jwtSecret);
+  registerRealtime(app, env.jwtSecret, env.redisUrl);
   authRoutes(app, env);
   app.register(async (authed) => {
     authed.addHook("onRequest", requireUser(env.jwtSecret));
     guildRoutes(authed);
     inviteRoutes(authed);
+    roleRoutes(authed);
     messageRoutes(authed);
+    socialRoutes(authed);
   });
   return app;
 }

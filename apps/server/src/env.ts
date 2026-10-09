@@ -9,6 +9,7 @@ export function loadEnv() {
   if (jwtSecret.length < 32) throw new Error("JWT_SECRET must be at least 32 characters");
   return {
     databaseUrl: required("DATABASE_URL"),
+    redisUrl: required("REDIS_URL"),
     jwtSecret,
     port: Number(process.env.PORT ?? 3000),
   };
