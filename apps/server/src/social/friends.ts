@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { friendRequestSchema } from "@loop/shared";
 import { prisma } from "../db.js";
 import { HttpError, parse } from "../http.js";
+import { endDmCall } from "../voice/calls.js";
 import { isUuid, NOT_FOUND, pair, requireReachableUser, requireUser, userSelect } from "./access.js";
 
 type PublicUser = { id: string; username: string };
@@ -78,6 +79,7 @@ export function friendRoutes(app: FastifyInstance) {
     const { count } = await prisma.friendship.deleteMany({ where: { ...pair(req.userId, req.params.userId), status: "ACCEPTED" } });
     if (!count) throw NOT_FOUND;
     app.realtime.emitToUsers([req.params.userId], "friend:removed", { userId: req.userId });
+    await endDmCall(app, req.userId, req.params.userId);
     return reply.code(204).send();
   });
 }

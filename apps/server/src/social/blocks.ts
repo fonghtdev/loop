@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { HttpError } from "../http.js";
+import { endDmCall } from "../voice/calls.js";
 import { isUuid, NOT_FOUND, pair, requireUser, userSelect } from "./access.js";
 
 // No event for the blocked user: they must not learn about it. A block also ends any friendship or pending request.
@@ -17,6 +18,7 @@ export function blockRoutes(app: FastifyInstance) {
       prisma.block.createMany({ data: [{ blockerId: req.userId, blockedId: target.id }], skipDuplicates: true }),
       prisma.friendship.deleteMany({ where: pair(req.userId, target.id) }),
     ]);
+    await endDmCall(app, req.userId, target.id);
     return reply.code(204).send();
   });
 

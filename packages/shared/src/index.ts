@@ -80,6 +80,7 @@ export const historyQuerySchema = z
 
 export * from "./attachments.js";
 export * from "./permissions.js";
+export * from "./voice.js";
 
 // Only known bits; anything else is a client bug or a probe, so 400 rather than silently masking.
 const bitmaskSchema = (known: number) =>

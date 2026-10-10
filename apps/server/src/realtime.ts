@@ -8,6 +8,7 @@ import { verifyAccessToken } from "./auth/tokens.js";
 import { HttpError } from "./http.js";
 import { hiddenChannels, requireChannelPermission } from "./guilds/access.js";
 import { friendIds } from "./social/access.js";
+import type { Voice } from "./voice/enforce.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -22,16 +23,19 @@ declare module "fastify" {
  * The sender receives its own events too; clients dedupe by message id.
  * User rooms `user:<id>` (every authenticated socket joins its own) carry DM, friend and presence events:
  * `dm:message:new|update` (message JSON), `dm:message:delete` {id, dmChannelId}, `dm:new` {id, user},
- * `friend:request` {from}, `friend:accepted` {user}, `friend:removed` {userId}, `presence:update` {userId, online}.
+ * `friend:request` {from}, `friend:accepted` {user}, `friend:removed` {userId}, `presence:update` {userId, online},
+ * `call:incoming` {dmChannelId, from, video}, `call:declined` {dmChannelId, by}, `call:ended` {dmChannelId}.
  * Rooms span instances through the Redis adapter.
  */
 export type MessageEvent = "message:new" | "message:update" | "message:delete";
+/** Also pushed to room `channel:<id>` of a voice channel: `voice:update` {channelId, participants:[{userId, username}]}. */
+export type ChannelEvent = MessageEvent | "voice:update";
 
 const channelRoom = (channelId: string) => `channel:${channelId}`;
 const userRoom = (userId: string) => `user:${userId}`;
 const subscribeSchema = z.object({ channelId: z.string() });
 
-export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisUrl: string) {
+export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisUrl: string, voice: Voice) {
   const pub = new Redis(redisUrl);
   const sub = pub.duplicate();
   const io = new Server(httpServer, { adapter: createAdapter(pub, sub) });
@@ -125,7 +129,7 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
   };
 
   return {
-    emit: (channelId: string, event: MessageEvent, payload: object) => {
+    emit: (channelId: string, event: ChannelEvent, payload: object) => {
       io.to(channelRoom(channelId)).emit(event, payload);
     },
     emitToUsers,
@@ -133,19 +137,26 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
     emitDm: (dm: { userLowId: string; userHighId: string }, event: "new" | "update" | "delete", payload: object) =>
       emitToUsers([dm.userLowId, dm.userHighId], `dm:message:${event}`, payload),
     onlineIds,
-    leaveChannels,
+    /** Sockets out of the channel rooms, and the user out of any voice room among them. */
+    leaveChannels: (userId: string, channelIds: string[]) => {
+      leaveChannels(userId, channelIds);
+      void voice.removeUser(userId, channelIds);
+    },
     /**
      * Something may have taken VIEW_CHANNEL away (role/overwrite change, ownership transfer): recompute it for
      * these members (default: all) and drop their sockets from every room they can no longer see.
+     * Voice sessions are re-checked the same way (CONNECT, SPEAK, VIDEO too): removed or downgraded in LiveKit.
      * Call after the change commits. A subscribe racing with the change can still slip in before this runs.
      */
     // ponytail: recomputes members x channels per call; fine for small guilds, upgrade = scope to the changed role's holders/channel
     revalidate: async (guildId: string, userIds?: string[]) => {
       for (const { userId, channelIds } of await hiddenChannels(guildId, userIds)) leaveChannels(userId, channelIds);
+      await voice.enforce(guildId, userIds);
     },
     /** Channels are gone (deleted, or their guild was): empty the rooms. */
     closeChannels: (channelIds: string[]) => {
       for (const id of channelIds) socketsLeave(channelRoom(id), [channelRoom(id)]);
+      void voice.closeChannels(channelIds);
     },
     // local: this instance's sockets only; other instances keep theirs
     disconnectAll: () => io.local.disconnectSockets(true),
@@ -161,8 +172,8 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
 export type Realtime = ReturnType<typeof createRealtime>;
 
 /** Wires realtime into the Fastify lifecycle so `app.close()` leaves no open handles. */
-export function registerRealtime(app: FastifyInstance, jwtSecret: string, redisUrl: string) {
-  const realtime = createRealtime(app.server, jwtSecret, redisUrl);
+export function registerRealtime(app: FastifyInstance, jwtSecret: string, redisUrl: string, voice: Voice) {
+  const realtime = createRealtime(app.server, jwtSecret, redisUrl, voice);
   app.decorate("realtime", realtime);
   app.addHook("preClose", async () => realtime.disconnectAll());
   app.addHook("onClose", async () => {

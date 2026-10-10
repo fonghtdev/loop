@@ -8,6 +8,9 @@ export const Permission = {
   MANAGE_ROLES: 1 << 5, // roles, role assignment, channel overwrites
   KICK_MEMBERS: 1 << 6,
   ADMINISTRATOR: 1 << 7, // passes every permission check (not the role hierarchy)
+  CONNECT: 1 << 8, // join a voice channel (DM calls are decided by friendship, not by this bit)
+  SPEAK: 1 << 9, // publish the microphone
+  VIDEO: 1 << 10, // publish the camera
 } as const;
 
 export type PermissionName = keyof typeof Permission;
@@ -15,10 +18,21 @@ export type PermissionName = keyof typeof Permission;
 export const ALL_PERMISSIONS = Object.values(Permission).reduce((all, bit) => all | bit, 0);
 
 export const DEFAULT_EVERYONE_PERMISSIONS =
-  Permission.VIEW_CHANNEL | Permission.SEND_MESSAGES | Permission.CREATE_INVITE;
+  Permission.VIEW_CHANNEL |
+  Permission.SEND_MESSAGES |
+  Permission.CREATE_INVITE |
+  Permission.CONNECT |
+  Permission.SPEAK |
+  Permission.VIDEO;
 
 /** The only bits a channel overwrite may allow or deny; the others are guild-wide. */
-export const CHANNEL_PERMISSIONS = Permission.VIEW_CHANNEL | Permission.SEND_MESSAGES | Permission.MANAGE_MESSAGES;
+export const CHANNEL_PERMISSIONS =
+  Permission.VIEW_CHANNEL |
+  Permission.SEND_MESSAGES |
+  Permission.MANAGE_MESSAGES |
+  Permission.CONNECT |
+  Permission.SPEAK |
+  Permission.VIDEO;
 
 type RolePerms = { id: string; permissions: number };
 export type Overwrite = { roleId: string; allow: number; deny: number };

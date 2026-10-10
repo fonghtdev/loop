@@ -64,7 +64,7 @@ describe("roles API", () => {
 
   it("validates bodies: unknown bits, bad names, empty patch", async () => {
     const s = await setup();
-    expect(await status("POST", `${s.base}/roles`, s.owner.token, { name: "x", permissions: 256 })).toBe(400);
+    expect(await status("POST", `${s.base}/roles`, s.owner.token, { name: "x", permissions: 2048 })).toBe(400);
     expect(await status("POST", `${s.base}/roles`, s.owner.token, { name: "" })).toBe(400);
     expect(await status("POST", `${s.base}/roles`, s.owner.token, { name: "@everyone" })).toBe(400);
     expect(await status("PATCH", roleUrl(s, s.roles.below.id), s.owner.token, {})).toBe(400);
@@ -325,7 +325,7 @@ describe("database invariants", () => {
     const everyone = await prisma.role.findMany({ where: { position: 0 }, orderBy: { name: "asc" } });
     expect(everyone).toHaveLength(2);
     expect(await prisma.role.findUniqueOrThrow({ where: { id: old.id } })).toMatchObject({
-      guildId: old.id, name: "@everyone", position: 0, permissions: DEFAULT_EVERYONE_PERMISSIONS,
+      guildId: old.id, name: "@everyone", position: 0, permissions: 19, // the default as of that migration
     });
     expect((await prisma.role.findUniqueOrThrow({ where: { id: kept.id } })).permissions).toBe(0); // untouched
     expect(await status("GET", `/guilds/${old.id}`, owner.token)).toBe(200);

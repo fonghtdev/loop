@@ -24,6 +24,10 @@ jobs:
       S3_BUCKET: loop-test
       S3_ACCESS_KEY: loopminio
       S3_SECRET_KEY: loopminio-secret
+      LIVEKIT_URL: ws://127.0.0.1:7880
+      LIVEKIT_API_URL: http://127.0.0.1:7880
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: loop-dev-livekit-secret-0123456789abcdef
       JWT_SECRET: ci-secret-ci-secret-ci-secret-ci-secret
     steps:
       - uses: actions/checkout@v4
@@ -37,6 +41,13 @@ jobs:
           timeout 60 sh -c 'until curl -sf http://localhost:9000/minio/health/ready; do sleep 1; done'
           docker exec minio mc alias set local http://localhost:9000 loopminio loopminio-secret
           docker exec minio mc mb --ignore-existing local/loop-test
+      # same image, tag and config file as docker-compose (unverified: CI has never run); the webhook has no
+      # server to reach in tests, host.docker.internal is only mapped so LiveKit does not log a DNS error
+      - name: LiveKit
+        run: |
+          docker run -d --name livekit --add-host host.docker.internal:host-gateway -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
+            -v "$GITHUB_WORKSPACE/docker/livekit.yaml:/etc/livekit.yaml:ro" livekit/livekit-server:v1.9.0 --config /etc/livekit.yaml
+          timeout 60 sh -c 'until curl -sf http://localhost:7880; do sleep 1; done'
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm build

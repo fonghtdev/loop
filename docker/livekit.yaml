@@ -1,0 +1,14 @@
+# Dev/test LiveKit only. Production uses LiveKit Cloud: set LIVEKIT_* in the environment, nothing here applies.
+port: 7880
+rtc:
+  tcp_port: 7881
+  udp_port: 7882 # a single muxed UDP port instead of a range
+  # clients run on the host (Docker Desktop port-maps), so advertise the loopback address
+  use_external_ip: false
+  node_ip: 127.0.0.1
+keys:
+  devkey: loop-dev-livekit-secret-0123456789abcdef
+webhook:
+  api_key: devkey
+  urls:
+    - http://host.docker.internal:3000/livekit/webhook

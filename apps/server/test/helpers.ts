@@ -2,11 +2,19 @@ import type { buildApp } from "../src/app.js";
 import { removeObjects } from "../src/attachments/sweep.js";
 import { prisma } from "../src/db.js";
 import { createStorage } from "../src/storage.js";
+import { dmRoom, voiceRoom } from "../src/voice/rooms.js";
+import { createLivekit } from "../src/voice/livekit.js";
 
 export const env = {
   databaseUrl: "",
   redisUrl: process.env.REDIS_URL!,
   jwtSecret: "test-secret-test-secret-test-secret-1234",
+  livekit: {
+    url: process.env.LIVEKIT_URL!,
+    apiUrl: process.env.LIVEKIT_API_URL!,
+    apiKey: process.env.LIVEKIT_API_KEY!,
+    apiSecret: process.env.LIVEKIT_API_SECRET!,
+  },
   port: 0,
   s3: {
     endpoint: process.env.S3_ENDPOINT!,
@@ -35,8 +43,20 @@ export const signUp = async (app: App, name: string) => {
   return { token: body.accessToken as string, id: body.user.id as string, name };
 };
 
-/** Empties the test bucket's known objects (every key is in an Attachment row), then the tables. */
+/** Closes the LiveKit rooms of every channel and DM in the DB (only those: the server may hold other rooms). */
+async function closeKnownRooms() {
+  const names = [
+    ...(await prisma.channel.findMany({ select: { id: true } })).map((c) => voiceRoom(c.id)),
+    ...(await prisma.dmChannel.findMany({ select: { id: true } })).map((d) => dmRoom(d.id)),
+  ];
+  if (!names.length) return;
+  const livekit = createLivekit(env.livekit);
+  for (const room of await livekit.listRooms(names)) await livekit.deleteRoom(room.name);
+}
+
+/** Empties the test bucket's known objects (every key is in an Attachment row), the LiveKit rooms, then the tables. */
 export async function resetDb() {
+  await closeKnownRooms();
   await removeObjects(testStorage, (await prisma.attachment.findMany({ select: { id: true } })).map((a) => a.id));
   await prisma.$executeRaw`TRUNCATE "Message", "Invite", "Member", "Channel", "Guild", "Session", "User" CASCADE`;
 }
@@ -47,7 +67,10 @@ export const isAttachmentRoute = (route: string) => /^[A-Z]+ \/attachments\b/.te
 type User = { token: string; id: string; name: string };
 
 /** Routes of the social plugin (friends, blocks, DMs); they have their own guard test. */
-export const isSocialRoute = (route: string) => /^[A-Z]+ \/(friends|blocks|dms)\b/.test(route);
+export const isSocialRoute = (route: string) => /^[A-Z]+ \/(friends|blocks|dms)\b(?!\/:dmId\/call)/.test(route);
+
+/** Routes of the voice plugin (channel voice, DM calls, LiveKit webhook); they have their own guard test. */
+export const isVoiceRoute = (route: string) => /^[A-Z]+ (\/channels\/:channelId\/voice\b|\/dms\/:dmId\/call\b|\/livekit\b)/.test(route);
 
 /** `a` asks `b` by username, `b` accepts. */
 export async function befriend(app: App, a: User, b: User) {

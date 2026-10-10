@@ -2,7 +2,7 @@ import { ALL_PERMISSIONS, Permission as P } from "@loop/shared";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../app.js";
 import { prisma } from "../db.js";
-import { caller, env, guildWith, isAttachmentRoute, isSocialRoute, makeRole, type Method, resetDb, setEveryone, signUp } from "../../test/helpers.js";
+import { caller, env, guildWith, isAttachmentRoute, isSocialRoute, isVoiceRoute, makeRole, type Method, resetDb, setEveryone, signUp } from "../../test/helpers.js";
 
 /**
  * Every authenticated route and what it needs. A route missing from both MATRIX and PUBLIC fails the
@@ -116,7 +116,7 @@ describe("route permission matrix", () => {
     await probe.ready();
     await probe.close();
     const decided = new Set([...MATRIX.map((r) => r.route), ...Object.keys(PUBLIC)]);
-    expect(registered.filter((r) => !isSocialRoute(r) && !isAttachmentRoute(r) && !decided.has(r)), "routes without a permission decision").toEqual([]);
+    expect(registered.filter((r) => !isSocialRoute(r) && !isAttachmentRoute(r) && !isVoiceRoute(r) && !decided.has(r)), "routes without a permission decision").toEqual([]);
     expect([...decided].filter((r) => !registered.includes(r)), "stale matrix rows").toEqual([]);
   });
 });

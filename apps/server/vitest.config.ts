@@ -16,9 +16,17 @@ const s3 = {
   S3_SECRET_KEY: process.env.S3_SECRET_KEY ?? "loopminio-secret",
 };
 
+// The dev LiveKit container; tests use unique channel ids, so rooms never collide with anything else.
+const livekit = {
+  LIVEKIT_URL: process.env.LIVEKIT_URL ?? "ws://127.0.0.1:7880",
+  LIVEKIT_API_URL: process.env.LIVEKIT_API_URL ?? "http://127.0.0.1:7880",
+  LIVEKIT_API_KEY: process.env.LIVEKIT_API_KEY ?? "devkey",
+  LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET ?? "loop-dev-livekit-secret-0123456789abcdef",
+};
+
 export default defineConfig({
   test: {
-    env: { DATABASE_URL: testDb, REDIS_URL: testRedis, ...s3 },
+    env: { DATABASE_URL: testDb, REDIS_URL: testRedis, ...s3, ...livekit },
     globalSetup: ["./test/global-setup.ts"],
     fileParallelism: false,
   },

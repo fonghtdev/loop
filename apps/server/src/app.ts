@@ -1,4 +1,4 @@
-import Fastify, { type FastifyError } from "fastify";
+import Fastify, { type FastifyError, type FastifyServerOptions } from "fastify";
 import { authRoutes } from "./auth/routes.js";
 import type { Env } from "./env.js";
 import { attachmentRoutes } from "./attachments/routes.js";
@@ -10,8 +10,13 @@ import { messageRoutes } from "./messages/routes.js";
 import { registerRealtime } from "./realtime.js";
 import { socialRoutes } from "./social/routes.js";
 import { createStorage } from "./storage.js";
+import { callRoutes } from "./voice/calls.js";
+import { createVoice } from "./voice/enforce.js";
+import { createLivekit } from "./voice/livekit.js";
+import { voiceRoutes } from "./voice/routes.js";
+import { webhookRoutes } from "./voice/webhook.js";
 
-export function buildApp(env: Env, logger = false) {
+export function buildApp(env: Env, logger: FastifyServerOptions["logger"] = false) {
   const app = Fastify({ logger });
   app.decorateRequest("userId", "");
   // Clients often send `content-type: json` on bodyless POST/DELETE; Fastify rejects that by default.
@@ -29,8 +34,11 @@ export function buildApp(env: Env, logger = false) {
   });
   app.decorate("storage", createStorage(env.s3));
   app.addHook("onClose", async () => app.storage.close());
-  registerRealtime(app, env.jwtSecret, env.redisUrl);
+  app.decorate("livekit", createLivekit(env.livekit));
+  app.decorate("voice", createVoice(app.livekit, app.log));
+  registerRealtime(app, env.jwtSecret, env.redisUrl, app.voice);
   authRoutes(app, env);
+  webhookRoutes(app); // authenticated by LiveKit's signature, not by a user token
   app.register(async (authed) => {
     authed.addHook("onRequest", requireUser(env.jwtSecret));
     guildRoutes(authed);
@@ -39,6 +47,8 @@ export function buildApp(env: Env, logger = false) {
     messageRoutes(authed);
     attachmentRoutes(authed);
     socialRoutes(authed);
+    voiceRoutes(authed);
+    callRoutes(authed);
   });
   return app;
 }

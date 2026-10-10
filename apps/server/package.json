@@ -13,6 +13,7 @@
     "test": "prisma generate && vitest run"
   },
   "devDependencies": {
+    "@livekit/rtc-node": "^1.1.0",
     "@types/node": "^26.6.4",
     "prisma": "^6.19.3",
     "socket.io-client": "^4.8.4",
@@ -29,6 +30,7 @@
     "fastify": "^5.12.5",
     "ioredis": "^6.0.0",
     "jose": "^6.2.12",
+    "livekit-server-sdk": "^2.19.1",
     "socket.io": "^4.8.4",
     "zod": "^3.25.76"
   }

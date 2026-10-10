@@ -41,6 +41,10 @@ describe("computePermissions", () => {
     ["private channel: visible to role x", member({ memberRoles: [role("x")], overwrites: privateChannel }), DEFAULT_EVERYONE_PERMISSIONS],
     ["no VIEW masks SEND and everything else", member({ memberRoles: [role("a", P.MANAGE_CHANNELS)], overwrites: [ow("guild", 0, P.VIEW_CHANNEL)] }), 0],
     ["no VIEW in the guild masks every channel perm", member({ everyoneRole: role("guild", P.SEND_MESSAGES), overwrites: [] }), 0],
+    ["voice bits are in the default @everyone", member(), 19 | P.CONNECT | P.SPEAK | P.VIDEO],
+    ["channel overwrite denies SPEAK only", member({ overwrites: [ow("guild", 0, P.SPEAK)] }), DEFAULT_EVERYONE_PERMISSIONS & ~P.SPEAK],
+    ["role allow of SPEAK beats @everyone deny", member({ memberRoles: [role("x")], overwrites: [ow("guild", 0, P.SPEAK), ow("x", P.SPEAK)] }), DEFAULT_EVERYONE_PERMISSIONS],
+    ["no VIEW also masks CONNECT, SPEAK and VIDEO", member({ memberRoles: [role("a", P.CONNECT | P.SPEAK | P.VIDEO)], overwrites: [ow("guild", 0, P.VIEW_CHANNEL)] }), 0],
     ["no VIEW still keeps guild-wide perms outside a channel", member({ everyoneRole: role("guild", P.SEND_MESSAGES) }), P.SEND_MESSAGES],
   ])("%s", (_name, input, expected) => {
     expect(computePermissions(input)).toBe(expected);
@@ -57,7 +61,7 @@ describe("can", () => {
 });
 
 describe("permission input schemas", () => {
-  it.each([256, -1, 1.5, 2 ** 31, "1"])("role permissions reject %j", (permissions) => {
+  it.each([2048, -1, 1.5, 2 ** 31, "1"])("role permissions reject %j", (permissions) => {
     expect(createRoleSchema.safeParse({ name: "mod", permissions }).success).toBe(false);
   });
 
@@ -65,6 +69,12 @@ describe("permission input schemas", () => {
     expect(overwriteSchema.safeParse({ allow: P.VIEW_CHANNEL, deny: P.SEND_MESSAGES }).success).toBe(true);
     expect(overwriteSchema.safeParse({ allow: P.MANAGE_ROLES, deny: 0 }).success).toBe(false);
     expect(overwriteSchema.safeParse({ allow: P.SEND_MESSAGES, deny: P.SEND_MESSAGES }).success).toBe(false);
+  });
+
+  it("voice bits are valid on roles and overwrites, and the default is 1811", () => {
+    expect(DEFAULT_EVERYONE_PERMISSIONS).toBe(1811);
+    expect(createRoleSchema.safeParse({ name: "dj", permissions: P.CONNECT | P.SPEAK | P.VIDEO }).success).toBe(true);
+    expect(overwriteSchema.safeParse({ allow: P.SPEAK, deny: P.VIDEO | P.CONNECT }).success).toBe(true);
   });
 
   it("@everyone is reserved as a role name", () => {

@@ -123,8 +123,8 @@ export async function requireManageableMember(access: Access, userId: string, al
   if (top >= access.top) throw forbidden("This member is not below your highest role");
 }
 
-/** For each member (or only `userIds`), the guild's channels they cannot VIEW. */
-export async function hiddenChannels(guildId: string, userIds?: string[]) {
+/** Every member's (or only `userIds`') bits in each of the guild's channels; 0 where they cannot VIEW it. */
+export async function memberChannelPermissions(guildId: string, userIds?: string[]) {
   const guild = await prisma.guild.findUnique({
     where: { id: guildId },
     include: {
@@ -136,9 +136,17 @@ export async function hiddenChannels(guildId: string, userIds?: string[]) {
   if (!guild) return [];
   return guild.members.map((m) => {
     const input = permissionInput(guild, m.userId, [...guild.roles, ...m.roles.map((r) => r.role)]);
-    const hidden = guild.channels.filter(
-      (c) => !hasPermission(computePermissions({ ...input, overwrites: c.overwrites }), Permission.VIEW_CHANNEL),
-    );
-    return { userId: m.userId, channelIds: hidden.map((c) => c.id) };
+    return {
+      userId: m.userId,
+      perms: new Map(guild.channels.map((c) => [c.id, computePermissions({ ...input, overwrites: c.overwrites })])),
+    };
   });
+}
+
+/** For each member (or only `userIds`), the guild's channels they cannot VIEW. */
+export async function hiddenChannels(guildId: string, userIds?: string[]) {
+  return (await memberChannelPermissions(guildId, userIds)).map(({ userId, perms }) => ({
+    userId,
+    channelIds: [...perms].filter(([, p]) => !hasPermission(p, Permission.VIEW_CHANNEL)).map(([id]) => id),
+  }));
 }

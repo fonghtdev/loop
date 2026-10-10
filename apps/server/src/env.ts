@@ -18,6 +18,12 @@ export function loadEnv() {
       accessKey: required("S3_ACCESS_KEY"),
       secretKey: required("S3_SECRET_KEY"),
     },
+    livekit: {
+      url: required("LIVEKIT_URL"), // ws(s):// address clients connect to
+      apiUrl: required("LIVEKIT_API_URL"), // http(s):// address the server calls
+      apiKey: required("LIVEKIT_API_KEY"),
+      apiSecret: required("LIVEKIT_API_SECRET"),
+    },
     port: Number(process.env.PORT ?? 3000),
   };
 }
