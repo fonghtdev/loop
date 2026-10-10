@@ -1,0 +1,102 @@
+@import "tailwindcss";
+@import "@fontsource/be-vietnam-pro/400.css";
+@import "@fontsource/be-vietnam-pro/500.css";
+@import "@fontsource/be-vietnam-pro/600.css";
+@import "@fontsource-variable/nunito/wght.css";
+
+/*
+ * Loop design tokens (documented in CLAUDE.md). Every colour pair the UI uses is checked for WCAG AA by
+ * src/renderer/src/theme.test.ts, which reads the values from this block: change a value, run the test.
+ */
+@theme {
+  --font-sans: "Be Vietnam Pro", system-ui, sans-serif;
+  --font-display: "Nunito Variable", "Be Vietnam Pro", system-ui, sans-serif;
+
+  /* warm charcoal surfaces, darkest (server rail) to lightest (hover) */
+  --color-surface-0: #171310;
+  --color-surface-1: #1e1915;
+  --color-surface-2: #25201b;
+  --color-surface-3: #2f2822;
+  --color-surface-4: #3b332c;
+  --color-line: #3d352e;
+  --color-line-strong: #85776a;
+
+  --color-ink: #f4ede5;
+  --color-ink-muted: #c4b7a8;
+  --color-ink-faint: #a39586;
+
+  /* moss green accent */
+  --color-moss-200: #d6e3b5;
+  --color-moss-300: #b6cb8c;
+  --color-moss-400: #9bb46b;
+  --color-moss-500: #829b54;
+  --color-moss-900: #2a3319;
+  --color-on-moss: #161a0e;
+
+  --color-danger: #f29a84;
+  --color-danger-bg: #3b221b;
+  --color-warning: #ebc678;
+  --color-warning-bg: #372c17;
+
+  --radius-control: 12px; /* buttons, inputs, rail icons */
+  --radius-panel: 18px; /* cards, banners */
+
+  --shadow-raised: inset 0 1px 0 rgb(255 240 220 / 0.05), 0 16px 40px -16px rgb(8 5 3 / 0.7);
+
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+
+  --animate-draw: draw 900ms var(--ease-out-soft) both;
+  --animate-rise: rise 400ms var(--ease-out-soft) both;
+  @keyframes draw {
+    from {
+      stroke-dashoffset: 1;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--color-surface-2);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    user-select: none; /* app chrome; text fields and content opt back in */
+  }
+  input {
+    user-select: text;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-moss-300);
+    outline-offset: 2px;
+  }
+  button:not(:disabled),
+  [role="button"] {
+    cursor: pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

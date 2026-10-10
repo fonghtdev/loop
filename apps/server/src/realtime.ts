@@ -35,10 +35,10 @@ const channelRoom = (channelId: string) => `channel:${channelId}`;
 const userRoom = (userId: string) => `user:${userId}`;
 const subscribeSchema = z.object({ channelId: z.string() });
 
-export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisUrl: string, voice: Voice) {
+export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisUrl: string, voice: Voice, corsOrigins: string[]) {
   const pub = new Redis(redisUrl);
   const sub = pub.duplicate();
-  const io = new Server(httpServer, { adapter: createAdapter(pub, sub) });
+  const io = new Server(httpServer, { adapter: createAdapter(pub, sub), cors: { origin: corsOrigins } });
 
   // Never an empty list: Socket.IO treats `to([])` / `in([])` as "everyone".
   const emitToUsers = (userIds: string[], event: string, payload: object) => {
@@ -172,8 +172,8 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
 export type Realtime = ReturnType<typeof createRealtime>;
 
 /** Wires realtime into the Fastify lifecycle so `app.close()` leaves no open handles. */
-export function registerRealtime(app: FastifyInstance, jwtSecret: string, redisUrl: string, voice: Voice) {
-  const realtime = createRealtime(app.server, jwtSecret, redisUrl, voice);
+export function registerRealtime(app: FastifyInstance, jwtSecret: string, redisUrl: string, voice: Voice, corsOrigins: string[]) {
+  const realtime = createRealtime(app.server, jwtSecret, redisUrl, voice, corsOrigins);
   app.decorate("realtime", realtime);
   app.addHook("preClose", async () => realtime.disconnectAll());
   app.addHook("onClose", async () => {

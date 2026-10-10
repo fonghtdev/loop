@@ -25,6 +25,9 @@ export function loadEnv() {
       apiSecret: required("LIVEKIT_API_SECRET"),
     },
     port: Number(process.env.PORT ?? 3000),
+    // Browser origins allowed to call the API and Socket.IO (desktop renderer: Vite dev origin, `app://loop`).
+    // Unset or empty = no cross-origin access at all (fail-safe); non-browser clients are unaffected.
+    corsOrigins: (process.env.CORS_ORIGINS ?? "").split(",").map((o) => o.trim()).filter(Boolean),
   };
 }
 

@@ -16,6 +16,7 @@ export const env = {
     apiSecret: process.env.LIVEKIT_API_SECRET!,
   },
   port: 0,
+  corsOrigins: [] as string[],
   s3: {
     endpoint: process.env.S3_ENDPOINT!,
     region: process.env.S3_REGION!,

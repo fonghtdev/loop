@@ -1,3 +1,4 @@
+import cors from "@fastify/cors";
 import Fastify, { type FastifyError, type FastifyServerOptions } from "fastify";
 import { authRoutes } from "./auth/routes.js";
 import type { Env } from "./env.js";
@@ -19,6 +20,8 @@ import { webhookRoutes } from "./voice/webhook.js";
 export function buildApp(env: Env, logger: FastifyServerOptions["logger"] = false) {
   const app = Fastify({ logger });
   app.decorateRequest("userId", "");
+  // Bearer tokens, no cookies: credentials stay off. An origin outside the list gets no CORS headers.
+  app.register(cors, { origin: env.corsOrigins, allowedHeaders: ["Authorization", "Content-Type"], methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] });
   // Clients often send `content-type: json` on bodyless POST/DELETE; Fastify rejects that by default.
   app.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body, done) => {
     try {
@@ -36,7 +39,7 @@ export function buildApp(env: Env, logger: FastifyServerOptions["logger"] = fals
   app.addHook("onClose", async () => app.storage.close());
   app.decorate("livekit", createLivekit(env.livekit));
   app.decorate("voice", createVoice(app.livekit, app.log));
-  registerRealtime(app, env.jwtSecret, env.redisUrl, app.voice);
+  registerRealtime(app, env.jwtSecret, env.redisUrl, app.voice, env.corsOrigins);
   authRoutes(app, env);
   webhookRoutes(app); // authenticated by LiveKit's signature, not by a user token
   app.register(async (authed) => {

@@ -4,7 +4,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "lint": "pnpm --filter @loop/shared build && tsc --noEmit -p apps/server"
+    "lint": "pnpm --filter @loop/shared build && tsc --noEmit -p apps/server && pnpm --filter @loop/desktop typecheck"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

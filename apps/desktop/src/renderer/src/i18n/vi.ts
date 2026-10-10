@@ -1,0 +1,68 @@
+// Every user-visible string of the app. Components never hard-code text: they call t("key").
+export const vi = {
+  "app.name": "Loop",
+  "brand.headline": "Nơi nhóm bạn trò chuyện mỗi ngày.",
+  "brand.body": "Máy chủ, kênh chat và gọi thoại cho những người bạn quen.",
+
+  "splash.restoring": "Đang khôi phục phiên đăng nhập…",
+  "splash.offline": "Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.",
+  "splash.retry": "Thử lại",
+
+  "auth.login.title": "Chào mừng trở lại",
+  "auth.login.subtitle": "Đăng nhập để tiếp tục trò chuyện.",
+  "auth.login.submit": "Đăng nhập",
+  "auth.login.switchPrompt": "Chưa có tài khoản?",
+  "auth.login.switchAction": "Tạo tài khoản",
+  "auth.register.title": "Tạo tài khoản",
+  "auth.register.subtitle": "Chỉ cần email, tên người dùng và mật khẩu.",
+  "auth.register.submit": "Tạo tài khoản",
+  "auth.register.switchPrompt": "Đã có tài khoản?",
+  "auth.register.switchAction": "Đăng nhập",
+  "auth.email": "Email",
+  "auth.username": "Tên người dùng",
+  "auth.usernameHint": "Chữ thường không dấu, số, dấu _ và dấu chấm.",
+  "auth.password": "Mật khẩu",
+  "auth.passwordHint": "Ít nhất 8 ký tự.",
+  "auth.showPassword": "Hiện mật khẩu",
+  "auth.hidePassword": "Ẩn mật khẩu",
+  "auth.submitting": "Đang gửi…",
+
+  "validation.required": "Vui lòng điền mục này.",
+  "validation.email": "Email chưa đúng định dạng.",
+  "validation.usernameShort": "Tên người dùng cần ít nhất 2 ký tự.",
+  "validation.usernameLong": "Tên người dùng tối đa 32 ký tự.",
+  "validation.usernameChars": "Chỉ dùng chữ thường không dấu, số, dấu _ và dấu chấm.",
+  "validation.passwordShort": "Mật khẩu cần ít nhất 8 ký tự.",
+  "validation.passwordLong": "Mật khẩu tối đa 128 ký tự.",
+
+  "errors.invalid": "Thông tin chưa hợp lệ, vui lòng kiểm tra lại.",
+  "errors.wrongCredentials": "Email hoặc mật khẩu không đúng.",
+  "errors.sessionExpired": "Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.",
+  "errors.taken": "Email hoặc tên người dùng đã có người dùng.",
+  "errors.rateLimited": "Bạn thao tác hơi nhanh, vui lòng thử lại sau ít phút.",
+  "errors.server": "Máy chủ đang gặp sự cố, vui lòng thử lại sau.",
+  "errors.offline": "Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.",
+  "errors.unknown": "Đã có lỗi xảy ra, vui lòng thử lại.",
+
+  "crash.title": "Có lỗi bất ngờ",
+  "crash.body": "Loop gặp sự cố khi hiển thị. Tải lại để tiếp tục.",
+  "crash.reload": "Tải lại",
+
+  "shell.servers": "Danh sách máy chủ",
+  "shell.home": "Trang chủ",
+  "shell.addServer": "Tạo hoặc tham gia máy chủ (sắp có)",
+  "shell.channels": "Kênh",
+  "shell.channelsEmptyTitle": "Chưa có máy chủ nào",
+  "shell.channelsEmptyBody": "Khi bạn tạo hoặc tham gia một máy chủ, các kênh sẽ hiện ở đây.",
+  "shell.welcomeTitle": "Chào {name}!",
+  "shell.welcomeBody": "Tin nhắn sẽ hiện ở đây. Sắp tới bạn có thể tạo máy chủ cho nhóm mình hoặc tham gia bằng lời mời.",
+  "shell.members": "Thành viên",
+  "shell.membersEmpty": "Thành viên của máy chủ sẽ hiện ở đây.",
+  "shell.account": "Tài khoản",
+  "shell.logout": "Đăng xuất",
+
+  "notice.sessionOnly": "Máy này không hỗ trợ lưu đăng nhập an toàn: bạn sẽ cần đăng nhập lại sau khi tắt Loop.",
+  "notice.offline": "Mất kết nối mạng. Loop sẽ tiếp tục khi có mạng trở lại.",
+} as const;
+
+export type MessageKey = keyof typeof vi;
