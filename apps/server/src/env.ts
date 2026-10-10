@@ -31,4 +31,5 @@ export function loadEnv() {
   };
 }
 
-export type Env = ReturnType<typeof loadEnv>;
+// refreshGraceMs: tests only (0 = no grace); unset = REFRESH_GRACE_MS.
+export type Env = ReturnType<typeof loadEnv> & { refreshGraceMs?: number };

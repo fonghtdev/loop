@@ -36,6 +36,11 @@ model Session {
   expiresAt        DateTime
   createdAt        DateTime  @default(now())
   revokedAt        DateTime?
+  // Set together with revokedAt when the token was rotated (not logout / theft-revoke); see auth/service.ts#refresh.
+  rotatedAt        DateTime?
+  successorId      String?   @unique @db.Uuid
+  successor        Session?  @relation("Rotation", fields: [successorId], references: [id], onDelete: SetNull)
+  predecessor      Session?  @relation("Rotation")
 
   @@index([userId])
 }

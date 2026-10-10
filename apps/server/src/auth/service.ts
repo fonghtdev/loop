@@ -5,6 +5,7 @@ import { HttpError } from "../http.js";
 import {
   hashRefreshToken,
   newRefreshToken,
+  REFRESH_GRACE_MS,
   REFRESH_TTL_MS,
   signAccessToken,
 } from "./tokens.js";
@@ -20,20 +21,48 @@ const dummyHash = argon2.hash("dummy-password-for-timing");
 type PublicUser = { id: string; email: string; username: string };
 const toPublic = ({ id, email, username }: PublicUser): PublicUser => ({ id, email, username });
 
+const newSession = (userId: string, refreshToken: string) => ({
+  userId,
+  refreshTokenHash: hashRefreshToken(refreshToken),
+  expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
+});
+
+const tokensFor = async (user: PublicUser, refreshToken: string, jwtSecret: string) => ({
+  user: toPublic(user),
+  accessToken: await signAccessToken(user.id, jwtSecret),
+  refreshToken,
+});
+type Tokens = Awaited<ReturnType<typeof tokensFor>>;
+
 async function issueTokens(user: PublicUser, jwtSecret: string) {
   const refreshToken = newRefreshToken();
-  await prisma.session.create({
-    data: {
-      userId: user.id,
-      refreshTokenHash: hashRefreshToken(refreshToken),
-      expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
-    },
-  });
-  return {
-    user: toPublic(user),
-    accessToken: await signAccessToken(user.id, jwtSecret),
-    refreshToken,
-  };
+  await prisma.session.create({ data: newSession(user.id, refreshToken) });
+  return tokensFor(user, refreshToken, jwtSecret);
+}
+
+const LOST_RACE = Symbol("lost race");
+
+/**
+ * Replaces the session by a new one, but only while it is still active (conditional update, so of several
+ * concurrent attempts exactly one wins). Returns null for the losers.
+ */
+async function rotate(sessionId: string, user: PublicUser, jwtSecret: string) {
+  const refreshToken = newRefreshToken();
+  try {
+    await prisma.$transaction(async (tx) => {
+      const next = await tx.session.create({ data: newSession(user.id, refreshToken) });
+      const now = new Date();
+      const { count } = await tx.session.updateMany({
+        where: { id: sessionId, revokedAt: null },
+        data: { revokedAt: now, rotatedAt: now, successorId: next.id },
+      });
+      if (count === 0) throw LOST_RACE; // rolls the new session back
+    });
+  } catch (e) {
+    if (e === LOST_RACE) return null;
+    throw e;
+  }
+  return tokensFor(user, refreshToken, jwtSecret);
 }
 
 export async function register(
@@ -61,14 +90,28 @@ export async function login(input: { email: string; password: string }, jwtSecre
   return issueTokens(user, jwtSecret);
 }
 
-export async function refresh(refreshToken: string, jwtSecret: string) {
+/**
+ * Rotates the refresh token. A revoked token is theft (every session of the user is revoked) except within
+ * the grace window after its rotation while the successor is still unused: then the client most likely lost
+ * the rotation's response, so the successor is rotated in its place (the successor's token dies, one live
+ * session remains). Trade-off: inside the window a thief holding the old token gets a pair too.
+ */
+export async function refresh(
+  refreshToken: string,
+  jwtSecret: string,
+  graceMs = REFRESH_GRACE_MS,
+): Promise<Tokens> {
   const session = await prisma.session.findUnique({
     where: { refreshTokenHash: hashRefreshToken(refreshToken) },
     include: { user: true },
   });
   if (!session) throw INVALID_REFRESH;
   if (session.revokedAt) {
-    // A rotated token came back: assume it was stolen and kill every session of the user.
+    const { rotatedAt, successorId } = session;
+    const inGrace = rotatedAt && successorId && Date.now() - rotatedAt.getTime() < graceMs;
+    // Claiming the successor is the atomic "grace not used yet" check: a used successor is no longer active.
+    const retried = inGrace ? await rotate(successorId, session.user, jwtSecret) : null;
+    if (retried) return retried;
     await prisma.session.updateMany({
       where: { userId: session.userId, revokedAt: null },
       data: { revokedAt: new Date() },
@@ -76,14 +119,8 @@ export async function refresh(refreshToken: string, jwtSecret: string) {
     throw INVALID_REFRESH;
   }
   if (session.expiresAt <= new Date()) throw INVALID_REFRESH;
-
-  // Conditional update so two concurrent refreshes with the same token cannot both win.
-  const { count } = await prisma.session.updateMany({
-    where: { id: session.id, revokedAt: null },
-    data: { revokedAt: new Date() },
-  });
-  if (count === 0) throw INVALID_REFRESH;
-  return issueTokens(session.user, jwtSecret);
+  // Lost to a concurrent refresh with the same token: judge it again, now as a reuse (grace or theft).
+  return (await rotate(session.id, session.user, jwtSecret)) ?? refresh(refreshToken, jwtSecret, graceMs);
 }
 
 export async function logout(refreshToken: string) {

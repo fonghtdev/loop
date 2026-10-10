@@ -17,7 +17,7 @@ export function authRoutes(app: FastifyInstance, env: Env) {
 
   app.post("/auth/refresh", async (req, reply) => {
     const body = parse(refreshTokenBodySchema, req.body, reply);
-    if (body) return refresh(body.refreshToken, env.jwtSecret);
+    if (body) return refresh(body.refreshToken, env.jwtSecret, env.refreshGraceMs);
   });
 
   app.post("/auth/logout", async (req, reply) => {

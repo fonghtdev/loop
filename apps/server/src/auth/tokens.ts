@@ -3,6 +3,8 @@ import { jwtVerify, SignJWT } from "jose";
 
 const ACCESS_TTL = "15m";
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// How long a rotated refresh token may be retried when the client lost the rotation's response.
+export const REFRESH_GRACE_MS = 20 * 1000;
 
 const key = (secret: string) => new TextEncoder().encode(secret);
 
