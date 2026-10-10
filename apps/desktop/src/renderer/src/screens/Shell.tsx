@@ -1,9 +1,19 @@
-import { ChatsCircle, Plus, SignOut, UsersThree } from "@phosphor-icons/react";
-import { useSyncExternalStore, type ReactNode } from "react";
+import { ChatsCircle, SignOut, UsersThree } from "@phosphor-icons/react";
+import { useEffect, useSyncExternalStore } from "react";
+import { useStore } from "zustand";
 import { Banner } from "../components/Banner";
+import { Button } from "../components/Button";
+import { ChannelColumn } from "../components/ChannelColumn";
+import { ChatView } from "../components/ChatView";
 import { LogoMark } from "../components/Logo";
+import { MemberList } from "../components/MemberList";
+import { ServerRail } from "../components/ServerRail";
+import { ColumnHeader, EmptyState } from "../components/States";
 import { t } from "../i18n/t";
-import { session } from "../lib/app";
+import { ApiError } from "../lib/auth-client";
+import { realtime, revalidateGuild, session } from "../lib/app";
+import { goHome, readLastPlace, useNav } from "../lib/nav";
+import { useGuild, useGuilds } from "../lib/queries";
 
 const subscribeOnline = (cb: () => void) => {
   addEventListener("online", cb);
@@ -16,18 +26,41 @@ const subscribeOnline = (cb: () => void) => {
 const useOnline = () => useSyncExternalStore(subscribeOnline, () => navigator.onLine);
 
 /**
- * The signed-in frame 9b-9f fill in: server rail | channel column (+ user panel) | main | members, with a notice
- * row on top. Column widths are fixed so nothing jumps; only the main column flexes (min window 960px wide).
+ * The signed-in frame: server rail | channel column (+ user panel) | main | members, with a notice row on top.
+ * Column widths are fixed so nothing jumps; only the main column flexes (min window 960px wide).
  */
 export function Shell() {
   const { user, persistent } = session.useSession();
   const online = useOnline();
+  const connection = useStore(realtime.state, (s) => s.status);
+  const guildId = useNav((s) => s.guildId);
+  const channelId = useValidPlace();
+
+  useEffect(() => {
+    if (user) useNav.setState(readLastPlace(user.id));
+  }, [user?.id]); // only when the account changes, not on every user object
+
   return (
     <div className="flex h-full flex-col">
       <div aria-live="polite" className="flex flex-col gap-px empty:hidden">
         {!online && (
           <Banner tone="offline" className="rounded-none!">
             {t("notice.offline")}
+          </Banner>
+        )}
+        {online && connection === "reconnecting" && (
+          <Banner tone="offline" className="rounded-none!">
+            {t("notice.reconnecting")}
+          </Banner>
+        )}
+        {connection === "failed" && (
+          <Banner tone="danger" className="rounded-none! items-center">
+            <span className="flex flex-wrap items-center gap-x-3">
+              {t("notice.realtimeFailed")}
+              <Button variant="link" onClick={() => realtime.retry()} className="h-8 px-0">
+                {t("common.retry")}
+              </Button>
+            </span>
           </Banner>
         )}
         {!persistent && (
@@ -37,37 +70,20 @@ export function Shell() {
         )}
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-[72px_240px_minmax(0,1fr)_240px]">
-        <nav aria-label={t("shell.servers")} className="flex flex-col items-center gap-2 bg-surface-0 py-3">
-          <div className="relative">
-            <span aria-hidden="true" className="absolute top-1/2 -left-3 h-8 w-1 -translate-y-1/2 rounded-r-full bg-moss-300" />
-            <button
-              type="button"
-              aria-label={t("shell.home")}
-              aria-current="page"
-              title={t("shell.home")}
-              className="grid size-12 place-items-center rounded-control bg-surface-3 text-moss-300"
-            >
-              <LogoMark className="size-7" />
-            </button>
-          </div>
-          <div aria-hidden="true" className="h-px w-8 bg-line" />
-          <button
-            type="button"
-            aria-label={t("shell.addServer")}
-            aria-disabled="true"
-            title={t("shell.addServer")}
-            className="grid size-12 place-items-center rounded-control border border-dashed border-line-strong text-ink-faint cursor-not-allowed"
-          >
-            <Plus aria-hidden="true" />
-          </button>
-        </nav>
+        <ServerRail />
 
-        <nav aria-label={t("shell.channels")} className="flex min-h-0 flex-col bg-surface-1">
-          <ColumnHeader>{t("app.name")}</ColumnHeader>
-          <div className="flex-1 overflow-y-auto p-4">
-            <EmptyState icon={<ChatsCircle />} title={t("shell.channelsEmptyTitle")} body={t("shell.channelsEmptyBody")} />
-          </div>
-          <section aria-label={t("shell.account")} className="flex h-16 items-center gap-3 bg-surface-0/60 px-3">
+        <nav aria-label={t("shell.channels")} className="flex min-h-0 min-w-0 flex-col bg-surface-1">
+          {guildId ? (
+            <ChannelColumn guildId={guildId} />
+          ) : (
+            <>
+              <ColumnHeader>{t("app.name")}</ColumnHeader>
+              <div className="flex-1 overflow-y-auto p-4">
+                <EmptyState icon={<ChatsCircle />} title={t("home.channelsTitle")} body={t("home.channelsBody")} />
+              </div>
+            </>
+          )}
+          <section aria-label={t("shell.account")} className="flex h-16 shrink-0 items-center gap-3 bg-surface-0/60 px-3">
             <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-moss-900 font-display font-bold text-moss-200">
               {user?.username.charAt(0).toUpperCase()}
             </span>
@@ -88,45 +104,73 @@ export function Shell() {
         </nav>
 
         <main className="flex min-h-0 min-w-0 flex-col bg-surface-2">
-          <ColumnHeader>{t("shell.home")}</ColumnHeader>
-          <div className="flex-1 overflow-y-auto px-10 py-12">
-            <div className="max-w-[52ch] animate-rise">
-              <LogoMark className="size-12 text-moss-300" />
-              <h1 className="mt-6 font-display text-[32px] leading-tight font-bold tracking-tight break-words">
-                {t("shell.welcomeTitle", { name: user?.username ?? "" })}
-              </h1>
-              <p className="mt-3 leading-relaxed text-ink-muted">{t("shell.welcomeBody")}</p>
-            </div>
-          </div>
+          {guildId && channelId ? (
+            <ChatView guildId={guildId} channelId={channelId} />
+          ) : guildId ? (
+            <>
+              <ColumnHeader>{" "}</ColumnHeader>
+              <div className="p-6">
+                <EmptyState icon={<ChatsCircle />} title={t("chat.noChannelTitle")} body={t("chat.noChannelBody")} />
+              </div>
+            </>
+          ) : (
+            <>
+              <ColumnHeader>{t("shell.home")}</ColumnHeader>
+              <div className="flex-1 overflow-y-auto px-10 py-12">
+                <div className="max-w-[52ch] animate-rise">
+                  <LogoMark className="size-12 text-moss-300" />
+                  <h1 className="mt-6 font-display text-[32px] leading-tight font-bold tracking-tight break-words">
+                    {t("shell.welcomeTitle", { name: user?.username ?? "" })}
+                  </h1>
+                  <p className="mt-3 leading-relaxed text-ink-muted">{t("shell.welcomeBody")}</p>
+                </div>
+              </div>
+            </>
+          )}
         </main>
 
-        <aside aria-label={t("shell.members")} className="flex min-h-0 flex-col bg-surface-1">
-          <ColumnHeader>{t("shell.members")}</ColumnHeader>
-          <div className="flex-1 overflow-y-auto p-4">
-            <EmptyState icon={<UsersThree />} body={t("shell.membersEmpty")} />
-          </div>
+        <aside aria-label={t("shell.members")} className="flex min-h-0 min-w-0 flex-col bg-surface-1">
+          {guildId ? (
+            <MemberList guildId={guildId} />
+          ) : (
+            <>
+              <ColumnHeader>{t("shell.members")}</ColumnHeader>
+              <div className="flex-1 overflow-y-auto p-4">
+                <EmptyState icon={<UsersThree />} body={t("shell.membersEmpty")} />
+              </div>
+            </>
+          )}
         </aside>
       </div>
     </div>
   );
 }
 
-function ColumnHeader({ children }: { children: ReactNode }) {
-  return (
-    <header className="flex h-12 shrink-0 items-center border-b border-line px-4 font-display text-[15px] font-bold">
-      <span className="truncate">{children}</span>
-    </header>
-  );
-}
+/**
+ * Keeps the place valid as data arrives: a server we are no longer in -> home; a channel we cannot open (gone,
+ * hidden, voice) -> the first text channel. Returns the channel to show (null while unknown).
+ */
+function useValidPlace(): string | null {
+  const guildId = useNav((s) => s.guildId);
+  const channelId = useNav((s) => s.channelId);
+  const guilds = useGuilds().data;
+  const guild = useGuild(guildId);
 
-function EmptyState({ icon, title, body }: { icon: ReactNode; title?: string; body: string }) {
-  return (
-    <div className="flex flex-col items-start gap-2 rounded-panel bg-surface-2/60 p-4">
-      <span aria-hidden="true" className="grid size-9 place-items-center rounded-control bg-surface-3 text-moss-300">
-        {icon}
-      </span>
-      {title && <p className="mt-1 text-sm font-semibold">{title}</p>}
-      <p className="text-[13px] leading-relaxed text-ink-muted">{body}</p>
-    </div>
-  );
+  const lostGuild = guild.error instanceof ApiError && guild.error.status === 404;
+  useEffect(() => {
+    if (!guildId) return;
+    if ((guilds && !guilds.some((g) => g.id === guildId)) || lostGuild) {
+      if (lostGuild) revalidateGuild(null);
+      goHome();
+    }
+  }, [guildId, guilds, lostGuild]);
+
+  const text = guild.data?.channels.filter((c) => c.type === "TEXT");
+  const valid = !!text?.some((c) => c.id === channelId);
+  useEffect(() => {
+    const fallback = text?.[0]?.id ?? null;
+    if (text && !valid && useNav.getState().channelId !== fallback) useNav.setState({ channelId: fallback });
+  }, [text, valid]);
+
+  return valid ? channelId : null;
 }

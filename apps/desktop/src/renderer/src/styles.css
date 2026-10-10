@@ -38,6 +38,14 @@
   --color-warning: #ebc678;
   --color-warning-bg: #372c17;
 
+  /* avatar backgrounds (initials in ink), picked per id by avatarColor() in lib/text.ts */
+  --color-avatar-1: #5b4a8a;
+  --color-avatar-2: #2f6b5e;
+  --color-avatar-3: #8a4b3a;
+  --color-avatar-4: #3f5f8a;
+  --color-avatar-5: #7a5a1f;
+  --color-avatar-6: #4f6b2f;
+
   --radius-control: 12px; /* buttons, inputs, rail icons */
   --radius-panel: 18px; /* cards, banners */
 
@@ -78,8 +86,12 @@
     -webkit-font-smoothing: antialiased;
     user-select: none; /* app chrome; text fields and content opt back in */
   }
-  input {
+  input,
+  textarea {
     user-select: text;
+  }
+  dialog::backdrop {
+    background: rgb(8 5 3 / 0.7);
   }
   :focus-visible {
     outline: 2px solid var(--color-moss-300);

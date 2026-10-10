@@ -101,8 +101,18 @@ export function createAuthClient({ baseUrl, storage, onSignedOut, fetch: doFetch
     return read<T>(res, path);
   }
 
+  /**
+   * Access token for the socket handshake: the current one, or a fresh one from the SAME single-flight refresh
+   * when there is none or `rejected` (what the server just refused) is still the current one. null = signed out.
+   */
+  async function accessToken(rejected?: string): Promise<string | null> {
+    if (access !== null && access !== rejected) return access;
+    return (await refresh()) ? access : null;
+  }
+
   return {
     request,
+    accessToken,
     /** Startup: the stored session's user, or null when there is none (or it was rejected). Throws when offline. */
     restore: refresh,
     login: async (body: { email: string; password: string }) =>

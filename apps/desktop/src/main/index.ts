@@ -87,8 +87,9 @@ app.on("web-contents-created", (_e, contents) => {
 });
 
 app.whenReady().then(() => {
-  // ponytail: every permission (camera, mic, notifications...) is refused; voice (9d) and notifications (9f) open theirs
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+  // ponytail: every permission (camera, mic, notifications...) is refused; voice (9d) and notifications (9f) open theirs.
+  // Only writing plain text to the clipboard (copy invite code / message) is allowed; reading it stays refused.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === "clipboard-sanitized-write"));
   if (devServerUrl) {
     session.defaultSession.webRequest.onHeadersReceived({ urls: [`${devServerUrl}/*`] }, (details, callback) =>
       callback({ responseHeaders: { ...details.responseHeaders, "Content-Security-Policy": [csp] } }),

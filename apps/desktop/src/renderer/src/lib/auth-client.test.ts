@@ -136,6 +136,28 @@ describe("single-flight refresh", () => {
   });
 });
 
+describe("accessToken (socket handshakes)", () => {
+  it("returns the current token; with the refused one it refreshes through the SAME single flight as REST 401s", async () => {
+    const s = setup();
+    await signedInWithExpiredToken(s);
+    expect(await s.client.accessToken()).toBe("a1");
+    const [socketToken] = await Promise.all([s.client.accessToken("a1"), s.client.request("GET", "/x"), s.client.request("GET", "/y")]);
+    expect(socketToken).toBe("a2");
+    expect(s.state.refreshCalls).toBe(1);
+    expect(s.state.theft).toBe(false);
+    // a refusal of a token already replaced does not refresh again
+    expect(await s.client.accessToken("a1")).toBe("a2");
+    expect(s.state.refreshCalls).toBe(1);
+  });
+
+  it("null when the refresh is rejected (session over)", async () => {
+    const s = setup({ refreshStatus: 401 });
+    await signedInWithExpiredToken(s);
+    expect(await s.client.accessToken("a1")).toBeNull();
+    expect(s.onSignedOut).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("auth endpoints", () => {
   it("a 401 from /auth/login is wrong credentials, not an expired session", async () => {
     const s = setup();
@@ -169,6 +191,12 @@ describe("errorMessage", () => {
     [new ApiError(409, "/auth/register"), "Email hoặc tên người dùng đã có người dùng."],
     [new ApiError(429, "/auth/login"), "Bạn thao tác hơi nhanh, vui lòng thử lại sau ít phút."],
     [new ApiError(503, "/x"), "Máy chủ đang gặp sự cố, vui lòng thử lại sau."],
+    [new ApiError(404, "/invites/abc/join"), "Mã mời không tồn tại hoặc đã hết hạn."],
+    [new ApiError(404, "/messages/m1"), "Không tìm thấy. Có thể nó đã bị xoá hoặc bạn không còn quyền truy cập."],
+    [new ApiError(403, "/channels/c1/messages"), "Bạn không có quyền làm việc này."],
+    [new ApiError(409, "/guilds/g1/members/me"), "Bạn là chủ máy chủ nên chưa thể rời đi. Hãy chuyển quyền chủ cho thành viên khác hoặc xoá máy chủ."],
+    [new ApiError(409, "/guilds/g1/channels"), "Máy chủ đã có kênh tên này. Chọn tên khác nhé."],
+    [new ApiError(400, "/guilds"), "Thông tin chưa hợp lệ, vui lòng kiểm tra lại."],
     [new Error("boom"), "Đã có lỗi xảy ra, vui lòng thử lại."],
   ])("%s", (err, text) => {
     expect(errorMessage(err)).toBe(text);

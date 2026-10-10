@@ -33,6 +33,9 @@ const text: [string, string][] = [
   ["ink", "danger-bg"],
   ["warning", "warning-bg"],
   ["ink", "warning-bg"],
+  ...[1, 2, 3, 4, 5, 6].map((n): [string, string] => ["ink", `avatar-${n}`]), // avatar initials
+  ["on-moss", "danger"], // destructive confirm buttons (leave, delete)
+  ["danger", "surface-3"], // delete action in the message toolbar / menu
 ];
 // Non-text UI (WCAG 1.4.11, 3:1): input boundaries, the focus ring, the primary button's shape.
 const ui: [string, string][] = [
@@ -40,6 +43,8 @@ const ui: [string, string][] = [
   ["line-strong", "surface-3"],
   ...["surface-0", "surface-1", "surface-2", "surface-3"].map((bg): [string, string] => ["moss-300", bg]),
   ["moss-400", "surface-2"],
+  ["warning", "surface-1"], // owner crown in the member list
+  ["moss-300", "surface-4"], // focus ring on the active channel
 ];
 
 describe("design tokens meet WCAG AA", () => {

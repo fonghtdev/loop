@@ -2,7 +2,7 @@
 
 App chat kiểu Discord cho Windows và macOS: máy chủ (server) với kênh chat, tin nhắn riêng, bạn bè, vai trò và quyền, tệp đính kèm, gọi thoại và video.
 
-> **Trạng thái:** server đã xong (đăng nhập, server/kênh, chat realtime, vai trò, bạn bè và DM, tệp, voice/video). App desktop mới có **màn hình đăng nhập/đăng ký và khung giao diện trống**; chat, danh sách server, DM, voice trong app đang làm dần.
+> **Trạng thái:** server đã xong (đăng nhập, server/kênh, chat realtime, vai trò, bạn bè và DM, tệp, voice/video). App desktop đã có **đăng nhập, máy chủ, kênh và chat text trực tiếp**; tin nhắn riêng/bạn bè, tệp đính kèm, gọi thoại/video và màn hình quản lý vai trò đang làm tiếp.
 
 ## Cần có
 
@@ -46,7 +46,7 @@ pnpm --filter @loop/desktop dev
 
 Lần đầu chạy app desktop, Electron tải bộ chạy của nó (vài chục MB), nên hơi lâu.
 
-Trong app: bấm **Tạo tài khoản**, nhập email, tên người dùng (chữ thường không dấu, số, `_`, `.`) và mật khẩu từ 8 ký tự. Đăng nhập xong bạn thấy khung app trống. Chat và danh sách server chưa có giao diện, nhưng server đã đủ API, có thể thử bằng `curl` (xem `CLAUDE.md` để biết đường dẫn và sự kiện).
+Trong app: bấm **Tạo tài khoản**, nhập email, tên người dùng (chữ thường không dấu, số, `_`, `.`) và mật khẩu từ 8 ký tự. Sau khi đăng nhập, bấm nút **+** ở cột trái để tạo máy chủ (có sẵn kênh `#general`), hoặc nút la bàn để tham gia bằng mã mời. Bấm tên máy chủ ở đầu cột kênh để mời bạn bè (lấy mã), tạo kênh hoặc rời máy chủ. Gõ tin ở ô dưới cùng: Enter để gửi, Shift+Enter để xuống dòng; rê chuột (hoặc Tab) vào một tin để sao chép, sửa hoặc xoá. Muốn thử với hai người, mở thêm một tài khoản khác bằng `curl` hoặc nhờ bạn cùng chạy (xem `CLAUDE.md` để biết đường dẫn và sự kiện).
 
 ### Tắt mọi thứ
 

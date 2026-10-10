@@ -3,16 +3,8 @@ import { normalize, resolve, sep } from "node:path";
 /** The production renderer's origin (custom privileged scheme, see index.ts); the server's CORS allowlist names it. */
 export const APP_ORIGIN = "app://loop";
 
-/** Only web links leave the app, and only through the OS browser: no file:, javascript:, data:, custom schemes. */
-export function isSafeExternalUrl(url: unknown): url is string {
-  if (typeof url !== "string" || url.length > 2048) return false;
-  try {
-    const { protocol } = new URL(url);
-    return protocol === "https:" || protocol === "http:";
-  } catch {
-    return false;
-  }
-}
+// Shared with the renderer (linkify), which cannot import this node:path module.
+export { isSafeExternalUrl } from "../shared/url";
 
 // Node's URL gives non-special schemes an opaque "null" origin, so app:// URLs are compared by scheme + host.
 const isAppUrl = (u: URL) => u.protocol === "app:" && u.host === "loop";
