@@ -2,7 +2,9 @@ import { io as connectIo, type ManagerOptions, type SocketOptions } from "socket
 import { createStore } from "zustand/vanilla";
 import type { LiveEvent as ChannelEvent, Message } from "./chat";
 import { channelKey, dmKey, parseKey, type ConvKey } from "./conversation";
+import type { CallEvent } from "./calls";
 import type { Friend, PublicUser, SocialEvent } from "./social";
+import type { Seat } from "./voice-presence";
 
 /** connecting: first attempt; online; reconnecting: lost or never reached (banner); failed: auth gave up (banner + retry). */
 export type ConnectionStatus = "idle" | "connecting" | "online" | "reconnecting" | "failed";
@@ -37,6 +39,14 @@ type Deps = {
   onRefused: (key: ConvKey) => void;
   /** Friend, DM-list and presence events (they arrive whatever is open). */
   onSocial: (event: SocialEvent) => void;
+  /** A watched voice channel was subscribed (first time and after every reconnect): fetch who is in it. */
+  onWatched: (channelId: string) => void;
+  /** The server refused a watched channel (no VIEW any more, or it is gone). */
+  onWatchRefused: (channelId: string) => void;
+  /** `voice:update` of a watched channel. */
+  onVoiceUpdate: (channelId: string, seats: Seat[]) => void;
+  /** Incoming / declined / ended DM calls (they arrive in the user's own room). */
+  onCall: (event: CallEvent) => void;
   /** Connected again after a drop: permissions and lists may have changed meanwhile. */
   onReconnected: () => void;
   io?: (url: string, opts: Opts) => SocketLike;
@@ -49,14 +59,17 @@ type Deps = {
  *   the auth client has since replaced.
  * - A handshake refused as Unauthorized gets ONE retry with a refreshed token; refused again -> "failed" (no loop).
  *   Refusals stop socket.io's own reconnection, as does a server-side disconnect: those are retried here with backoff.
+ * - Voice presence: `voice:update` goes only to sockets subscribed to the voice channel's room, so the visible voice
+ *   channels of the selected server are a watched set, resubscribed after every reconnect like the open channel.
  * - The server never subscribes by itself: the open channel is (re)subscribed on every connect. A DM needs no
  *   subscribe (every socket is in the user's own room); friend, DM and presence events arrive in that room.
  */
-export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused, onSocial, onReconnected, io = connectIo, retryDelayMs = 1000 }: Deps) {
+export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused, onSocial, onWatched, onWatchRefused, onVoiceUpdate, onCall, onReconnected, io = connectIo, retryDelayMs = 1000 }: Deps) {
   const state = createStore<{ status: ConnectionStatus }>(() => ({ status: "idle" }));
   const setStatus = (status: ConnectionStatus) => state.setState({ status });
   let socket: SocketLike | null = null;
   let openKey: ConvKey | null = null;
+  let watched = new Set<string>();
   let sent: string | null = null; // the token of the latest handshake
   let authRetried = false;
   let everConnected = false;
@@ -72,6 +85,14 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
       else onRefused(key);
     });
   };
+
+  const watch = (s: SocketLike, channelId: string) =>
+    s.emit("channel:subscribe", { channelId }, (ack?: { ok: boolean }) => {
+      if (s !== socket || !watched.has(channelId)) return;
+      if (ack?.ok) return onWatched(channelId);
+      watched.delete(channelId); // refused: not retried until the set is set again
+      onWatchRefused(channelId);
+    });
 
   const retryLater = (s: SocketLike) => {
     clearTimeout(timer);
@@ -120,6 +141,7 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
       if (everConnected) onReconnected();
       everConnected = true;
       if (openKey) subscribe(s, openKey);
+      for (const id of watched) watch(s, id);
     });
     s.on("connect_error", (err: Error) => void onConnectError(s, err));
     s.on("disconnect", () => {
@@ -147,6 +169,13 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
     s.on("friend:accepted", (d: { user: PublicUser }) => d?.user && social({ type: "friend:accepted", user: d.user }));
     s.on("friend:removed", (d: { userId: string }) => d?.userId && social({ type: "friend:removed", userId: d.userId }));
     s.on("presence:update", (d: { userId: string; online: boolean }) => d?.userId && social({ type: "presence", userId: d.userId, online: d.online === true }));
+    s.on("voice:update", (d: { channelId: string; participants: Seat[] }) => {
+      if (s === socket && d && watched.has(d.channelId) && Array.isArray(d.participants)) onVoiceUpdate(d.channelId, d.participants);
+    });
+    const call = (event: CallEvent) => s === socket && onCall(event);
+    s.on("call:incoming", (d: { dmChannelId: string; from: PublicUser; video: boolean }) => d?.dmChannelId && d.from && call({ type: "incoming", dmChannelId: d.dmChannelId, from: d.from, video: d.video === true }));
+    s.on("call:declined", (d: { dmChannelId: string; by: { id: string } }) => d?.dmChannelId && call({ type: "declined", dmChannelId: d.dmChannelId, by: d.by }));
+    s.on("call:ended", (d: { dmChannelId: string }) => d?.dmChannelId && call({ type: "ended", dmChannelId: d.dmChannelId }));
     s.connect();
   }
 
@@ -155,6 +184,7 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
     const s = socket;
     socket = null; // every handler checks this first: nothing is processed after sign-out
     openKey = null;
+    watched = new Set();
     sent = null;
     authRetried = false;
     everConnected = false;
@@ -175,6 +205,15 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
       if (socket?.connected && previous?.kind === "channel") socket.emit("channel:unsubscribe", { channelId: previous.id });
       openKey = key;
       if (socket?.connected && key) subscribe(socket, key);
+    },
+    /** The voice channels whose `voice:update` we want (the selected server's); [] = none. Leaves the ones dropped. */
+    setWatched(channelIds: string[]) {
+      const next = new Set(channelIds);
+      const s = socket?.connected ? socket : null;
+      for (const id of watched) if (s && !next.has(id) && openKey !== channelKey(id)) s.emit("channel:unsubscribe", { channelId: id });
+      const added = [...next].filter((id) => !watched.has(id));
+      watched = next;
+      if (s) for (const id of added) watch(s, id);
     },
     /** "Try again" after `failed`. */
     retry() {

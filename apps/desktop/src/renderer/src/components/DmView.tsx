@@ -1,11 +1,12 @@
-import { ChatsCircle } from "@phosphor-icons/react";
+import { ChatsCircle, Phone, VideoCamera } from "@phosphor-icons/react";
 import { useMemo } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
-import { chat } from "../lib/app";
+import { calls, chat, voice } from "../lib/app";
 import { dmKey } from "../lib/conversation";
 import { useBlocks, useDms, useFriends, useIsOnline } from "../lib/queries";
 import { dmComposerState, type DmComposerState } from "../lib/social";
+import { isActive } from "../lib/voice-hooks";
 import { PresenceAvatar } from "./Avatar";
 import { Conversation } from "./ChatView";
 import { ColumnHeader, Skeleton } from "./States";
@@ -22,6 +23,7 @@ export function DmView({ dmId }: { dmId: string }) {
   const blocks = useBlocks();
   const isOnline = useIsOnline();
   const forbiddenAt = useStore(chat.store, (s) => s.convs[key]?.forbiddenAt ?? null);
+  const inCall = useStore(voice.store, (s) => s.target?.kind === "dm" && s.target.id === dmId && isActive(s.status));
   const blocked = useMemo(() => new Set(blocks.data?.map((u) => u.id)), [blocks.data]);
 
   if (!dm)
@@ -47,6 +49,21 @@ export function DmView({ dmId }: { dmId: string }) {
             {name}
           </h1>
           <span className="shrink-0 text-xs font-normal text-ink-muted">{online ? t("presence.online") : t("presence.offline")}</span>
+          <span className="ml-auto flex shrink-0 gap-1">
+            {[false, true].map((video) => (
+              <button
+                key={String(video)}
+                type="button"
+                aria-label={video ? t("call.video") : t("call.voice")}
+                title={state !== "ok" ? t("call.unavailable") : inCall ? t("call.inCall") : video ? t("call.video") : t("call.voice")}
+                disabled={state !== "ok" || inCall}
+                onClick={() => void calls.start(dmId, name, video)}
+                className="grid size-10 place-items-center rounded-control text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+              >
+                {video ? <VideoCamera aria-hidden="true" /> : <Phone aria-hidden="true" />}
+              </button>
+            ))}
+          </span>
         </>
       }
       logLabel={t("dm.log", { name })}

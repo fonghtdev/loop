@@ -81,6 +81,10 @@ function setup(first: string = "a1", refreshes: (string | null)[] = ["a2", "a3"]
     onSubscribed: vi.fn(),
     onRefused: vi.fn(),
     onSocial: vi.fn(),
+    onWatched: vi.fn(),
+    onWatchRefused: vi.fn(),
+    onVoiceUpdate: vi.fn(),
+    onCall: vi.fn(),
     onReconnected: vi.fn(),
   };
   const rt = createRealtime({
@@ -335,5 +339,104 @@ describe("DM, friend and presence events", () => {
     for (const [event, fns] of handlers) fns.forEach((fn) => fn(event === "dm:message:new" ? dmMsg("d1") : { from: { id: "u" }, user: { id: "u" }, userId: "u", id: "d", online: true }));
     expect(s.onSocial).not.toHaveBeenCalled();
     expect(s.onEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("watched voice channels", () => {
+  async function connected() {
+    const s = setup();
+    s.rt.start();
+    await flush();
+    s.socket().accept();
+    return s;
+  }
+  const subs = (sock: FakeSocket) => sock.subscribes().map((e) => (e.payload as { channelId: string }).channelId);
+  const ackAll = (sock: FakeSocket, ok = true) => sock.subscribes().forEach((e) => e.ack?.({ ok }));
+
+  it("subscribes to every watched channel, drops the ones removed, and fetches after each ack", async () => {
+    const s = await connected();
+    s.rt.setWatched(["v1", "v2"]);
+    expect(subs(s.socket())).toEqual(["v1", "v2"]);
+    ackAll(s.socket());
+    expect(s.onWatched.mock.calls.map((c) => c[0])).toEqual(["v1", "v2"]);
+    s.rt.setWatched(["v2", "v3"]);
+    expect(s.socket().emitted.filter((e) => e.event === "channel:unsubscribe").map((e) => e.payload)).toEqual([{ channelId: "v1" }]);
+    expect(subs(s.socket())).toEqual(["v1", "v2", "v3"]); // only v3 is new
+  });
+
+  it("resubscribes the whole set after a reconnect and fetches again", async () => {
+    const s = await connected();
+    s.rt.setWatched(["v1", "v2"]);
+    ackAll(s.socket());
+    s.socket().drop();
+    const before = s.socket().subscribes().length;
+    s.socket().accept();
+    expect(subs(s.socket()).slice(before)).toEqual(["v1", "v2"]);
+    s.socket().subscribes().slice(before).forEach((e) => e.ack?.({ ok: true }));
+    expect(s.onWatched).toHaveBeenCalledTimes(4);
+  });
+
+  it("set before the socket is up: subscribed on connect", async () => {
+    const s = setup();
+    s.rt.setWatched(["v1"]);
+    s.rt.start();
+    await flush();
+    expect(s.socket().subscribes()).toHaveLength(0);
+    s.socket().accept();
+    expect(subs(s.socket())).toEqual(["v1"]);
+  });
+
+  it("a refused channel is reported and dropped from the set (not resubscribed on reconnect)", async () => {
+    const s = await connected();
+    s.rt.setWatched(["v1", "v2"]);
+    s.socket().subscribes()[0].ack?.({ ok: false });
+    s.socket().subscribes()[1].ack?.({ ok: true });
+    expect(s.onWatchRefused).toHaveBeenCalledWith("v1");
+    const before = s.socket().subscribes().length;
+    s.socket().drop();
+    s.socket().accept();
+    expect(subs(s.socket()).slice(before)).toEqual(["v2"]);
+  });
+
+  it("voice:update is delivered only for watched channels", async () => {
+    const s = await connected();
+    s.rt.setWatched(["v1"]);
+    s.socket().fire("voice:update", { channelId: "v1", participants: [{ userId: "u", username: "u" }] });
+    s.socket().fire("voice:update", { channelId: "other", participants: [] });
+    s.socket().fire("voice:update", { channelId: "v1", participants: "nope" });
+    expect(s.onVoiceUpdate.mock.calls).toEqual([["v1", [{ userId: "u", username: "u" }]]]);
+  });
+
+  it("stop (sign-out) clears the set: nothing delivered, nothing resubscribed", async () => {
+    const s = await connected();
+    s.rt.setWatched(["v1"]);
+    const sock = s.socket();
+    const handlers = [...(sock.handlers.get("voice:update") ?? [])];
+    s.rt.stop();
+    handlers.forEach((fn) => fn({ channelId: "v1", participants: [] }));
+    expect(s.onVoiceUpdate).not.toHaveBeenCalled();
+    s.rt.start();
+    await flush();
+    s.socket().accept();
+    expect(s.socket().subscribes()).toHaveLength(0);
+  });
+
+  it("call events are forwarded, malformed ones dropped, none after stop", async () => {
+    const s = await connected();
+    const sock = s.socket();
+    sock.fire("call:incoming", { dmChannelId: "d1", from: { id: "u", username: "u" }, video: true });
+    sock.fire("call:declined", { dmChannelId: "d1", by: { id: "u" } });
+    sock.fire("call:ended", { dmChannelId: "d1" });
+    sock.fire("call:ended", {});
+    sock.fire("call:incoming", { dmChannelId: "d1" });
+    expect(s.onCall.mock.calls.map((c) => c[0])).toEqual([
+      { type: "incoming", dmChannelId: "d1", from: { id: "u", username: "u" }, video: true },
+      { type: "declined", dmChannelId: "d1", by: { id: "u" } },
+      { type: "ended", dmChannelId: "d1" },
+    ]);
+    const handlers = [...(sock.handlers.get("call:ended") ?? [])];
+    s.rt.stop();
+    handlers.forEach((fn) => fn({ dmChannelId: "d1" }));
+    expect(s.onCall).toHaveBeenCalledTimes(3);
   });
 });

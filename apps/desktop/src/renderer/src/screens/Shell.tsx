@@ -8,12 +8,15 @@ import { ChatView } from "../components/ChatView";
 import { DmColumn } from "../components/DmColumn";
 import { DmView } from "../components/DmView";
 import { ImageViewer } from "../components/ImageViewer";
+import { IncomingCall } from "../components/IncomingCall";
 import { MemberList } from "../components/MemberList";
 import { ServerRail } from "../components/ServerRail";
+import { VoiceBar } from "../components/VoiceBar";
+import { VoiceRoom } from "../components/VoiceRoom";
 import { ColumnHeader, EmptyState } from "../components/States";
 import { t } from "../i18n/t";
 import { ApiError } from "../lib/auth-client";
-import { realtime, revalidateGuild, session } from "../lib/app";
+import { realtime, revalidateGuild, session, voice, voicePresence } from "../lib/app";
 import { goHome, readLastPlace, useNav } from "../lib/nav";
 import { blockFileNavigation } from "../lib/drop";
 import { useDms, useGuild, useGuilds } from "../lib/queries";
@@ -40,6 +43,19 @@ export function Shell() {
   const guildId = useNav((s) => s.guildId);
   const dmId = useNav((s) => s.dmId);
   const channelId = useValidPlace();
+  const channels = useGuild(guildId).data?.channels;
+  const voiceChannelIds = channels?.filter((c) => c.type === "VOICE").map((c) => c.id);
+  const notice = useStore(voice.store, (s) => s.notice);
+  const isVoiceChannel = !!channels?.some((c) => c.id === channelId && c.type === "VOICE");
+
+  // The voice channels of the open server are watched for who is in them (see realtime.setWatched); the key keeps
+  // the effect from re-running on every refetch of the same list.
+  const watchKey = voiceChannelIds?.join(",") ?? "";
+  useEffect(() => {
+    realtime.setWatched(watchKey ? watchKey.split(",") : []);
+    return () => realtime.setWatched([]);
+  }, [watchKey]);
+  useEffect(() => voicePresence.clear(), [guildId]);
 
   useEffect(() => {
     if (user) useNav.setState(readLastPlace(user.id));
@@ -71,6 +87,16 @@ export function Shell() {
             </span>
           </Banner>
         )}
+        {notice && (
+          <Banner tone="warning" className="rounded-none! items-center">
+            <span className="flex flex-wrap items-center gap-x-3">
+              {notice}
+              <Button variant="link" onClick={() => voice.dismissNotice()} className="h-8 px-0">
+                {t("voice.notice.dismiss")}
+              </Button>
+            </span>
+          </Banner>
+        )}
         {!persistent && (
           <Banner tone="warning" className="rounded-none!">
             {t("notice.sessionOnly")}
@@ -86,6 +112,7 @@ export function Shell() {
           ) : (
             <DmColumn />
           )}
+          <VoiceBar />
           <section aria-label={t("shell.account")} className="flex h-16 shrink-0 items-center gap-3 bg-surface-0 px-3">
             <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-moss-900 font-display font-bold text-moss-200">
               {user?.username.charAt(0).toUpperCase()}
@@ -108,7 +135,7 @@ export function Shell() {
 
         <main className="flex min-h-0 min-w-0 flex-col bg-surface-2">
           {guildId && channelId ? (
-            <ChatView guildId={guildId} channelId={channelId} />
+            isVoiceChannel ? <VoiceRoom guildId={guildId} channelId={channelId} /> : <ChatView guildId={guildId} channelId={channelId} />
           ) : guildId ? (
             <>
               <ColumnHeader>{" "}</ColumnHeader>
@@ -137,13 +164,14 @@ export function Shell() {
         </aside>
       </div>
       <ImageViewer />
+      <IncomingCall />
     </div>
   );
 }
 
 /**
  * Keeps the place valid as data arrives: a server we are no longer in -> home; a channel we cannot open (gone,
- * hidden, voice) -> the first text channel. Returns the channel to show (null while unknown).
+ * hidden) -> the first text channel. Returns the channel to show (null while unknown).
  */
 function useValidPlace(): string | null {
   const guildId = useNav((s) => s.guildId);
@@ -167,12 +195,12 @@ function useValidPlace(): string | null {
     }
   }, [guildId, guilds, lostGuild]);
 
-  const text = guild.data?.channels.filter((c) => c.type === "TEXT");
-  const valid = !!text?.some((c) => c.id === channelId);
+  const channels = guild.data?.channels;
+  const valid = !!channels?.some((c) => c.id === channelId);
   useEffect(() => {
-    const fallback = text?.[0]?.id ?? null;
-    if (text && !valid && useNav.getState().channelId !== fallback) useNav.setState({ channelId: fallback });
-  }, [text, valid]);
+    const fallback = channels?.find((c) => c.type === "TEXT")?.id ?? null;
+    if (channels && !valid && useNav.getState().channelId !== fallback) useNav.setState({ channelId: fallback });
+  }, [channels, valid]);
 
   return valid ? channelId : null;
 }

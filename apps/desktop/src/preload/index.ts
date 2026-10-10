@@ -7,6 +7,7 @@ const api: LoopApi = {
     set: (token) => ipcRenderer.invoke("session:set", token),
     clear: () => ipcRenderer.invoke("session:clear"),
   },
+  media: { ensureAccess: (kind) => ipcRenderer.invoke("media:ensureAccess", kind) },
   openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
   version: () => ipcRenderer.invoke("app:version"),
   platform: process.platform,

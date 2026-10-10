@@ -1,18 +1,21 @@
 import { Permission } from "@loop/shared";
-import { CaretDown, Check, Copy, Hash, LinkSimple, Plus, SignOut as Leave, SpeakerHigh } from "@phosphor-icons/react";
+import { CaretDown, Check, Copy, Hash, LinkSimple, MicrophoneSlash, Plus, SignOut as Leave, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useStore } from "zustand";
 import { t } from "../i18n/t";
-import { queryClient, revalidateGuild, session } from "../lib/app";
+import { queryClient, revalidateGuild, session, voice } from "../lib/app";
 import { useCopy } from "../lib/clipboard";
 import { errorMessage } from "../lib/errors";
 import { arrowNav } from "../lib/focus";
 import { goHome, useNav } from "../lib/nav";
 import type { Channel, Guild } from "../lib/permissions";
 import { useGuild, usePermissions } from "../lib/queries";
+import { useVoiceParticipants } from "../lib/voice-hooks";
 import { channelNameError, normalizeChannelName } from "../lib/validation";
 import { Button } from "./Button";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
+import { Avatar } from "./Avatar";
 import { ColumnHeader, LoadError, Skeleton } from "./States";
 import { Spinner } from "./Spinner";
 import { TextField } from "./TextField";
@@ -39,6 +42,7 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
             {guild.data.channels.map((c) => (
               <li key={c.id}>
                 <ChannelItem channel={c} active={c.id === channelId} />
+                {c.type === "VOICE" && <VoiceMembers channel={c} />}
               </li>
             ))}
           </ul>
@@ -58,23 +62,62 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
 }
 
 function ChannelItem({ channel, active }: { channel: Channel; active: boolean }) {
-  const voice = channel.type === "VOICE";
+  const voiceChannel = channel.type === "VOICE";
+  const joined = useStore(voice.store, (s) => s.target?.kind === "channel" && s.target.id === channel.id && s.status !== "disconnected");
+  // a voice channel is opened AND joined by the click (a user gesture, which the OS prompts for mic need)
+  const open = () => {
+    useNav.setState({ channelId: channel.id });
+    if (voiceChannel) void voice.joinChannel(channel.id, channel.name);
+  };
   return (
     <button
       type="button"
       data-nav-item
-      disabled={voice}
       aria-current={active ? "page" : undefined}
-      aria-label={voice ? t("channels.voiceLabel", { name: channel.name }) : undefined}
-      onClick={() => useNav.setState({ channelId: channel.id })}
+      aria-label={voiceChannel ? t("channels.voiceLabel", { name: channel.name }) : undefined}
+      onClick={open}
       className={`flex h-10 w-full items-center gap-2 rounded-control px-2.5 text-left text-[15px] transition-colors duration-(--duration-fast) ${
-        active ? "bg-surface-4 font-semibold text-ink" : voice ? "cursor-not-allowed text-ink-faint" : "text-ink-muted hover:bg-surface-3 hover:text-ink"
+        active ? "bg-surface-4 font-semibold text-ink" : "text-ink-muted hover:bg-surface-3 hover:text-ink"
       }`}
     >
-      {voice ? <SpeakerHigh aria-hidden="true" className="shrink-0" /> : <Hash aria-hidden="true" className="shrink-0" />}
+      {voiceChannel ? <SpeakerHigh aria-hidden="true" className={`shrink-0 ${joined ? "text-moss-300" : ""}`} /> : <Hash aria-hidden="true" className="shrink-0" />}
       <span className="min-w-0 flex-1 truncate">{channel.name}</span>
-      {voice && <span className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-xs text-ink-faint">{t("channels.soon")}</span>}
     </button>
+  );
+}
+
+/** Who is in a voice channel, under its name: initials, name, a ring while speaking; the local user's mute state only. */
+function VoiceMembers({ channel }: { channel: Channel }) {
+  const people = useVoiceParticipants(channel.id);
+  const micEnabled = useStore(voice.store, (s) => s.micEnabled);
+  const deafened = useStore(voice.store, (s) => s.deafened);
+  if (people.length === 0) return null;
+  return (
+    <ul aria-label={t("channels.voiceMembers", { name: channel.name })} className="mt-0.5 mb-1 flex flex-col gap-0.5 pl-6">
+      {people.map((p) => (
+        <li key={p.userId} data-user={p.userId} data-speaking={p.speaking ? "true" : undefined} className="flex h-8 items-center gap-2 px-1.5 text-sm text-ink-muted">
+          <span className={`rounded-full ring-2 transition-shadow duration-(--duration-fast) ${p.speaking ? "ring-moss-300" : "ring-transparent"}`}>
+            <Avatar id={p.userId} name={p.username} className="size-6 rounded-full text-[10px]" />
+          </span>
+          <span title={p.username} className={`min-w-0 flex-1 truncate ${p.speaking ? "text-ink" : ""}`}>
+            {p.username}
+          </span>
+          {p.speaking && <span className="sr-only">{t("voice.speaking")}</span>}
+          {p.isLocal && !micEnabled && !deafened && (
+            <span title={t("voice.youMuted")} className="shrink-0 text-danger">
+              <MicrophoneSlash aria-hidden="true" size={16} />
+              <span className="sr-only">{t("voice.youMuted")}</span>
+            </span>
+          )}
+          {p.isLocal && deafened && (
+            <span title={t("voice.youDeafened")} className="shrink-0 text-danger">
+              <SpeakerSlash aria-hidden="true" size={16} />
+              <span className="sr-only">{t("voice.youDeafened")}</span>
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

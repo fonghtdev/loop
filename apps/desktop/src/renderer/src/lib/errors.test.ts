@@ -24,3 +24,20 @@ describe("friend and DM errors in Vietnamese", () => {
     expect(errorMessage(new ApiError(0, "/friends/requests"))).toMatch(/Không kết nối/);
   });
 });
+
+describe("voice and call errors", () => {
+  const e = (status: number, path: string) => errorMessage(new ApiError(status, path, "x"));
+  it("every token status has its own Vietnamese sentence", () => {
+    const path = "/channels/abc/voice/token";
+    const all = [403, 404, 400, 409].map((s) => e(s, path));
+    expect(new Set(all).size).toBe(4);
+    expect(e(403, path)).toBe("Bạn không có quyền vào kênh thoại này.");
+    expect(e(409, path)).toBe("Kênh thoại đã đầy, hãy thử lại sau.");
+    expect(e(500, path)).toBe("Máy chủ đang gặp sự cố, vui lòng thử lại sau.");
+    expect(e(0, path)).toBe("Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.");
+  });
+  it("starting a call: not friends vs gone", () => {
+    expect(e(403, "/dms/d1/call")).toBe("Không gọi được: hai bạn không còn là bạn bè.");
+    expect(e(404, "/dms/d1/call")).toBe("Không tìm thấy cuộc trò chuyện này.");
+  });
+});

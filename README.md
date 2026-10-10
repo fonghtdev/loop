@@ -2,7 +2,7 @@
 
 App chat kiểu Discord cho Windows và macOS: máy chủ (server) với kênh chat, tin nhắn riêng, bạn bè, vai trò và quyền, tệp đính kèm, gọi thoại và video.
 
-> **Trạng thái:** server đã xong (đăng nhập, server/kênh, chat realtime, vai trò, bạn bè và DM, tệp, voice/video). App desktop đã có **đăng nhập, máy chủ, kênh, chat text trực tiếp, bạn bè, tin nhắn riêng (DM), chặn, chấm online và tệp đính kèm**; gọi thoại/video, màn hình quản lý vai trò và thông báo hệ điều hành đang làm tiếp.
+> **Trạng thái:** server đã xong (đăng nhập, server/kênh, chat realtime, vai trò, bạn bè và DM, tệp, voice/video). App desktop đã có **đăng nhập, máy chủ, kênh, chat text trực tiếp, bạn bè, tin nhắn riêng (DM), chặn, chấm online, tệp đính kèm, kênh thoại (micro + camera) và gọi 1-1 thoại/video trong DM**; màn hình quản lý vai trò và thông báo hệ điều hành đang làm tiếp (chưa có chia sẻ màn hình, chọn thiết bị âm thanh, chuông cuộc gọi).
 
 ## Cần có
 
@@ -46,7 +46,7 @@ pnpm --filter @loop/desktop dev
 
 Lần đầu chạy app desktop, Electron tải bộ chạy của nó (vài chục MB), nên hơi lâu.
 
-Trong app: bấm **Tạo tài khoản**, nhập email, tên người dùng (chữ thường không dấu, số, `_`, `.`) và mật khẩu từ 8 ký tự. Sau khi đăng nhập, bấm nút **+** ở cột trái để tạo máy chủ (có sẵn kênh `#general`), hoặc nút la bàn để tham gia bằng mã mời. Bấm tên máy chủ ở đầu cột kênh để mời bạn bè (lấy mã), tạo kênh hoặc rời máy chủ. Gõ tin ở ô dưới cùng: Enter để gửi, Shift+Enter để xuống dòng; rê chuột (hoặc Tab) vào một tin để sao chép, sửa hoặc xoá. Bấm nút Loop trên cùng cột trái để vào **Trang chủ**: tab **Bạn bè** (thêm bạn bằng tên người dùng, lời mời đang chờ, danh sách đã chặn) và danh sách tin nhắn riêng; bấm **Nhắn tin** ở một người bạn để mở DM. Bấm kẹp giấy, kéo thả hoặc dán (Ctrl/Cmd+V) để đính kèm tệp (tối đa 25 MB mỗi tệp, 10 tệp mỗi tin; ảnh PNG/JPEG/GIF/WebP, PDF, TXT, ZIP, MP4, MP3); bấm vào ảnh để xem lớn. Muốn thử với hai người, mở thêm một tài khoản khác bằng `curl` hoặc nhờ bạn cùng chạy (xem `CLAUDE.md` để biết đường dẫn và sự kiện).
+Trong app: bấm **Tạo tài khoản**, nhập email, tên người dùng (chữ thường không dấu, số, `_`, `.`) và mật khẩu từ 8 ký tự. Sau khi đăng nhập, bấm nút **+** ở cột trái để tạo máy chủ (có sẵn kênh `#general`), hoặc nút la bàn để tham gia bằng mã mời. Bấm tên máy chủ ở đầu cột kênh để mời bạn bè (lấy mã), tạo kênh hoặc rời máy chủ. Gõ tin ở ô dưới cùng: Enter để gửi, Shift+Enter để xuống dòng; rê chuột (hoặc Tab) vào một tin để sao chép, sửa hoặc xoá. Bấm nút Loop trên cùng cột trái để vào **Trang chủ**: tab **Bạn bè** (thêm bạn bằng tên người dùng, lời mời đang chờ, danh sách đã chặn) và danh sách tin nhắn riêng; bấm **Nhắn tin** ở một người bạn để mở DM. Bấm kẹp giấy, kéo thả hoặc dán (Ctrl/Cmd+V) để đính kèm tệp (tối đa 25 MB mỗi tệp, 10 tệp mỗi tin; ảnh PNG/JPEG/GIF/WebP, PDF, TXT, ZIP, MP4, MP3); bấm vào ảnh để xem lớn. Bấm một **kênh thoại** để vào ngay (micro bật, dùng thiết bị mặc định; thanh ở cuối cột kênh có nút tắt micro, tắt tiếng nghe, camera và rời); trong DM, nút điện thoại / camera ở đầu cuộc trò chuyện gọi người bạn (chỉ khi hai bạn còn là bạn bè), người nhận thấy hộp thoại Trả lời / Từ chối. Lần đầu dùng micro hoặc camera, macOS sẽ hỏi quyền (nếu lỡ từ chối: Cài đặt hệ thống, Quyền riêng tư). Muốn thử với hai người, mở thêm một tài khoản khác bằng `curl` hoặc nhờ bạn cùng chạy (xem `CLAUDE.md` để biết đường dẫn và sự kiện).
 
 ### Tắt mọi thứ
 

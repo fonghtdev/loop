@@ -1,14 +1,14 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, ipcMain, net, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from "electron";
-import { API_URL, STORAGE_ORIGIN, WS_URL } from "../shared/config";
-import { APP_ORIGIN, buildCsp, isSafeExternalUrl, isTrustedSender, isValidRefreshToken, resolveAppFile } from "./security";
+import { app, BrowserWindow, ipcMain, net, protocol, safeStorage, session, shell, systemPreferences, type IpcMainInvokeEvent } from "electron";
+import { API_URL, LIVEKIT_ORIGIN, STORAGE_ORIGIN, WS_URL } from "../shared/config";
+import { APP_ORIGIN, buildCsp, ensureMediaAccess, isMediaKind, isPermissionAllowed, isSafeExternalUrl, isTrustedSender, isValidRefreshToken, resolveAppFile } from "./security";
 import { createTokenStore } from "./token-store";
 
 // Set by electron-vite in dev only; production loads the built renderer from app://loop.
 const devServerUrl = process.env.ELECTRON_RENDERER_URL;
 const rendererDir = join(__dirname, "../renderer");
-const csp = buildCsp({ api: API_URL, ws: WS_URL, storage: STORAGE_ORIGIN }, devServerUrl);
+const csp = buildCsp({ api: API_URL, ws: WS_URL, storage: STORAGE_ORIGIN, livekit: LIVEKIT_ORIGIN }, devServerUrl);
 
 // Test/dev hook: a separate profile (the E2E smoke test relaunches against the same one).
 if (process.env.LOOP_USER_DATA_DIR) app.setPath("userData", process.env.LOOP_USER_DATA_DIR);
@@ -52,6 +52,10 @@ function registerIpc() {
     if (isSafeExternalUrl(url)) await shell.openExternal(url);
   });
   handle("app:version", () => app.getVersion());
+  handle("media:ensureAccess", (kind) => {
+    if (!isMediaKind(kind)) throw new Error("invalid media kind");
+    return ensureMediaAccess(kind, process.platform, systemPreferences);
+  });
 }
 
 function createWindow() {
@@ -70,6 +74,9 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
+      // Remote voice plays without a click on the page itself (a call is answered from a dialog, a channel joined from
+      // a list; the chosen alternative, room.startAudio() per join, would break when audio arrives after the gesture).
+      autoplayPolicy: "no-user-gesture-required",
     },
   });
   win.once("ready-to-show", () => win.show());
@@ -87,9 +94,12 @@ app.on("web-contents-created", (_e, contents) => {
 });
 
 app.whenReady().then(() => {
-  // ponytail: every permission (camera, mic, notifications...) is refused; voice (9d) and notifications (9f) open theirs.
-  // Only writing plain text to the clipboard (copy invite code / message) is allowed; reading it stays refused.
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === "clipboard-sanitized-write"));
+  // Microphone/camera (voice) and writing text to the clipboard, for our own pages only; everything else is refused
+  // (ponytail: notifications open in 9f). The request and the check handler share one decision function.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) =>
+    callback(isPermissionAllowed(permission, details.requestingUrl, devServerUrl)),
+  );
+  session.defaultSession.setPermissionCheckHandler((_wc, permission, requestingOrigin) => isPermissionAllowed(permission, requestingOrigin, devServerUrl));
   if (devServerUrl) {
     session.defaultSession.webRequest.onHeadersReceived({ urls: [`${devServerUrl}/*`] }, (details, callback) =>
       callback({ responseHeaders: { ...details.responseHeaders, "Content-Security-Policy": [csp] } }),

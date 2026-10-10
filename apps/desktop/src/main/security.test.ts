@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildCsp, isSafeExternalUrl, isTrustedSender, isValidRefreshToken, resolveAppFile } from "./security";
+import { buildCsp, ensureMediaAccess, isMediaKind, isPermissionAllowed, isSafeExternalUrl, isTrustedSender, isValidRefreshToken, resolveAppFile } from "./security";
+import { isAllowedLivekitUrl } from "../shared/url";
 
 describe("isSafeExternalUrl", () => {
   it.each(["https://loop.chat/help", "http://example.com"])("allows %s", (url) => {
@@ -42,13 +43,22 @@ describe("resolveAppFile", () => {
 });
 
 describe("buildCsp", () => {
-  const origins = { api: "http://localhost:3000", ws: "ws://localhost:3000", storage: "http://localhost:9000" };
+  const origins = { api: "http://localhost:3000", ws: "ws://localhost:3000", storage: "http://localhost:9000", livekit: "ws://127.0.0.1:7880" };
   it("production: no inline code, network limited to the API, its websocket and the storage origin", () => {
     const csp = buildCsp(origins);
     expect(csp).not.toContain("unsafe");
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("script-src 'self';");
-    expect(csp).toContain("connect-src 'self' http://localhost:3000 ws://localhost:3000 http://localhost:9000;");
+    expect(csp).toContain("connect-src 'self' http://localhost:3000 ws://localhost:3000 http://localhost:9000 ws://127.0.0.1:7880 http://127.0.0.1:7880;");
+  });
+  it("LiveKit origin (ws and its http twin) is the configured one in production and dev; unrelated origins are absent", () => {
+    for (const csp of [buildCsp(origins), buildCsp(origins, "http://localhost:5173")]) {
+      expect(csp).toContain("ws://127.0.0.1:7880 http://127.0.0.1:7880");
+      expect(csp).not.toContain("evil");
+    }
+    const cloud = buildCsp({ ...origins, livekit: "wss://x.livekit.cloud" });
+    expect(cloud).toContain("wss://x.livekit.cloud https://x.livekit.cloud");
+    expect(cloud).not.toContain("127.0.0.1");
   });
   it("images come from the storage origin (and blob: previews), in production and dev alike", () => {
     for (const csp of [buildCsp(origins), buildCsp(origins, "http://localhost:5173")])
@@ -56,7 +66,7 @@ describe("buildCsp", () => {
   });
   it("the storage origin is the configured one, not a constant", () => {
     const csp = buildCsp({ ...origins, storage: "https://files.example.com" });
-    expect(csp).toContain("connect-src 'self' http://localhost:3000 ws://localhost:3000 https://files.example.com;");
+    expect(csp).toContain("connect-src 'self' http://localhost:3000 ws://localhost:3000 https://files.example.com ws://127.0.0.1:7880 http://127.0.0.1:7880;");
     expect(csp).not.toContain("localhost:9000");
   });
   it("dev: allows the Vite dev server's inline preamble and HMR socket", () => {
@@ -78,5 +88,58 @@ describe("IPC payload checks", () => {
     expect(isTrustedSender("http://localhost:5173/")).toBe(false);
     expect(isTrustedSender("https://evil.example/")).toBe(false);
     expect(isTrustedSender("")).toBe(false);
+  });
+});
+
+describe("isPermissionAllowed", () => {
+  const dev = "http://localhost:5173";
+  it("allows media and clipboard writes for our own pages only", () => {
+    expect(isPermissionAllowed("media", "app://loop/index.html")).toBe(true);
+    expect(isPermissionAllowed("media", "app://loop")).toBe(true);
+    expect(isPermissionAllowed("media", "http://localhost:5173/", dev)).toBe(true);
+    expect(isPermissionAllowed("clipboard-sanitized-write", "app://loop/index.html")).toBe(true);
+  });
+  it.each(["notifications", "geolocation", "clipboard-read", "display-capture", "midi", "openExternal", "fullscreen", "unknown"])("refuses %s even from the app origin", (p) => {
+    expect(isPermissionAllowed(p, "app://loop/index.html", "http://localhost:5173")).toBe(false);
+  });
+  it.each(["https://evil.example/", "http://localhost:5173/", "app://other/", "file:///x.html", ""])("refuses media for the foreign origin %s", (url) => {
+    expect(isPermissionAllowed("media", url)).toBe(false);
+  });
+});
+
+describe("ensureMediaAccess", () => {
+  const sp = (status: string, grant = true) => {
+    const asked: string[] = [];
+    return { asked, getMediaAccessStatus: () => status, askForMediaAccess: async (k: string) => (asked.push(k), grant) };
+  };
+  it("is true without asking anything off macOS", async () => {
+    const s = sp("denied");
+    expect(await ensureMediaAccess("microphone", "win32", s)).toBe(true);
+    expect(s.asked).toEqual([]);
+  });
+  it("macOS: granted passes, not-determined asks once, denied/restricted fail without asking", async () => {
+    expect(await ensureMediaAccess("camera", "darwin", sp("granted"))).toBe(true);
+    const asking = sp("not-determined", true);
+    expect(await ensureMediaAccess("camera", "darwin", asking)).toBe(true);
+    expect(asking.asked).toEqual(["camera"]);
+    expect(await ensureMediaAccess("camera", "darwin", sp("not-determined", false))).toBe(false);
+    for (const status of ["denied", "restricted"]) {
+      const s = sp(status);
+      expect(await ensureMediaAccess("microphone", "darwin", s)).toBe(false);
+      expect(s.asked).toEqual([]);
+    }
+  });
+  it("only microphone and camera are valid kinds", () => {
+    expect(isMediaKind("microphone") && isMediaKind("camera")).toBe(true);
+    for (const bad of ["screen", "", 1, null, undefined]) expect(isMediaKind(bad)).toBe(false);
+  });
+});
+
+describe("isAllowedLivekitUrl", () => {
+  it("accepts only the configured origin", () => {
+    expect(isAllowedLivekitUrl("ws://127.0.0.1:7880", "ws://127.0.0.1:7880")).toBe(true);
+    expect(isAllowedLivekitUrl("ws://127.0.0.1:7880/rtc?x=1", "ws://127.0.0.1:7880")).toBe(true);
+    for (const bad of ["ws://localhost:7880", "wss://127.0.0.1:7880", "ws://127.0.0.1:7881", "ws://evil.example", "nope", "", null, 5])
+      expect(isAllowedLivekitUrl(bad, "ws://127.0.0.1:7880")).toBe(false);
   });
 });

@@ -52,6 +52,13 @@ const text: [string, string][] = [
   ["moss-300", "surface-4"], // "Thử lại" on a broken image, hovered
   ["ink-faint", "surface-2"], // image file name under a picture
   ["danger", "surface-3"], // failed upload line in the tray
+  ["danger", "surface-1"], // the local user's muted / deafened glyph in the channel column
+  ["warning", "surface-1"], // microphone / camera problem note in the voice bar
+  ["moss-300", "surface-1"], // voice bar status "Đã kết nối" (already above, kept explicit)
+  ["ink", "surface-0"], // participant name chip over a video tile
+  ["moss-200", "moss-900"], // pressed camera button, incoming-call icon
+  ["danger", "danger-bg"], // pressed mute / deafen button
+  ["ink-muted", "surface-1"], // voice participant names and the bar's second line
 ];
 // Non-text UI (WCAG 1.4.11, 3:1): input boundaries, the focus ring, the primary button's shape.
 const ui: [string, string][] = [
@@ -64,6 +71,11 @@ const ui: [string, string][] = [
   // online dot (moss-400) on whatever the avatar sits on: channel column, friends rows, header, hovered rows
   ...["surface-1", "surface-2", "surface-3", "surface-4"].map((bg): [string, string] => ["moss-400", bg]),
   ["moss-300", "surface-2"], // drop-zone dashed border
+  ["moss-300", "surface-3"], // speaking ring around a participant tile
+  ["moss-300", "surface-1"], // speaking ring around a participant avatar in the channel column
+  ["moss-300", "surface-4"], // the same ring on a hovered row
+  ["danger", "danger-bg"], // pressed mute / deafen button icon
+  ["moss-200", "moss-900"], // pressed camera icon
 ];
 
 // Worst-case backdrops behind glass, from the same tokens: each ambient glow at full strength (auth card); the dialog

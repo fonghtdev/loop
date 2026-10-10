@@ -425,8 +425,8 @@ test("layout stress: 40 channels, 60 members, 2000-char unbroken message, diacri
   await expect(log().getByText("Thử dấu:", { exact: false })).toBeVisible();
   await expect(page.getByRole("complementary", { name: "Thành viên" }).getByRole("listitem")).toHaveCount(62);
   await expect(channelList().getByRole("listitem")).toHaveCount(44);
-  const voice = channelList().getByRole("button", { name: /^Kênh thoại .* \(sắp có\)$/ }).first();
-  await expect(voice).toBeDisabled();
+  const voice = channelList().getByRole("button", { name: /^Kênh thoại / }).first();
+  await expect(voice).toBeEnabled(); // since 9d a voice channel can be joined
 
   const columns = () => [
     page.getByRole("navigation", { name: "Kênh" }),

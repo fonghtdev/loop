@@ -6,6 +6,10 @@ export type LoopApi = {
     set(token: string): Promise<void>;
     clear(): Promise<void>;
   };
+  media: {
+    /** Asks the OS for microphone/camera access (macOS prompts once; elsewhere true). false = denied in System Settings. */
+    ensureAccess(kind: "microphone" | "camera"): Promise<boolean>;
+  };
   openExternal(url: string): Promise<void>;
   version(): Promise<string>;
   platform: string;

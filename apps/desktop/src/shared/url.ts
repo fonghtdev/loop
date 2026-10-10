@@ -8,3 +8,12 @@ export function isSafeExternalUrl(url: unknown): url is string {
     return false;
   }
 }
+
+/** Whether a URL from the server (a LiveKit token response) points at the one origin the CSP lets us reach. */
+export function isAllowedLivekitUrl(url: unknown, allowedOrigin: string): boolean {
+  try {
+    return typeof url === "string" && new URL(url).origin === new URL(allowedOrigin).origin;
+  } catch {
+    return false;
+  }
+}

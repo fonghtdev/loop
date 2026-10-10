@@ -16,12 +16,14 @@
     "@loop/shared": "workspace:*",
     "@phosphor-icons/react": "2.1.10",
     "@tanstack/react-query": "5.104.1",
+    "livekit-client": "2.9.9",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "socket.io-client": "4.8.4",
     "zustand": "5.0.15"
   },
   "devDependencies": {
+    "@livekit/rtc-node": "1.1.0",
     "@playwright/test": "1.64.0",
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "26.6.4",

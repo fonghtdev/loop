@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ComponentProps } from "react";
 import { Spinner } from "./Spinner";
 
 const variants = {
@@ -7,7 +7,7 @@ const variants = {
   link: "text-moss-300 font-medium underline-offset-4 hover:underline",
 };
 
-type Props = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: keyof typeof variants; loading?: boolean };
+type Props = ComponentProps<"button"> & { variant?: keyof typeof variants; loading?: boolean };
 
 /** 44px tall (40px for ghost/link), never wraps; `loading` disables it and shows a spinner beside the label. */
 export function Button({ variant = "primary", loading = false, disabled, className = "", children, ...rest }: Props) {
