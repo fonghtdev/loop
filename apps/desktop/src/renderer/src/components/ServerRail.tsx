@@ -7,11 +7,13 @@ import { arrowNav } from "../lib/focus";
 import { goHome, useNav } from "../lib/nav";
 import type { Channel, Guild } from "../lib/permissions";
 import { useGuilds } from "../lib/queries";
+import { useDmTotal } from "../lib/unread-hooks";
 import { guildNameError, parseInviteCode } from "../lib/validation";
 import { Avatar } from "./Avatar";
 import { Button } from "./Button";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
 import { LogoMark } from "./Logo";
+import { Badge } from "./Badge";
 import { Spinner } from "./Spinner";
 import { TextField } from "./TextField";
 
@@ -26,11 +28,12 @@ export function ServerRail() {
   const guilds = useGuilds();
   const current = useNav((s) => s.guildId);
   const [dialog, setDialog] = useState<"create" | "join" | null>(null);
+  const homeUnread = useDmTotal();
 
   return (
     <nav aria-label={t("shell.servers")} onKeyDown={arrowNav} className="flex min-h-0 flex-col items-center bg-surface-0">
       <div className="flex w-full flex-1 flex-col items-center gap-2 overflow-y-auto py-3">
-        <RailItem label={t("shell.home")} active={current === null} onClick={goHome}>
+        <RailItem label={t("shell.home")} active={current === null} onClick={goHome} unread={homeUnread}>
           <span className="grid size-12 place-items-center rounded-control bg-surface-3 text-moss-300">
             <LogoMark className="size-7" />
           </span>
@@ -64,7 +67,7 @@ export function ServerRail() {
   );
 }
 
-function RailItem({ label, active, onClick, children }: { label: string; active: boolean; onClick: () => void; children: ReactNode }) {
+function RailItem({ label, active, onClick, unread = 0, children }: { label: string; active: boolean; onClick: () => void; unread?: number; children: ReactNode }) {
   return (
     <div className="relative shrink-0">
       <span
@@ -82,6 +85,7 @@ function RailItem({ label, active, onClick, children }: { label: string; active:
       >
         {children}
       </button>
+      {unread > 0 && <Badge count={unread} className="absolute -right-1 -bottom-1" />}
     </div>
   );
 }

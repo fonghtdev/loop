@@ -1,9 +1,13 @@
 import { UsersThree } from "@phosphor-icons/react";
+import type { Dm } from "../lib/social";
 import { t } from "../i18n/t";
 import { errorMessage } from "../lib/errors";
 import { arrowNav } from "../lib/focus";
 import { useNav } from "../lib/nav";
+import { dmKey } from "../lib/conversation";
 import { useDms, useIsOnline } from "../lib/queries";
+import { useUnreadMark } from "../lib/unread-hooks";
+import { Badge, UnreadDot } from "./Badge";
 import { PresenceAvatar } from "./Avatar";
 import { ColumnHeader, EmptyState, LoadError, Skeleton } from "./States";
 
@@ -31,18 +35,7 @@ export function DmColumn() {
           </li>
           {dms.data?.map((dm) => (
             <li key={dm.id}>
-              <button
-                type="button"
-                data-nav-item
-                aria-current={dm.id === dmId ? "page" : undefined}
-                onClick={() => useNav.setState({ dmId: dm.id })}
-                className={`flex h-12 w-full items-center gap-2.5 rounded-control px-2 text-left text-[15px] transition-colors duration-(--duration-fast) ${dm.id === dmId ? "bg-surface-4 font-semibold text-ink" : "text-ink-muted hover:bg-surface-3 hover:text-ink"}`}
-              >
-                <PresenceAvatar id={dm.user.id} name={dm.user.username} online={isOnline(dm.user)} className="size-8 rounded-full text-xs" />
-                <span title={dm.user.username} className="min-w-0 flex-1 truncate">
-                  {dm.user.username}
-                </span>
-              </button>
+              <DmRow dm={dm} active={dm.id === dmId} online={isOnline(dm.user)} />
             </li>
           ))}
         </ul>
@@ -63,5 +56,27 @@ export function DmColumn() {
         )}
       </div>
     </>
+  );
+}
+
+function DmRow({ dm, active, online }: { dm: Dm; active: boolean; online: boolean }) {
+  const { count, dot } = useUnreadMark(dmKey(dm.id));
+  const unread = count > 0 || dot;
+  return (
+    <button
+      type="button"
+      data-nav-item
+      data-unread={unread ? "true" : undefined}
+      aria-current={active ? "page" : undefined}
+      onClick={() => useNav.setState({ dmId: dm.id })}
+      className={`flex h-12 w-full items-center gap-2.5 rounded-control px-2 text-left text-[15px] transition-colors duration-(--duration-fast) ${active ? "bg-surface-4 font-semibold text-ink" : unread ? "font-bold text-ink hover:bg-surface-3" : "text-ink-muted hover:bg-surface-3 hover:text-ink"}`}
+    >
+      <PresenceAvatar id={dm.user.id} name={dm.user.username} online={online} className="size-8 rounded-full text-xs" />
+      <span title={dm.user.username} className="min-w-0 flex-1 truncate">
+        {dm.user.username}
+      </span>
+      {count > 0 && <Badge count={count} />}
+      {dot && <UnreadDot />}
+    </button>
   );
 }

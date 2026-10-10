@@ -3,7 +3,7 @@ import { ArrowDown, ArrowClockwise, Copy, Hash, PencilSimple, Prohibit, Trash, U
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
-import { chat, realtime, session } from "../lib/app";
+import { chat, realtime, session, unread } from "../lib/app";
 import { EMPTY_CONV, type ConvChat, type Message, type Pending } from "../lib/chat";
 import { useCopy } from "../lib/clipboard";
 import { useComposerFiles } from "../lib/composer-files";
@@ -155,13 +155,22 @@ function MessageList({ convKey, logLabel, start, state, canManage }: { convKey: 
       if (newest && prev.last !== "") setAnnounce(t("chat.announce", { name: newest.author.username, content: newest.content.slice(0, 200) || t("chat.announceFiles") }));
     }
     snap.current = { first, last, pending: pending.length, height: el.scrollHeight, top: el.scrollTop };
-  }, [messages, pending.length, myId]);
+    unread.setPinned(pinned.current);
+    unread.observe(convKey, messages[messages.length - 1]);
+  }, [messages, pending.length, myId, convKey]);
+
+  // This list is the conversation on screen: it is what "read" means (see lib/unread.ts).
+  useEffect(() => {
+    unread.open(convKey);
+    return () => unread.open(null);
+  }, [convKey]);
 
   const onScroll = () => {
     const el = scroller.current;
     if (!el) return;
     pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
     if (pinned.current) setUnseen(0);
+    unread.setPinned(pinned.current);
     snap.current = { ...snap.current, height: el.scrollHeight, top: el.scrollTop };
     if (el.scrollTop < LOAD_OLDER_PX) void chat.loadOlder(convKey);
   };
@@ -177,6 +186,7 @@ function MessageList({ convKey, logLabel, start, state, canManage }: { convKey: 
     if (!el) return;
     el.scrollTop = el.scrollHeight;
     pinned.current = true;
+    unread.setPinned(true);
     setUnseen(0);
   };
 

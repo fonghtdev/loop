@@ -6,6 +6,7 @@ import { createVoice, type LocalParticipantLike, type ParticipantLike, type Room
 export class FakeRoom implements RoomLike {
   handlers = new Map<string, ((...a: never[]) => void)[]>();
   disconnected = 0;
+  switched: [string, string][] = [];
   connectError: Error | null = null;
   mic: boolean[] = [];
   cam: boolean[] = [];
@@ -36,6 +37,9 @@ export class FakeRoom implements RoomLike {
   disconnect() {
     this.disconnected++;
   }
+  async switchActiveDevice(kind: string, id: string) {
+    this.switched.push([kind, id]);
+  }
   addRemote(identity: string, name = identity) {
     this.remoteParticipants.set(identity, { identity, name, getTrackPublication: () => undefined });
     this.fire("participantConnected");
@@ -53,6 +57,10 @@ export class FakeSink implements AudioSink {
   }
   setMuted(m: boolean) {
     this.muted = m;
+  }
+  output: string | null = null;
+  setOutput(id: string | null) {
+    this.output = id;
   }
   clear() {
     this.tracks.clear();

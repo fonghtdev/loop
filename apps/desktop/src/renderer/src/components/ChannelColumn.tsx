@@ -11,7 +11,10 @@ import { errorMessage } from "../lib/errors";
 import { arrowNav } from "../lib/focus";
 import { goHome, useNav } from "../lib/nav";
 import type { Channel, Guild } from "../lib/permissions";
+import { channelKey } from "../lib/conversation";
 import { useGuild, usePermissions } from "../lib/queries";
+import { useUnreadCount } from "../lib/unread-hooks";
+import { UnreadDot } from "./Badge";
 import { useVoiceParticipants } from "../lib/voice-hooks";
 import { channelNameError, normalizeChannelName } from "../lib/validation";
 import { Button } from "./Button";
@@ -109,6 +112,7 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
 
 function ChannelItem({ channel, active }: { channel: Channel; active: boolean }) {
   const voiceChannel = channel.type === "VOICE";
+  const unread = useUnreadCount(channelKey(channel.id)) > 0 && !active;
   const joined = useStore(voice.store, (s) => s.target?.kind === "channel" && s.target.id === channel.id && s.status !== "disconnected");
   // a voice channel is opened AND joined by the click (a user gesture, which the OS prompts for mic need)
   const open = () => {
@@ -119,15 +123,17 @@ function ChannelItem({ channel, active }: { channel: Channel; active: boolean })
     <button
       type="button"
       data-nav-item
+      data-unread={unread ? "true" : undefined}
       aria-current={active ? "page" : undefined}
       aria-label={voiceChannel ? t("channels.voiceLabel", { name: channel.name }) : undefined}
       onClick={open}
       className={`flex h-10 min-w-0 flex-1 items-center gap-2 rounded-control px-2.5 text-left text-[15px] transition-colors duration-(--duration-fast) ${
-        active ? "bg-surface-4 font-semibold text-ink" : "text-ink-muted hover:bg-surface-3 hover:text-ink"
+        active ? "bg-surface-4 font-semibold text-ink" : unread ? "font-bold text-ink hover:bg-surface-3" : "text-ink-muted hover:bg-surface-3 hover:text-ink"
       }`}
     >
       {voiceChannel ? <SpeakerHigh aria-hidden="true" className={`shrink-0 ${joined ? "text-moss-300" : ""}`} /> : <Hash aria-hidden="true" className="shrink-0" />}
       <span className="min-w-0 flex-1 truncate">{channel.name}</span>
+      {unread && <UnreadDot />}
     </button>
   );
 }

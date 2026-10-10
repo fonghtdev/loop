@@ -29,7 +29,19 @@ test("register, restore the session after a relaunch, logout, wrong password", a
 
   // renderer is locked down: no Node, CSP blocks inline scripts (eval cannot be probed: Playwright's evaluate bypasses CSP), small bridge only
   expect(await page.evaluate(() => typeof (globalThis as { require?: unknown }).require)).toBe("undefined");
-  expect(await page.evaluate(() => Object.keys(window.loop).sort())).toEqual(["media", "openExternal", "platform", "session", "version"]);
+  expect(await page.evaluate(() => Object.keys(window.loop).sort())).toEqual([
+    "closeNotification",
+    "media",
+    "notify",
+    "onFocusChange",
+    "onNavigate",
+    "openExternal",
+    "platform",
+    "session",
+    "setBadge",
+    "settings",
+    "version",
+  ]);
   const inlineRan = await page.evaluate(() => {
     const s = document.createElement("script");
     s.textContent = "window.__inline = true";

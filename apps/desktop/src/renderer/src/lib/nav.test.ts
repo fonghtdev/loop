@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parsePlace, readLastPlace, writeLastPlace } from "./nav";
+import { openConversation, parsePlace, placeForKey, readLastPlace, writeLastPlace } from "./nav";
 
 const HOME = { guildId: null, channelId: null, dmId: null, settings: null };
 
@@ -50,5 +50,28 @@ describe("last place in localStorage (per user)", () => {
     });
     expect(readLastPlace("u1")).toEqual(HOME);
     expect(() => writeLastPlace("u1", HOME)).not.toThrow();
+  });
+});
+
+describe("the user settings place", () => {
+  it("is restored with or without a server (it is always valid for a signed-in user)", () => {
+    expect(parsePlace('{"guildId":null,"dmId":"d1","settings":"user"}')).toEqual({ guildId: null, channelId: null, dmId: "d1", settings: "user" });
+    expect(parsePlace('{"guildId":"g1","channelId":"c1","settings":"user"}')).toEqual({ guildId: "g1", channelId: "c1", dmId: null, settings: "user" });
+  });
+});
+
+describe("openConversation / placeForKey", () => {
+  const place = { guildId: null, channelId: null, dmId: null, settings: null };
+  it("the conversation on screen; a settings view covers it", () => {
+    expect(openConversation({ ...place, dmId: "d1" })).toBe("dm:d1");
+    expect(openConversation({ ...place, guildId: "g", channelId: "c" })).toBe("channel:c");
+    expect(openConversation({ ...place, dmId: "d1", settings: "user" })).toBeNull();
+    expect(openConversation(place)).toBeNull();
+  });
+  it("a notification click leads to a DM only while it is still in the list", () => {
+    expect(placeForKey("dm:d1", ["d1", "d2"])).toEqual({ ...place, dmId: "d1" });
+    expect(placeForKey("dm:gone", ["d1"])).toBeNull();
+    expect(placeForKey("dm:d1", undefined)).toBeNull();
+    expect(placeForKey("channel:c1", ["c1"])).toBeNull();
   });
 });

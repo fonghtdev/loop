@@ -4,6 +4,8 @@ export type AudioSink = {
   remove(track: AudioTrackLike): void;
   /** Deafen: silences every element, now and for tracks that arrive later (nothing is unsubscribed). */
   setMuted(muted: boolean): void;
+  /** The speaker (an output device id from enumerateDevices, null = system default): now and for tracks that arrive later. */
+  setOutput(deviceId: string | null): void;
   clear(): void;
 };
 export type AudioTrackLike = { attach(): HTMLMediaElement; detach(el: HTMLMediaElement): unknown };
@@ -12,6 +14,8 @@ export type AudioTrackLike = { attach(): HTMLMediaElement; detach(el: HTMLMediaE
 export function createAudioSink(): AudioSink {
   const elements = new Map<AudioTrackLike, HTMLMediaElement>();
   let muted = false;
+  let output: string | null = null; // survives clear(): it is the user's choice, not the session's
+  const route = (el: HTMLMediaElement) => void (el as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }).setSinkId?.(output ?? "").catch(() => undefined);
   const drop = (track: AudioTrackLike, el: HTMLMediaElement) => {
     track.detach(el);
     el.remove();
@@ -22,6 +26,7 @@ export function createAudioSink(): AudioSink {
       const el = track.attach();
       el.muted = muted;
       el.hidden = true;
+      route(el);
       document.body.appendChild(el);
       elements.set(track, el);
     },
@@ -34,6 +39,10 @@ export function createAudioSink(): AudioSink {
     setMuted(m) {
       muted = m;
       for (const el of elements.values()) el.muted = m;
+    },
+    setOutput(id) {
+      output = id;
+      for (const el of elements.values()) route(el);
     },
     clear() {
       for (const [track, el] of elements) drop(track, el);

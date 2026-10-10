@@ -421,7 +421,7 @@ test("layout stress: 40 channels, 60 members, 2000-char unbroken message, diacri
   await post(B, generalId, "x".repeat(2000));
   await post(B, generalId, "Thử dấu: Ạ Ặ Ậ Ẹ Ệ Ị Ọ Ộ Ợ Ụ Ự Ỵ ẳ ẵ ẩ ẫ ể ễ ỉ ĩ ỏ õ ổ ỗ ở ỡ ủ ũ ử ữ ỷ ỹ đường phố Hà Nội nghiêng ngả.");
   await rail().getByRole("button", { name: longName }).click();
-  await channelList().getByRole("button", { name: "general", exact: true }).click();
+  await channelList().getByRole("button", { name: /^general/ }).click(); // unread (B just posted): the name carries the badge text
   await expect(log().getByText("Thử dấu:", { exact: false })).toBeVisible();
   await expect(page.getByRole("complementary", { name: "Thành viên" }).getByRole("listitem")).toHaveCount(62);
   await expect(channelList().getByRole("listitem")).toHaveCount(44);

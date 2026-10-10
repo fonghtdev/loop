@@ -110,17 +110,21 @@ export async function uploadAs(
 
 // ---- the Electron window ----
 /** Launches the built app (or the Vite dev server when ELECTRON_RENDERER_URL is set) and signs `s` in. */
-export async function launchAs(s: Session): Promise<{ app: ElectronApplication; page: Page }> {
-  const app = await _electron.launch({
-    args: [join(__dirname, "../out/main/index.js")],
-    env: { ...process.env, LOOP_USER_DATA_DIR: mkdtempSync(join(tmpdir(), "loop-e2e-9c-")) },
-  });
+export const MAIN = join(__dirname, "../out/main/index.js");
+/** LOOP_E2E=1 turns on the main process's test hook (notifications are recorded instead of shown). */
+export const launchEnv = (userData: string) => ({ ...process.env, LOOP_USER_DATA_DIR: userData, LOOP_E2E: "1" });
+/** Calls a function of the main process's test hook (only exists when LOOP_E2E=1). */
+export const hook = <T = unknown>(app: ElectronApplication, name: string, ...args: unknown[]): Promise<T> =>
+  app.evaluate((_, [n, a]) => (globalThis as unknown as { __loopE2E: Record<string, (...x: unknown[]) => unknown> }).__loopE2E[n as string](...(a as unknown[])), [name, args]) as Promise<T>;
+
+export async function launchAs(s: Session, { userData = mkdtempSync(join(tmpdir(), "loop-e2e-9c-")), args = [] as string[] } = {}): Promise<{ app: ElectronApplication; page: Page; userData: string }> {
+  const app = await _electron.launch({ args: [...args, MAIN], env: launchEnv(userData) });
   const page = await app.firstWindow();
   await page.getByLabel("Email").fill(`${s.user.username}@example.com`);
   await page.getByLabel("Mật khẩu", { exact: true }).fill(password);
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "Bạn bè" })).toBeVisible();
-  return { app, page };
+  return { app, page, userData };
 }
 
 export const resize = (app: ElectronApplication, w: number, h: number) =>

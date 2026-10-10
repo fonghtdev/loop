@@ -1,9 +1,15 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, ipcMain, net, protocol, safeStorage, session, shell, systemPreferences, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, ipcMain, net, Notification, protocol, safeStorage, session, shell, systemPreferences, type IpcMainInvokeEvent } from "electron";
 import { API_URL, LIVEKIT_ORIGIN, STORAGE_ORIGIN, WS_URL } from "../shared/config";
+import type { Settings } from "../shared/settings";
 import { APP_ORIGIN, buildCsp, ensureMediaAccess, isMediaKind, isPermissionAllowed, isSafeExternalUrl, isTrustedSender, isValidRefreshToken, resolveAppFile } from "./security";
+import { installE2eHook, newRecorder } from "./e2e-hook";
+import { createNotifier } from "./notifications";
+import { loginItemSettings, normalizeBadge, revealWindow, shouldHideOnClose, startsHidden, windowIsFocused } from "./policy";
+import { createSettingsStore } from "./settings";
 import { createTokenStore } from "./token-store";
+import { createTray, type TrayHandle } from "./tray";
 
 // Set by electron-vite in dev only; production loads the built renderer from app://loop.
 const devServerUrl = process.env.ELECTRON_RENDERER_URL;
@@ -12,6 +18,19 @@ const csp = buildCsp({ api: API_URL, ws: WS_URL, storage: STORAGE_ORIGIN, liveki
 
 // Test/dev hook: a separate profile (the E2E smoke test relaunches against the same one).
 if (process.env.LOOP_USER_DATA_DIR) app.setPath("userData", process.env.LOOP_USER_DATA_DIR);
+
+// Windows needs an app id for notifications to show (and group) under the app's name. ponytail: step 10's installer must use the same id.
+app.setAppUserModelId("app.loop.desktop");
+
+// Test hook (see e2e-hook.ts): off unless LOOP_E2E=1.
+const e2e = process.env.LOOP_E2E === "1";
+const recorder = e2e ? newRecorder() : undefined;
+
+let win: BrowserWindow | null = null;
+let tray: TrayHandle | null = null;
+let quitting = false; // a real quit is under way: closing windows must not be intercepted
+let focusOverride: boolean | null = null; // e2e only
+let settings: ReturnType<typeof createSettingsStore>;
 
 // A standard + secure scheme gives the renderer a real origin (app://loop) for CORS, unlike file://.
 protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
@@ -36,6 +55,17 @@ function registerIpc() {
     encryptString: (s) => safeStorage.encryptString(s),
     decryptString: (b) => safeStorage.decryptString(b),
   });
+  settings = createSettingsStore(join(app.getPath("userData"), "settings.json"));
+  const notifier = createNotifier({
+    Notification,
+    settings: () => settings.get(),
+    onClick: (key) => {
+      showWindow();
+      win?.webContents.send("notification:navigate", key);
+    },
+    record: recorder,
+  });
+  if (e2e) hookE2e();
   const handle = (channel: string, fn: (...args: unknown[]) => unknown) =>
     ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...args: unknown[]) => {
       if (!isTrustedSender(event.senderFrame?.url ?? "", devServerUrl)) throw new Error("untrusted sender");
@@ -52,14 +82,32 @@ function registerIpc() {
     if (isSafeExternalUrl(url)) await shell.openExternal(url);
   });
   handle("app:version", () => app.getVersion());
+  handle("settings:get", () => settings.get());
+  handle("settings:set", (patch) => {
+    const next = settings.set(patch); // throws on an invalid patch
+    applySettings(next);
+    return next;
+  });
+  handle("notify:show", (payload) => notifier.show(payload));
+  handle("notify:close", (key) => notifier.close(key));
+  handle("badge:set", (count) => {
+    const n = normalizeBadge(count);
+    if (n === null) throw new Error("invalid badge count");
+    app.setBadgeCount(n); // macOS dock / Linux launcher; Windows has no equivalent here (ponytail: taskbar overlay icon)
+  });
   handle("media:ensureAccess", (kind) => {
     if (!isMediaKind(kind)) throw new Error("invalid media kind");
     return ensureMediaAccess(kind, process.platform, systemPreferences);
   });
 }
 
-function createWindow() {
-  const win = new BrowserWindow({
+const showWindow = () => (win && !win.isDestroyed() ? revealWindow(win) : createWindow(false));
+const focusedNow = () => !!win && !win.isDestroyed() && windowIsFocused(win, focusOverride);
+// The renderer learns whether it is being looked at (unread marks, notifications) from here, not from the DOM.
+const pushFocus = () => win && !win.isDestroyed() && win.webContents.send("window:focus", focusedNow());
+
+function createWindow(hidden: boolean) {
+  win = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 960,
@@ -79,8 +127,68 @@ function createWindow() {
       autoplayPolicy: "no-user-gesture-required",
     },
   });
-  win.once("ready-to-show", () => win.show());
-  win.loadURL(devServerUrl ?? `${APP_ORIGIN}/index.html`);
+  const w = win;
+  w.once("ready-to-show", () => !hidden && w.show());
+  w.on("focus", pushFocus);
+  w.on("blur", pushFocus);
+  w.on("show", pushFocus);
+  w.on("hide", pushFocus);
+  w.on("minimize", pushFocus);
+  w.on("restore", pushFocus);
+  w.webContents.on("did-finish-load", pushFocus);
+  // Closing hides the window when the user chose that (the app lives on in the tray / dock); a real quit goes through.
+  w.on("close", (event) => {
+    if (!shouldHideOnClose({ closeToTray: settings.get().closeToTray, quitting })) return;
+    event.preventDefault();
+    w.hide();
+  });
+  w.on("session-end", () => (quitting = true)); // logging out / shutting down must not be held up by a hidden window
+  w.on("closed", () => {
+    if (win === w) win = null;
+  });
+  w.loadURL(devServerUrl ?? `${APP_ORIGIN}/index.html`);
+}
+
+/** Applies what the settings say outside the renderer: the login item (installed app only) and the tray menu. */
+function applySettings(s: Settings) {
+  const item = loginItemSettings({ isPackaged: app.isPackaged, startAtLogin: s.startAtLogin });
+  if (item) app.setLoginItemSettings(item);
+  tray?.refresh();
+}
+
+function toggleNotifications() {
+  settings.set({ notifications: !settings.get().notifications });
+  tray?.refresh();
+}
+
+function startTray() {
+  tray = createTray({
+    notifications: () => settings.get().notifications,
+    window: () => ({ visible: !!win && win.isVisible(), focused: !!win && win.isFocused() }),
+    onToggle: (action) => (action === "hide" ? win?.hide() : showWindow()),
+    onItem: (id) => {
+      if (id === "open") showWindow();
+      else if (id === "quit") app.quit();
+      else toggleNotifications();
+    },
+  });
+}
+
+function hookE2e() {
+  installE2eHook({
+    notifications: () => recorder!.log,
+    clickNotification: (key: string) => recorder!.click.get(key)?.(),
+    setFocused: (value: boolean | null) => {
+      focusOverride = value;
+      pushFocus();
+    },
+    badge: () => app.getBadgeCount(),
+    tray: () => ({ exists: !!tray?.exists() }),
+    trayClick: () => tray?.click(),
+    trayItem: (id: "open" | "notifications" | "quit") => tray && (id === "open" ? showWindow() : id === "quit" ? app.quit() : toggleNotifications()),
+    window: () => ({ exists: !!win && !win.isDestroyed(), visible: !!win && win.isVisible() }),
+    settings: () => settings.get(),
+  });
 }
 
 // Every web contents (including any a bug might create): no navigation away, no new windows, no webviews.
@@ -93,25 +201,34 @@ app.on("web-contents-created", (_e, contents) => {
   });
 });
 
-app.whenReady().then(() => {
-  // Microphone/camera (voice) and writing text to the clipboard, for our own pages only; everything else is refused
-  // (ponytail: notifications open in 9f). The request and the check handler share one decision function.
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) =>
-    callback(isPermissionAllowed(permission, details.requestingUrl, devServerUrl)),
-  );
-  session.defaultSession.setPermissionCheckHandler((_wc, permission, requestingOrigin) => isPermissionAllowed(permission, requestingOrigin, devServerUrl));
-  if (devServerUrl) {
-    session.defaultSession.webRequest.onHeadersReceived({ urls: [`${devServerUrl}/*`] }, (details, callback) =>
-      callback({ responseHeaders: { ...details.responseHeaders, "Content-Security-Policy": [csp] } }),
+// One running copy: a second launch just brings the first one forward. (Keyed by userData, so test profiles do not clash.)
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", showWindow);
+  app.on("before-quit", () => (quitting = true));
+  app.whenReady().then(() => {
+    // Microphone/camera (voice) and writing text to the clipboard, for our own pages only; everything else is refused.
+    // Notifications stay refused here on purpose: the renderer asks the main process (IPC `notify:show`) instead.
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) =>
+      callback(isPermissionAllowed(permission, details.requestingUrl, devServerUrl)),
     );
-  } else {
-    serveRenderer();
-  }
-  registerIpc();
-  createWindow();
-  app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWindow());
-});
+    session.defaultSession.setPermissionCheckHandler((_wc, permission, requestingOrigin) => isPermissionAllowed(permission, requestingOrigin, devServerUrl));
+    if (devServerUrl) {
+      session.defaultSession.webRequest.onHeadersReceived({ urls: [`${devServerUrl}/*`] }, (details, callback) =>
+        callback({ responseHeaders: { ...details.responseHeaders, "Content-Security-Policy": [csp] } }),
+      );
+    } else {
+      serveRenderer();
+    }
+    registerIpc();
+    applySettings(settings.get()); // keeps the login item in step with the stored choice
+    startTray();
+    createWindow(startsHidden({ argv: process.argv, wasOpenedAtLogin: app.getLoginItemSettings().wasOpenedAtLogin }));
+    app.on("activate", showWindow);
+  });
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
-});
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
+  });
+}

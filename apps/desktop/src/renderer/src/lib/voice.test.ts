@@ -288,3 +288,20 @@ describe("participants and speaking", () => {
     expect(s.state().participants.some((p) => p.speaking)).toBe(false);
   });
 });
+
+describe("switchDevice (settings change while in a session)", () => {
+  it("moves the live room to the device; with no session it does nothing and does not throw", async () => {
+    const idle = setupVoice();
+    await expect(idle.voice.switchDevice("audioinput", "m2")).resolves.toBeUndefined();
+    const s = await joined();
+    await s.voice.switchDevice("audioinput", "m2");
+    await s.voice.switchDevice("videoinput", "default");
+    expect(s.room().switched).toEqual([["audioinput", "m2"], ["videoinput", "default"]]);
+  });
+  it("a device that cannot be opened does not break the session", async () => {
+    const s = await joined();
+    s.room().switchActiveDevice = async () => Promise.reject(new Error("NotFoundError"));
+    await expect(s.voice.switchDevice("audioinput", "gone")).resolves.toBeUndefined();
+    expect(s.state().status).toBe("connected");
+  });
+});

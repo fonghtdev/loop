@@ -1,11 +1,14 @@
 import { create } from "zustand";
 import type { SettingsTab } from "./admin";
+import { channelKey, dmKey, parseKey, type ConvKey } from "./conversation";
 
 /**
  * Where the user is: a server and its open channel, or (guildId null = Home) an open DM, or the Friends screen
- * (no DM open). `settings` = the open tab of the server's settings view (`settings:<guildId>`), only with a guild.
+ * (no DM open). `settings` = the open tab of the server's settings view (only with a guild), or "user" = the user's own
+ * settings view (any place). Every place change sets it back to null, so one field keeps the main area unambiguous.
  */
-export type Place = { guildId: string | null; channelId: string | null; dmId: string | null; settings: SettingsTab | null };
+export type SettingsView = SettingsTab | "user";
+export type Place = { guildId: string | null; channelId: string | null; dmId: string | null; settings: SettingsView | null };
 const HOME: Place = { guildId: null, channelId: null, dmId: null, settings: null };
 const TABS: unknown[] = ["roles", "members", "overwrites", "danger"];
 const key = (userId: string) => `loop.lastPlace.${userId}`;
@@ -23,7 +26,8 @@ export function parsePlace(raw: string | null): Place {
     // one place at a time: a server has channels, Home has a DM
     // the restored settings tab is only a request: the view re-checks the user's rights (guardSettings) before showing it
     const settings = TABS.includes(v.settings) ? (v.settings as SettingsTab) : null;
-    return guildId ? { guildId, channelId: idOrNull(v.channelId), dmId: null, settings } : { ...HOME, dmId: idOrNull(v.dmId) };
+    const user = v.settings === "user" ? "user" : null; // always valid for a signed-in user
+    return guildId ? { guildId, channelId: idOrNull(v.channelId), dmId: null, settings: user ?? settings } : { ...HOME, dmId: idOrNull(v.dmId), settings: user };
   } catch {
     return HOME;
   }
@@ -47,3 +51,16 @@ export function writeLastPlace(userId: string, place: Place) {
 }
 
 export const goHome = () => useNav.setState(HOME);
+
+/** The conversation on screen, if any (a settings view covers it). Voice channels are not conversations but share the key shape. */
+export function openConversation(p: Place): ConvKey | null {
+  if (p.settings) return null;
+  if (p.guildId) return p.channelId ? channelKey(p.channelId) : null;
+  return p.dmId ? dmKey(p.dmId) : null;
+}
+
+/** Where a clicked notification leads, re-checked against what we still know: only a DM that is still in the list. */
+export function placeForKey(key: ConvKey, dmIds: readonly string[] | undefined): Place | null {
+  const { kind, id } = parseKey(key);
+  return kind === "dm" && dmIds?.includes(id) ? { ...HOME, dmId: id } : null;
+}

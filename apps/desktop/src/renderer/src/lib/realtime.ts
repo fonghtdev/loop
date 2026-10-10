@@ -30,6 +30,8 @@ type Deps = {
   getToken: (rejected?: string) => Promise<string | null>;
   /** A live message event for the open conversation (events of other conversations are dropped here). */
   onEvent: (key: ConvKey, event: ChannelEvent) => void;
+  /** Every live message event the socket delivers, whatever conversation (unread tracking and notifications). */
+  onActivity: (key: ConvKey, event: ChannelEvent) => void;
   /**
    * The open conversation is listening (a channel: its subscription was acked; a DM: the socket connected, DM events
    * need no subscribe), first time and after every reconnect: time to catch up.
@@ -64,12 +66,13 @@ type Deps = {
  * - The server never subscribes by itself: the open channel is (re)subscribed on every connect. A DM needs no
  *   subscribe (every socket is in the user's own room); friend, DM and presence events arrive in that room.
  */
-export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused, onSocial, onWatched, onWatchRefused, onVoiceUpdate, onCall, onReconnected, io = connectIo, retryDelayMs = 1000 }: Deps) {
+export function createRealtime({ url, getToken, onEvent, onActivity, onSubscribed, onRefused, onSocial, onWatched, onWatchRefused, onVoiceUpdate, onCall, onReconnected, io = connectIo, retryDelayMs = 1000 }: Deps) {
   const state = createStore<{ status: ConnectionStatus }>(() => ({ status: "idle" }));
   const setStatus = (status: ConnectionStatus) => state.setState({ status });
   let socket: SocketLike | null = null;
   let openKey: ConvKey | null = null;
   let watched = new Set<string>();
+  let tracked = new Set<string>(); // text channels of the open server, listened to for unread counts only
   let sent: string | null = null; // the token of the latest handshake
   let authRetried = false;
   let everConnected = false;
@@ -93,6 +96,12 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
       watched.delete(channelId); // refused: not retried until the set is set again
       onWatchRefused(channelId);
     });
+
+  const track = (s: SocketLike, channelId: string) =>
+    s.emit("channel:subscribe", { channelId }, (ack?: { ok: boolean }) => {
+      if (s === socket && !ack?.ok) tracked.delete(channelId); // refused: no unread for it
+    });
+  const listened = (id: string) => watched.has(id) || tracked.has(id) || (!!openKey && openKey === channelKey(id));
 
   const retryLater = (s: SocketLike) => {
     clearTimeout(timer);
@@ -142,6 +151,7 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
       everConnected = true;
       if (openKey) subscribe(s, openKey);
       for (const id of watched) watch(s, id);
+      for (const id of tracked) track(s, id);
     });
     s.on("connect_error", (err: Error) => void onConnectError(s, err));
     s.on("disconnect", () => {
@@ -149,21 +159,23 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
       setStatus("reconnecting");
       if (!s.active) retryLater(s); // "io server disconnect" (e.g. a server restart): socket.io would not come back
     });
-    const forOpen = (key: ConvKey | null, event: ChannelEvent) => {
-      if (s === socket && key && key === openKey) onEvent(key, event);
+    const dispatch = (key: ConvKey | null, event: ChannelEvent) => {
+      if (s !== socket || !key) return;
+      onActivity(key, event);
+      if (key === openKey) onEvent(key, event);
     };
     const social = (event: SocialEvent) => s === socket && onSocial(event);
     const channelOf = (id: string | null | undefined) => (id ? channelKey(id) : null);
     const dmOf = (id: string | null | undefined) => (id ? dmKey(id) : null);
-    s.on("message:new", (m: Message) => forOpen(channelOf(m?.channelId), { type: "message:new", message: m }));
-    s.on("message:update", (m: Message) => forOpen(channelOf(m?.channelId), { type: "message:update", message: m }));
-    s.on("message:delete", (d: { id: string; channelId: string }) => forOpen(channelOf(d?.channelId), { type: "message:delete", id: d?.id }));
+    s.on("message:new", (m: Message) => dispatch(channelOf(m?.channelId), { type: "message:new", message: m }));
+    s.on("message:update", (m: Message) => dispatch(channelOf(m?.channelId), { type: "message:update", message: m }));
+    s.on("message:delete", (d: { id: string; channelId: string }) => dispatch(channelOf(d?.channelId), { type: "message:delete", id: d?.id }));
     s.on("dm:message:new", (m: Message) => {
-      forOpen(dmOf(m?.dmChannelId), { type: "message:new", message: m });
+      dispatch(dmOf(m?.dmChannelId), { type: "message:new", message: m });
       if (m?.dmChannelId) social({ type: "dm:message", message: m });
     });
-    s.on("dm:message:update", (m: Message) => forOpen(dmOf(m?.dmChannelId), { type: "message:update", message: m }));
-    s.on("dm:message:delete", (d: { id: string; dmChannelId: string }) => forOpen(dmOf(d?.dmChannelId), { type: "message:delete", id: d?.id }));
+    s.on("dm:message:update", (m: Message) => dispatch(dmOf(m?.dmChannelId), { type: "message:update", message: m }));
+    s.on("dm:message:delete", (d: { id: string; dmChannelId: string }) => dispatch(dmOf(d?.dmChannelId), { type: "message:delete", id: d?.id }));
     s.on("dm:new", (d: { id: string; user: Friend }) => d?.id && d.user && social({ type: "dm:new", dm: d }));
     s.on("friend:request", (d: { from: PublicUser }) => d?.from && social({ type: "friend:request", from: d.from }));
     s.on("friend:accepted", (d: { user: PublicUser }) => d?.user && social({ type: "friend:accepted", user: d.user }));
@@ -185,6 +197,7 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
     socket = null; // every handler checks this first: nothing is processed after sign-out
     openKey = null;
     watched = new Set();
+    tracked = new Set();
     sent = null;
     authRetried = false;
     everConnected = false;
@@ -202,8 +215,8 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
     setConversation(key: ConvKey | null) {
       if (key === openKey) return;
       const previous = openKey && parseKey(openKey);
-      if (socket?.connected && previous?.kind === "channel") socket.emit("channel:unsubscribe", { channelId: previous.id });
       openKey = key;
+      if (socket?.connected && previous?.kind === "channel" && !listened(previous.id)) socket.emit("channel:unsubscribe", { channelId: previous.id });
       if (socket?.connected && key) subscribe(socket, key);
     },
     /** The voice channels whose `voice:update` we want (the selected server's); [] = none. Leaves the ones dropped. */
@@ -214,6 +227,18 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
       const added = [...next].filter((id) => !watched.has(id));
       watched = next;
       if (s) for (const id of added) watch(s, id);
+    },
+    /** The text channels whose messages we count as unread (the selected server's); [] = none. Leaves the ones dropped. */
+    setTracked(channelIds: string[]) {
+      const next = new Set(channelIds);
+      const s = socket?.connected ? socket : null;
+      const dropped = [...tracked].filter((id) => !next.has(id));
+      const added = [...next].filter((id) => !tracked.has(id));
+      tracked = next;
+      if (s) {
+        for (const id of dropped) if (!listened(id)) s.emit("channel:unsubscribe", { channelId: id });
+        for (const id of added) track(s, id);
+      }
     },
     /** "Try again" after `failed`. */
     retry() {

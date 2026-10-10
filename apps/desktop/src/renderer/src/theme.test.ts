@@ -86,6 +86,13 @@ const ui: [string, string][] = [
   ["danger", "surface-2"], // border of the delete-server panel, denied preview marks
   ["moss-300", "moss-900"], // border of the selected "Cho phép"
   ["line-strong", "surface-4"], // border of the selected "Mặc định"
+  ...["surface-0", "surface-1", "surface-3", "surface-4"].map((bg): [string, string] => ["danger", bg]), // unread count bubble on the rail / DM rows (and hovered)
+  ["moss-300", "surface-3"], // unread dot on a hovered channel row
+  // switch (settings): on track against its panel / hovered row, off track border, knobs against their tracks
+  ...["surface-1", "surface-3"].map((bg): [string, string] => ["moss-400", bg]),
+  ["line-strong", "surface-1"],
+  ["ink-muted", "surface-4"],
+  ["on-moss", "moss-400"],
   ["danger", "danger-bg"], // border of the selected "Từ chối" (also above)
 ];
 

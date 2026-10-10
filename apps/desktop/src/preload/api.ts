@@ -1,3 +1,6 @@
+import type { NotifyPayload } from "../shared/notify";
+import type { Settings } from "../shared/settings";
+
 /** Everything the renderer can ask of the main process. Nothing else crosses the bridge. */
 export type LoopApi = {
   session: {
@@ -10,6 +13,21 @@ export type LoopApi = {
     /** Asks the OS for microphone/camera access (macOS prompts once; elsewhere true). false = denied in System Settings. */
     ensureAccess(kind: "microphone" | "camera"): Promise<boolean>;
   };
+  settings: {
+    get(): Promise<Settings>;
+    /** Known boolean keys only; rejects on an invalid patch. Resolves to the settings now in force. */
+    set(patch: Partial<Settings>): Promise<Settings>;
+  };
+  /** Asks the main process for an OS notification (it validates, redacts and respects the settings). */
+  notify(payload: NotifyPayload): Promise<void>;
+  /** Closes the notification of a conversation / call key (a call that was answered, declined or ended). */
+  closeNotification(key: string): Promise<void>;
+  /** A clicked notification wants this conversation open (key already validated); returns the unsubscribe. */
+  onNavigate(cb: (key: string) => void): () => void;
+  /** The unread total for the dock (macOS) / launcher; 0 clears it. */
+  setBadge(count: number): Promise<void>;
+  /** Whether the window is focused and on screen (pushed by the main process); returns the unsubscribe. */
+  onFocusChange(cb: (focused: boolean) => void): () => void;
   openExternal(url: string): Promise<void>;
   version(): Promise<string>;
   platform: string;

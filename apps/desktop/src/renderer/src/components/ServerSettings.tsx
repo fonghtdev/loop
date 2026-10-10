@@ -28,7 +28,7 @@ export function ServerSettings({ guildId }: { guildId: string }) {
   const roles = useRoles(guildId);
   const members = useMembers(guildId);
   const perms = usePermissions(guildId);
-  const requested = useNav((s) => s.settings);
+  const requested = useNav((s) => (s.settings === "user" ? null : s.settings));
   const sections = settingsSections(perms.bits, perms.standing?.isOwner ?? false);
   const tab = perms.ready ? guardSettings(requested, sections) : requested;
   const heading = useRef<HTMLHeadingElement>(null);

@@ -78,6 +78,7 @@ function setup(first: string = "a1", refreshes: (string | null)[] = ["a2", "a3"]
   const setCurrent = (t: string) => (current = t);
   const deps = {
     onEvent: vi.fn(),
+    onActivity: vi.fn(),
     onSubscribed: vi.fn(),
     onRefused: vi.fn(),
     onSocial: vi.fn(),
@@ -438,5 +439,57 @@ describe("watched voice channels", () => {
     s.rt.stop();
     handlers.forEach((fn) => fn({ dmChannelId: "d1" }));
     expect(s.onCall).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("tracked text channels (unread) and activity", () => {
+  async function connected() {
+    const s = setup();
+    s.rt.start();
+    await flush();
+    s.socket().accept();
+    return s;
+  }
+  const subs = (sock: FakeSocket) => sock.subscribes().map((e) => (e.payload as { channelId: string }).channelId);
+  const unsubs = (sock: FakeSocket) => sock.emitted.filter((e) => e.event === "channel:unsubscribe").map((e) => (e.payload as { channelId: string }).channelId);
+
+  it("every event reaches onActivity (open or not, channel or DM), only the open one reaches onEvent", async () => {
+    const s = await connected();
+    s.rt.setConversation(channelKey("c1"));
+    const sock = s.socket();
+    sock.fire("message:new", msg("c2"));
+    sock.fire("message:delete", { id: "m1", channelId: "c1" });
+    sock.fire("dm:message:new", { ...msg("x"), channelId: null, dmChannelId: "d1" });
+    expect(s.onActivity.mock.calls.map((c) => [c[0], c[1].type])).toEqual([
+      [channelKey("c2"), "message:new"],
+      [channelKey("c1"), "message:delete"],
+      [dmKey("d1"), "message:new"],
+    ]);
+    expect(s.onEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("subscribes to the tracked set, resubscribes after a reconnect, drops removed ones, forgets refused ones", async () => {
+    const s = await connected();
+    s.rt.setTracked(["t1", "t2"]);
+    expect(subs(s.socket())).toEqual(["t1", "t2"]);
+    s.rt.setTracked(["t2", "t3"]);
+    expect(unsubs(s.socket())).toEqual(["t1"]);
+    s.socket().subscribes().find((e) => (e.payload as { channelId: string }).channelId === "t3")!.ack!({ ok: false });
+    s.socket().drop();
+    s.socket().accept();
+    expect(subs(s.socket()).slice(3)).toEqual(["t2"]); // t3 was refused and is not retried
+    s.rt.stop();
+  });
+
+  it("switching away from an open channel that is tracked keeps its subscription", async () => {
+    const s = await connected();
+    s.rt.setTracked(["t1", "t2"]);
+    s.rt.setConversation(channelKey("t1"));
+    s.rt.setConversation(channelKey("t2"));
+    expect(unsubs(s.socket())).toEqual([]);
+    s.rt.setConversation(channelKey("other"));
+    expect(unsubs(s.socket())).toEqual([]); // t2 is tracked too
+    s.rt.setConversation(null);
+    expect(unsubs(s.socket())).toEqual(["other"]);
   });
 });

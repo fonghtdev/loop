@@ -12,12 +12,13 @@ import { IncomingCall } from "../components/IncomingCall";
 import { MemberList } from "../components/MemberList";
 import { ServerRail } from "../components/ServerRail";
 import { ServerSettings } from "../components/ServerSettings";
+import { UserSettings } from "../components/UserSettings";
 import { VoiceBar } from "../components/VoiceBar";
 import { VoiceRoom } from "../components/VoiceRoom";
 import { ColumnHeader, EmptyState } from "../components/States";
 import { t } from "../i18n/t";
 import { ApiError } from "../lib/auth-client";
-import { realtime, revalidateGuild, session, voice, voicePresence } from "../lib/app";
+import { realtime, revalidateGuild, session, unread, voice, voicePresence } from "../lib/app";
 import { goHome, readLastPlace, useNav } from "../lib/nav";
 import { blockFileNavigation } from "../lib/drop";
 import { useDms, useGuild, useGuilds } from "../lib/queries";
@@ -58,6 +59,17 @@ export function Shell() {
     return () => realtime.setWatched([]);
   }, [watchKey]);
   useEffect(() => voicePresence.clear(), [guildId]);
+
+  // The text channels of the open server are listened to for unread counts, the DM list drives restart detection.
+  const textKey = channels?.filter((c) => c.type === "TEXT").map((c) => c.id).join(",") ?? "";
+  useEffect(() => {
+    realtime.setTracked(textKey ? textKey.split(",") : []);
+    return () => realtime.setTracked([]);
+  }, [textKey]);
+  const dms = useDms().data;
+  useEffect(() => {
+    if (dms) unread.reconcileDms(dms);
+  }, [dms]);
 
   useEffect(() => {
     if (user) useNav.setState(readLastPlace(user.id));
@@ -116,13 +128,22 @@ export function Shell() {
           )}
           <VoiceBar />
           <section aria-label={t("shell.account")} className="flex h-16 shrink-0 items-center gap-3 bg-surface-0 px-3">
-            <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-moss-900 font-display font-bold text-moss-200">
-              {user?.username.charAt(0).toUpperCase()}
-            </span>
-            <span className="min-w-0 flex-1 select-text">
-              <span className="block truncate text-sm font-semibold">{user?.username}</span>
-              <span className="block truncate text-xs text-ink-muted">{user?.email}</span>
-            </span>
+            <button
+              type="button"
+              onClick={() => useNav.setState({ settings: "user" })}
+              aria-label={t("userSettings.open")}
+              title={t("userSettings.open")}
+              aria-current={settings === "user" ? "page" : undefined}
+              className="flex min-w-0 flex-1 items-center gap-3 rounded-control py-1 text-left transition-colors duration-(--duration-fast) hover:bg-surface-4"
+            >
+              <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-moss-900 font-display font-bold text-moss-200">
+                {user?.username.charAt(0).toUpperCase()}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">{user?.username}</span>
+                <span className="block truncate text-xs text-ink-muted">{user?.email}</span>
+              </span>
+            </button>
             <button
               type="button"
               onClick={() => void session.logout()}
@@ -136,7 +157,9 @@ export function Shell() {
         </nav>
 
         <main className="flex min-h-0 min-w-0 flex-col bg-surface-2">
-          {guildId && settings ? (
+          {settings === "user" ? (
+            <UserSettings />
+          ) : guildId && settings ? (
             <ServerSettings guildId={guildId} />
           ) : guildId && channelId ? (
             isVoiceChannel ? <VoiceRoom guildId={guildId} channelId={channelId} /> : <ChatView guildId={guildId} channelId={channelId} />

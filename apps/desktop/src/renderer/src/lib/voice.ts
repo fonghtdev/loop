@@ -51,6 +51,8 @@ export type RoomLike = {
   on(event: string, fn: (...args: never[]) => void): unknown;
   connect(url: string, token: string): Promise<unknown>;
   disconnect(stopTracks?: boolean): unknown;
+  /** Moves the live microphone / camera to another device ("default" = the system's). */
+  switchActiveDevice(kind: "audioinput" | "videoinput", deviceId: string): Promise<unknown>;
 };
 
 type TokenResponse = { token: string; url: string; canSpeak: boolean; canVideo: boolean };
@@ -299,6 +301,12 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
         set({ deafened: false, micBeforeDeafen: false });
         if (restore) await setMic(true);
       }
+    },
+    /** The live session follows a device change in settings (no session: nothing to move; the next join uses the choice). */
+    // queued behind the mic / camera jobs: switching while the first publish is still opening the old device would be lost
+    switchDevice: (kind: "audioinput" | "videoinput", deviceId: string) => {
+      const r = room;
+      return serial(async () => void (await r?.switchActiveDevice(kind, deviceId)));
     },
     notify: (notice: string) => set({ notice }),
     dismissNotice: () => set({ notice: null }),
