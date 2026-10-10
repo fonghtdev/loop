@@ -24,7 +24,7 @@ describe("vi dictionary", () => {
   });
 
   it("t() interpolates variables and leaves unknown ones visible", () => {
-    expect(t("shell.welcomeTitle", { name: "Ngọc" })).toBe("Chào Ngọc!");
-    expect(t("shell.welcomeTitle", {})).toBe("Chào {name}!");
+    expect(t("friends.requestSent", { name: "Ngọc" })).toBe("Đã gửi lời mời kết bạn tới Ngọc.");
+    expect(t("friends.requestSent", {})).toBe("Đã gửi lời mời kết bạn tới {name}.");
   });
 });

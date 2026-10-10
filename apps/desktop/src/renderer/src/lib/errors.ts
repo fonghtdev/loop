@@ -6,6 +6,14 @@ export function errorMessage(err: unknown): string {
   if (!(err instanceof ApiError)) return t("errors.unknown");
   const { status, path } = err;
   if (status === 0) return t("errors.offline");
+  // Adding a friend by name: an unknown name and a block (either way) are the SAME 404 and get the same words,
+  // so the message can never reveal a block.
+  if (path === "/friends/requests") {
+    if (status === 404) return t("errors.userNotFound");
+    if (status === 409) return t("errors.friendDuplicate");
+    if (status === 400) return t("errors.friendSelf");
+  }
+  if (status === 403 && /^\/dms\/[^/]+\/messages$/.test(path)) return t("errors.notFriends");
   if (status === 400) return t("errors.invalid");
   // A 401 from login means wrong credentials; anywhere else it means the session ended.
   if (status === 401) return path === "/auth/login" ? t("errors.wrongCredentials") : t("errors.sessionExpired");

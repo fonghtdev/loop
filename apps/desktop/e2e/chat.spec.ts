@@ -125,7 +125,7 @@ test.beforeAll(async () => {
   await page.getByLabel("Email").fill(`${A.user.username}@example.com`);
   await page.getByLabel("Mật khẩu", { exact: true }).fill(password);
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("heading", { name: `Chào ${A.user.username}!` })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bạn bè" })).toBeVisible();
 });
 
 test.afterAll(async () => {
@@ -486,7 +486,7 @@ test("joining another server: bad code, disabled composer (no SEND), private cha
   await leave.getByRole("button", { name: "Rời máy chủ" }).click();
   await expect(leave).toBeHidden();
   await expect(rail().getByRole("button", { name: `Server của C ${run}` })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: `Chào ${A.user.username}!` })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bạn bè" })).toBeVisible();
 });
 
 test("the owner cannot leave: the 409 is explained", async () => {

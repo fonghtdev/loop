@@ -24,12 +24,12 @@ export const isValidRefreshToken = (t: unknown): t is string =>
   typeof t === "string" && t.length <= 512 && /^[A-Za-z0-9_-]+$/.test(t);
 
 /**
- * The CSP for every renderer response. Production: no inline code at all; the network is the API origin and its
- * websocket only; images also from data:/blob: (attachment previews arrive from storage origins in 9c and get
- * added here then). Dev: the Vite dev server needs inline scripts/styles (React refresh preamble, injected CSS)
- * and its HMR websocket.
+ * The CSP for every renderer response. Production: no inline code at all; the network is the API origin, its
+ * websocket and the storage origin (upload PUTs); images also from the storage origin (attachments) and
+ * data:/blob: (local previews). Dev: the Vite dev server needs inline scripts/styles (React refresh preamble,
+ * injected CSS) and its HMR websocket.
  */
-export function buildCsp(apiUrl: string, wsUrl: string, devServerUrl?: string) {
+export function buildCsp({ api, ws, storage }: { api: string; ws: string; storage: string }, devServerUrl?: string) {
   const devWs = devServerUrl ? ` ${devServerUrl.replace(/^http/, "ws")}` : "";
   const inline = devServerUrl ? " 'unsafe-inline'" : "";
   return [
@@ -37,8 +37,8 @@ export function buildCsp(apiUrl: string, wsUrl: string, devServerUrl?: string) {
     `script-src 'self'${inline}`,
     `style-src 'self'${inline}`,
     "font-src 'self'",
-    `img-src 'self' data: blob: ${apiUrl}`,
-    `connect-src 'self' ${apiUrl} ${wsUrl}${devWs}`,
+    `img-src 'self' data: blob: ${api} ${storage}`,
+    `connect-src 'self' ${api} ${ws} ${storage}${devWs}`,
     "base-uri 'none'",
     "form-action 'none'",
     "frame-ancestors 'none'",

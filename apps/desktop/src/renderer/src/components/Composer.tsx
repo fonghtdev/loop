@@ -1,52 +1,110 @@
-import { PaperPlaneRight } from "@phosphor-icons/react";
-import { useId, useState, type KeyboardEvent } from "react";
+import { Paperclip, PaperPlaneRight } from "@phosphor-icons/react";
+import { ATTACHMENT_TYPES } from "@loop/shared";
+import { useId, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { t } from "../i18n/t";
 import { chat } from "../lib/app";
+import { canSend as sendAllowed } from "../lib/attachment-machine";
+import type { ComposerFiles } from "../lib/composer-files";
+import type { ConvKey } from "../lib/conversation";
+import { nameForPasted, pastedFiles } from "../lib/drop";
 import { COUNTER_FROM, isSubmitKey, MAX_MESSAGE_LENGTH } from "../lib/text";
+import { AttachmentTray } from "./AttachmentTray";
 
 /** Native key event fields for `isSubmitKey` (React's synthetic event hides isComposing/keyCode on nativeEvent). */
 export const submitKey = (e: KeyboardEvent) =>
   isSubmitKey({ key: e.key, shiftKey: e.shiftKey, isComposing: e.nativeEvent.isComposing, keyCode: e.nativeEvent.keyCode });
 
-/** Multiline input: Enter sends, Shift+Enter breaks the line, IME confirmations never send. */
-export function Composer({ channelId, channelName, canSend, ready }: { channelId: string; channelName: string; canSend: boolean; ready: boolean }) {
+type Props = {
+  convKey: ConvKey;
+  /** Accessible name and placeholder of the text box. */
+  label: string;
+  placeholder: string;
+  files: ComposerFiles;
+  ready: boolean;
+  /** Why writing is closed (no permission, not a friend...); shown as the placeholder. null = open. */
+  closedReason: string | null;
+};
+
+/** Multiline input: Enter sends, Shift+Enter breaks the line, IME confirmations never send; files by button, drop (in Conversation) or paste. */
+export function Composer({ convKey, label, placeholder, files, ready, closedReason }: Props) {
   const [text, setText] = useState("");
   const counterId = useId();
+  const picker = useRef<HTMLInputElement>(null);
   const length = text.trim().length;
   const over = length > MAX_MESSAGE_LENGTH;
-  const disabled = !ready || !canSend;
+  const disabled = !ready || closedReason !== null;
+  const canSend = sendAllowed({ disabled, over, textLength: length, files: files.items.map((i) => i.state) });
 
   function send() {
-    const content = text.trim();
-    if (!content || over || disabled) return;
-    void chat.send(channelId, content);
+    if (!canSend) return;
+    chat.send(convKey, { content: text.trim(), attachments: files.queue.take() });
     setText("");
+    files.clearNotices();
   }
 
-  const placeholder = !ready ? t("composer.loading") : canSend ? t("composer.placeholder", { name: channelName }) : t("composer.noPermission");
+  function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    const pasted = pastedFiles(e.clipboardData);
+    if (!pasted.length) return; // plain text: the normal paste
+    e.preventDefault();
+    files.add(pasted.map(nameForPasted));
+  }
+
   return (
     <div className="shrink-0 px-4 pb-4">
-      <div className={`flex items-end gap-2 rounded-panel border bg-surface-3 py-1.5 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-moss-300 pr-1.5 pl-4 ${over ? "border-danger" : "border-line-strong"}`}>
+      {files.notices.length > 0 && (
+        <div role="alert" className="mb-2 flex flex-col gap-1 rounded-control bg-danger-bg px-3 py-2 text-[13px] text-ink">
+          {files.notices.map((n, i) => (
+            <p key={i} className="[overflow-wrap:anywhere]">
+              {n}
+            </p>
+          ))}
+        </div>
+      )}
+      <AttachmentTray items={files.items} onRetry={files.queue.retry} onRemove={files.queue.remove} />
+      <div className={`flex items-end gap-1 rounded-panel border bg-surface-3 py-1.5 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-moss-300 pr-1.5 pl-1.5 ${over ? "border-danger" : "border-line-strong"}`}>
+        <button
+          type="button"
+          onClick={() => picker.current?.click()}
+          disabled={disabled}
+          aria-label={t("attachment.pick")}
+          title={t("attachment.pick")}
+          className="grid size-10 shrink-0 place-items-center rounded-control text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 hover:text-ink disabled:cursor-not-allowed disabled:text-ink-faint disabled:hover:bg-transparent"
+        >
+          <Paperclip aria-hidden="true" />
+        </button>
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          hidden
+          accept={ATTACHMENT_TYPES.join(",")}
+          data-testid="file-input"
+          onChange={(e) => {
+            files.add(Array.from(e.target.files ?? []));
+            e.target.value = ""; // picking the same file again must fire change
+          }}
+        />
         <textarea
-          aria-label={t("composer.label", { name: channelName })}
+          aria-label={label}
           aria-describedby={counterId}
           aria-invalid={over || undefined}
-          placeholder={placeholder}
+          placeholder={!ready ? t("composer.loading") : (closedReason ?? placeholder)}
           disabled={disabled}
           rows={1}
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onPaste={onPaste}
           onKeyDown={(e) => {
             if (!submitKey(e)) return;
             e.preventDefault();
             send();
           }}
-          className="max-h-[40vh] min-h-10 flex-1 resize-none bg-transparent py-2 text-[15px] leading-6 text-ink [field-sizing:content] placeholder:text-ink-faint focus-visible:outline-none disabled:cursor-not-allowed"
+          className="max-h-[40vh] min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[15px] leading-6 text-ink [field-sizing:content] placeholder:text-ink-faint focus-visible:outline-none disabled:cursor-not-allowed"
         />
         <button
           type="button"
           onClick={send}
-          disabled={disabled || !length || over}
+          disabled={!canSend}
           aria-label={t("composer.send")}
           title={t("composer.send")}
           className="grid size-10 shrink-0 place-items-center rounded-control text-moss-300 transition-colors duration-(--duration-fast) hover:bg-surface-4 disabled:cursor-not-allowed disabled:text-ink-faint disabled:hover:bg-transparent"

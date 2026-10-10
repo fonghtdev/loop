@@ -42,17 +42,28 @@ describe("resolveAppFile", () => {
 });
 
 describe("buildCsp", () => {
-  it("production: no inline code, network limited to the API and its websocket", () => {
-    const csp = buildCsp("http://localhost:3000", "ws://localhost:3000");
+  const origins = { api: "http://localhost:3000", ws: "ws://localhost:3000", storage: "http://localhost:9000" };
+  it("production: no inline code, network limited to the API, its websocket and the storage origin", () => {
+    const csp = buildCsp(origins);
     expect(csp).not.toContain("unsafe");
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("script-src 'self';");
-    expect(csp).toContain("connect-src 'self' http://localhost:3000 ws://localhost:3000;");
+    expect(csp).toContain("connect-src 'self' http://localhost:3000 ws://localhost:3000 http://localhost:9000;");
+  });
+  it("images come from the storage origin (and blob: previews), in production and dev alike", () => {
+    for (const csp of [buildCsp(origins), buildCsp(origins, "http://localhost:5173")])
+      expect(csp).toContain("img-src 'self' data: blob: http://localhost:3000 http://localhost:9000;");
+  });
+  it("the storage origin is the configured one, not a constant", () => {
+    const csp = buildCsp({ ...origins, storage: "https://files.example.com" });
+    expect(csp).toContain("connect-src 'self' http://localhost:3000 ws://localhost:3000 https://files.example.com;");
+    expect(csp).not.toContain("localhost:9000");
   });
   it("dev: allows the Vite dev server's inline preamble and HMR socket", () => {
-    const csp = buildCsp("http://localhost:3000", "ws://localhost:3000", "http://localhost:5173");
+    const csp = buildCsp(origins, "http://localhost:5173");
     expect(csp).toContain("script-src 'self' 'unsafe-inline'");
     expect(csp).toContain("ws://localhost:5173");
+    expect(csp).toContain("http://localhost:9000");
   });
 });
 

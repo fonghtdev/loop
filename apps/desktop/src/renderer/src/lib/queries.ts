@@ -1,6 +1,8 @@
 import { hasPermission } from "@loop/shared";
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { session } from "./app";
+import { BLOCKS_KEY, DMS_KEY, FRIENDS_KEY, showOnline, type Dm, type FriendsData, type PublicUser } from "./social";
 import { permissionsFor, type Channel, type Guild, type Member, type Role } from "./permissions";
 
 const api = session.client.request;
@@ -35,4 +37,16 @@ export function usePermissions(guildId: string | null, channelId?: string | null
   const channel = channelId ? guild.channels.find((c) => c.id === channelId) : undefined;
   const bits = channelId && !channel ? 0 : permissionsFor({ userId, guild: guild.guild, members, roles }, channel);
   return { ready: true, can: (perm: number) => hasPermission(bits, perm) };
+}
+
+// Friends, DMs and blocks: kept live in place by the socket events (lib/social.ts); refetched after a reconnect.
+export const useFriends = () => useQuery({ queryKey: FRIENDS_KEY, queryFn: () => api<FriendsData>("GET", "/friends") });
+export const useBlocks = () => useQuery({ queryKey: BLOCKS_KEY, queryFn: () => api<PublicUser[]>("GET", "/blocks") });
+export const useDms = () => useQuery({ queryKey: DMS_KEY, queryFn: () => api<Dm[]>("GET", "/dms") });
+
+/** Whether to show someone as online: their flag, but never for a blocked user (and not before the block list is known). */
+export function useIsOnline() {
+  const blocks = useBlocks();
+  const ids = useMemo(() => new Set(blocks.data?.map((u) => u.id)), [blocks.data]);
+  return (u: { id: string; online: boolean }) => blocks.isSuccess && showOnline(u.id, u.online, ids);
 }

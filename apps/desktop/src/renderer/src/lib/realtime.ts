@@ -1,6 +1,8 @@
 import { io as connectIo, type ManagerOptions, type SocketOptions } from "socket.io-client";
 import { createStore } from "zustand/vanilla";
 import type { LiveEvent as ChannelEvent, Message } from "./chat";
+import { channelKey, dmKey, parseKey, type ConvKey } from "./conversation";
+import type { Friend, PublicUser, SocialEvent } from "./social";
 
 /** connecting: first attempt; online; reconnecting: lost or never reached (banner); failed: auth gave up (banner + retry). */
 export type ConnectionStatus = "idle" | "connecting" | "online" | "reconnecting" | "failed";
@@ -24,12 +26,17 @@ type Deps = {
    * one through the auth client's single-flight refresh. null = the session is over.
    */
   getToken: (rejected?: string) => Promise<string | null>;
-  /** A live event for the open channel (events of other channels are dropped here). */
-  onEvent: (channelId: string, event: ChannelEvent) => void;
-  /** The open channel's subscription was acked (first time and after every reconnect): time to catch up. */
-  onSubscribed: (channelId: string) => void;
+  /** A live message event for the open conversation (events of other conversations are dropped here). */
+  onEvent: (key: ConvKey, event: ChannelEvent) => void;
+  /**
+   * The open conversation is listening (a channel: its subscription was acked; a DM: the socket connected, DM events
+   * need no subscribe), first time and after every reconnect: time to catch up.
+   */
+  onSubscribed: (key: ConvKey) => void;
   /** The server refused the subscription (no VIEW any more, or the channel is gone). */
-  onRefused: (channelId: string) => void;
+  onRefused: (key: ConvKey) => void;
+  /** Friend, DM-list and presence events (they arrive whatever is open). */
+  onSocial: (event: SocialEvent) => void;
   /** Connected again after a drop: permissions and lists may have changed meanwhile. */
   onReconnected: () => void;
   io?: (url: string, opts: Opts) => SocketLike;
@@ -42,25 +49,29 @@ type Deps = {
  *   the auth client has since replaced.
  * - A handshake refused as Unauthorized gets ONE retry with a refreshed token; refused again -> "failed" (no loop).
  *   Refusals stop socket.io's own reconnection, as does a server-side disconnect: those are retried here with backoff.
- * - The server never subscribes by itself: the open channel is (re)subscribed on every connect.
+ * - The server never subscribes by itself: the open channel is (re)subscribed on every connect. A DM needs no
+ *   subscribe (every socket is in the user's own room); friend, DM and presence events arrive in that room.
  */
-export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused, onReconnected, io = connectIo, retryDelayMs = 1000 }: Deps) {
+export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused, onSocial, onReconnected, io = connectIo, retryDelayMs = 1000 }: Deps) {
   const state = createStore<{ status: ConnectionStatus }>(() => ({ status: "idle" }));
   const setStatus = (status: ConnectionStatus) => state.setState({ status });
   let socket: SocketLike | null = null;
-  let openChannel: string | null = null;
+  let openKey: ConvKey | null = null;
   let sent: string | null = null; // the token of the latest handshake
   let authRetried = false;
   let everConnected = false;
   let retries = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
-  const subscribe = (s: SocketLike, channelId: string) =>
-    s.emit("channel:subscribe", { channelId }, (ack?: { ok: boolean }) => {
-      if (s !== socket || openChannel !== channelId) return; // stopped, or the user moved on
-      if (ack?.ok) onSubscribed(channelId);
-      else onRefused(channelId);
+  const subscribe = (s: SocketLike, key: ConvKey) => {
+    const { kind, id } = parseKey(key);
+    if (kind === "dm") return onSubscribed(key);
+    s.emit("channel:subscribe", { channelId: id }, (ack?: { ok: boolean }) => {
+      if (s !== socket || openKey !== key) return; // stopped, or the user moved on
+      if (ack?.ok) onSubscribed(key);
+      else onRefused(key);
     });
+  };
 
   const retryLater = (s: SocketLike) => {
     clearTimeout(timer);
@@ -108,7 +119,7 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
       retries = 0;
       if (everConnected) onReconnected();
       everConnected = true;
-      if (openChannel) subscribe(s, openChannel);
+      if (openKey) subscribe(s, openKey);
     });
     s.on("connect_error", (err: Error) => void onConnectError(s, err));
     s.on("disconnect", () => {
@@ -116,12 +127,26 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
       setStatus("reconnecting");
       if (!s.active) retryLater(s); // "io server disconnect" (e.g. a server restart): socket.io would not come back
     });
-    const forOpen = (channelId: string | null | undefined, event: ChannelEvent) => {
-      if (s === socket && channelId && channelId === openChannel) onEvent(channelId, event);
+    const forOpen = (key: ConvKey | null, event: ChannelEvent) => {
+      if (s === socket && key && key === openKey) onEvent(key, event);
     };
-    s.on("message:new", (m: Message) => forOpen(m?.channelId, { type: "message:new", message: m }));
-    s.on("message:update", (m: Message) => forOpen(m?.channelId, { type: "message:update", message: m }));
-    s.on("message:delete", (d: { id: string; channelId: string }) => forOpen(d?.channelId, { type: "message:delete", id: d?.id }));
+    const social = (event: SocialEvent) => s === socket && onSocial(event);
+    const channelOf = (id: string | null | undefined) => (id ? channelKey(id) : null);
+    const dmOf = (id: string | null | undefined) => (id ? dmKey(id) : null);
+    s.on("message:new", (m: Message) => forOpen(channelOf(m?.channelId), { type: "message:new", message: m }));
+    s.on("message:update", (m: Message) => forOpen(channelOf(m?.channelId), { type: "message:update", message: m }));
+    s.on("message:delete", (d: { id: string; channelId: string }) => forOpen(channelOf(d?.channelId), { type: "message:delete", id: d?.id }));
+    s.on("dm:message:new", (m: Message) => {
+      forOpen(dmOf(m?.dmChannelId), { type: "message:new", message: m });
+      if (m?.dmChannelId) social({ type: "dm:message", message: m });
+    });
+    s.on("dm:message:update", (m: Message) => forOpen(dmOf(m?.dmChannelId), { type: "message:update", message: m }));
+    s.on("dm:message:delete", (d: { id: string; dmChannelId: string }) => forOpen(dmOf(d?.dmChannelId), { type: "message:delete", id: d?.id }));
+    s.on("dm:new", (d: { id: string; user: Friend }) => d?.id && d.user && social({ type: "dm:new", dm: d }));
+    s.on("friend:request", (d: { from: PublicUser }) => d?.from && social({ type: "friend:request", from: d.from }));
+    s.on("friend:accepted", (d: { user: PublicUser }) => d?.user && social({ type: "friend:accepted", user: d.user }));
+    s.on("friend:removed", (d: { userId: string }) => d?.userId && social({ type: "friend:removed", userId: d.userId }));
+    s.on("presence:update", (d: { userId: string; online: boolean }) => d?.userId && social({ type: "presence", userId: d.userId, online: d.online === true }));
     s.connect();
   }
 
@@ -129,7 +154,7 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
     clearTimeout(timer);
     const s = socket;
     socket = null; // every handler checks this first: nothing is processed after sign-out
-    openChannel = null;
+    openKey = null;
     sent = null;
     authRetried = false;
     everConnected = false;
@@ -143,12 +168,13 @@ export function createRealtime({ url, getToken, onEvent, onSubscribed, onRefused
     state,
     start,
     stop,
-    /** The channel on screen (null = none): the previous one is left, this one subscribed now and on every reconnect. */
-    setChannel(channelId: string | null) {
-      if (channelId === openChannel) return;
-      if (socket?.connected && openChannel) socket.emit("channel:unsubscribe", { channelId: openChannel });
-      openChannel = channelId;
-      if (socket?.connected && channelId) subscribe(socket, channelId);
+    /** The conversation on screen (null = none): a previous channel is left, this one listened to now and on every reconnect. */
+    setConversation(key: ConvKey | null) {
+      if (key === openKey) return;
+      const previous = openKey && parseKey(openKey);
+      if (socket?.connected && previous?.kind === "channel") socket.emit("channel:unsubscribe", { channelId: previous.id });
+      openKey = key;
+      if (socket?.connected && key) subscribe(socket, key);
     },
     /** "Try again" after `failed`. */
     retry() {

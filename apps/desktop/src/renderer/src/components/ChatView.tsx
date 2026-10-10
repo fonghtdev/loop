@@ -1,11 +1,14 @@
 import { Permission } from "@loop/shared";
-import { ArrowDown, ArrowClockwise, Copy, Hash, PencilSimple, Prohibit, Trash, WarningCircle } from "@phosphor-icons/react";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowClockwise, Copy, Hash, PencilSimple, Prohibit, Trash, UploadSimple, WarningCircle } from "@phosphor-icons/react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
 import { chat, realtime, session } from "../lib/app";
-import { EMPTY_CHANNEL, type ChannelChat, type Message, type Pending } from "../lib/chat";
+import { EMPTY_CONV, type ConvChat, type Message, type Pending } from "../lib/chat";
 import { useCopy } from "../lib/clipboard";
+import { useComposerFiles } from "../lib/composer-files";
+import { channelKey, type ConvKey } from "../lib/conversation";
+import { hasFiles } from "../lib/drop";
 import { errorMessage } from "../lib/errors";
 import { useGuild, usePermissions } from "../lib/queries";
 import { linkify } from "../lib/text";
@@ -14,47 +17,110 @@ import { Avatar } from "./Avatar";
 import { Button } from "./Button";
 import { Composer, submitKey } from "./Composer";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
+import { MessageAttachments } from "./MessageAttachments";
 import { Spinner } from "./Spinner";
 import { ColumnHeader, EmptyState, LoadError, Skeleton } from "./States";
 
 const NEAR_BOTTOM_PX = 80;
 const LOAD_OLDER_PX = 400;
 
-/** The open text channel: header, message list, composer. Owns the channel's subscription and history load. */
+/** The open text channel of a server. */
 export function ChatView({ guildId, channelId }: { guildId: string; channelId: string }) {
   const channel = useGuild(guildId).data?.channels.find((c) => c.id === channelId);
   const perms = usePermissions(guildId, channelId);
-  const state = useStore(chat.store, (s) => s.channels[channelId] ?? EMPTY_CHANNEL);
-
-  useEffect(() => {
-    void chat.loadLatest(channelId);
-    realtime.setChannel(channelId);
-    return () => {
-      realtime.setChannel(null);
-      chat.close(channelId);
-    };
-  }, [channelId]);
-
   const name = channel?.name ?? "";
   return (
-    <>
-      <ColumnHeader>
-        <Hash aria-hidden="true" className="shrink-0 text-ink-faint" />
-        <h1 className="min-w-0 truncate">{name}</h1>
-      </ColumnHeader>
+    <Conversation
+      convKey={channelKey(channelId)}
+      header={
+        <>
+          <Hash aria-hidden="true" className="shrink-0 text-ink-faint" />
+          <h1 className="min-w-0 truncate">{name}</h1>
+        </>
+      }
+      logLabel={t("chat.log", { name })}
+      start={{ icon: <Hash size={24} />, title: t("chat.startTitle", { name }), body: t("chat.startBody") }}
+      canManage={perms.can(Permission.MANAGE_MESSAGES)}
+      composer={{
+        label: t("composer.label", { name }),
+        placeholder: t("composer.placeholder", { name }),
+        ready: perms.ready,
+        closedReason: perms.can(Permission.SEND_MESSAGES) ? null : t("composer.noPermission"),
+      }}
+    />
+  );
+}
+
+type ConversationProps = {
+  convKey: ConvKey;
+  header: ReactNode;
+  /** Accessible name of the message log. */
+  logLabel: string;
+  /** The "this is the beginning" block at the top of the history. */
+  start: { icon: ReactNode; title: string; body: string };
+  /** May delete other people's messages (a DM has no moderators). */
+  canManage: boolean;
+  composer: { label: string; placeholder: string; ready: boolean; closedReason: string | null };
+};
+
+/**
+ * One conversation, a channel or a DM: header, message list, composer and the drop zone for files. Owns the
+ * history load and the socket listening; everything else is the same for both kinds.
+ */
+export function Conversation({ convKey, header, logLabel, start, canManage, composer }: ConversationProps) {
+  const state = useStore(chat.store, (s) => s.convs[convKey] ?? EMPTY_CONV);
+  const files = useComposerFiles(convKey);
+  const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    void chat.loadLatest(convKey);
+    realtime.setConversation(convKey);
+    return () => {
+      realtime.setConversation(null);
+      chat.close(convKey);
+    };
+  }, [convKey]);
+
+  // The overlay shows while a file drag is over the conversation; leaving to a child must not hide it.
+  const over = (e: DragEvent) => {
+    if (!hasFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    setDragging(true);
+  };
+  const leave = (e: DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+  };
+  const drop = (e: DragEvent) => {
+    if (!hasFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    setDragging(false);
+    if (!composer.closedReason && composer.ready) files.add(Array.from(e.dataTransfer.files));
+  };
+
+  return (
+    <div onDragEnter={over} onDragOver={over} onDragLeave={leave} onDrop={drop} className="relative flex min-h-0 flex-1 flex-col">
+      <ColumnHeader>{header}</ColumnHeader>
       {state.unavailable ? (
         <div className="flex-1 p-6">
           <EmptyState icon={<Prohibit />} title={t("chat.unavailableTitle")} body={t("chat.unavailableBody")} />
         </div>
       ) : (
-        <MessageList channelId={channelId} channelName={name} state={state} canManage={perms.can(Permission.MANAGE_MESSAGES)} />
+        <MessageList convKey={convKey} logLabel={logLabel} start={start} state={state} canManage={canManage} />
       )}
-      <Composer key={channelId} channelId={channelId} channelName={name} ready={perms.ready && !state.unavailable} canSend={perms.can(Permission.SEND_MESSAGES)} />
-    </>
+      <Composer key={convKey} convKey={convKey} files={files} label={composer.label} placeholder={composer.placeholder} ready={composer.ready && !state.unavailable} closedReason={composer.closedReason} />
+      {dragging && (
+        <div aria-hidden="true" className="pointer-events-none absolute inset-2 z-10 grid place-items-center rounded-panel border-2 border-dashed border-moss-300 bg-surface-2/90">
+          <p className="flex items-center gap-2 font-display text-lg font-bold text-moss-300">
+            <UploadSimple />
+            {composer.closedReason ? composer.closedReason : t("attachment.drop")}
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
-function MessageList({ channelId, channelName, state, canManage }: { channelId: string; channelName: string; state: ChannelChat; canManage: boolean }) {
+function MessageList({ convKey, logLabel, start, state, canManage }: { convKey: ConvKey; logLabel: string; start: ConversationProps["start"]; state: ConvChat; canManage: boolean }) {
   const myId = session.useSession((s) => s.user?.id);
   const { messages, pending } = state;
   const rows = useMemo(() => buildTimeline(messages), [messages]);
@@ -86,7 +152,7 @@ function MessageList({ channelId, channelName, state, canManage }: { channelId: 
         setUnseen((n) => n + added.length);
       }
       const newest = added[added.length - 1];
-      if (newest && prev.last !== "") setAnnounce(t("chat.announce", { name: newest.author.username, content: newest.content.slice(0, 200) }));
+      if (newest && prev.last !== "") setAnnounce(t("chat.announce", { name: newest.author.username, content: newest.content.slice(0, 200) || t("chat.announceFiles") }));
     }
     snap.current = { first, last, pending: pending.length, height: el.scrollHeight, top: el.scrollTop };
   }, [messages, pending.length, myId]);
@@ -97,14 +163,14 @@ function MessageList({ channelId, channelName, state, canManage }: { channelId: 
     pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
     if (pinned.current) setUnseen(0);
     snap.current = { ...snap.current, height: el.scrollHeight, top: el.scrollTop };
-    if (el.scrollTop < LOAD_OLDER_PX) void chat.loadOlder(channelId);
+    if (el.scrollTop < LOAD_OLDER_PX) void chat.loadOlder(convKey);
   };
 
   // A short first page does not fill the view, so no scroll event would ever ask for more.
   useEffect(() => {
     const el = scroller.current;
-    if (el && state.status === "ready" && !state.reachedStart && el.scrollHeight <= el.clientHeight) void chat.loadOlder(channelId);
-  }, [state.status, state.reachedStart, messages.length, channelId]);
+    if (el && state.status === "ready" && !state.reachedStart && el.scrollHeight <= el.clientHeight) void chat.loadOlder(convKey);
+  }, [state.status, state.reachedStart, messages.length, convKey]);
 
   const jumpDown = () => {
     const el = scroller.current;
@@ -126,26 +192,26 @@ function MessageList({ channelId, channelName, state, canManage }: { channelId: 
         )}
         {state.status === "error" && (
           <div className="p-4">
-            <LoadError message={t("chat.loadFailed")} onRetry={() => void chat.loadLatest(channelId)} />
+            <LoadError message={t("chat.loadFailed")} onRetry={() => void chat.loadLatest(convKey)} />
           </div>
         )}
         {/* Log of the conversation; aria-live is off so loading history is not read out, new messages go to the status below. */}
-        <div role="log" aria-live="off" aria-label={t("chat.log", { name: channelName })} aria-busy={state.loadingOlder} className="flex flex-col pt-4 pb-2">
-          <HistoryEdge state={state} channelId={channelId} channelName={channelName} />
+        <div role="log" aria-live="off" aria-label={logLabel} aria-busy={state.loadingOlder} className="flex flex-col pt-4 pb-2">
+          <HistoryEdge state={state} convKey={convKey} start={start} />
           {rows.map((r) => (
             <MessageRow
               key={r.message.id}
               message={r.message}
               grouped={r.grouped}
               day={r.day}
-              channelId={channelId}
+              convKey={convKey}
               mine={r.message.author.id === myId}
               canDelete={r.message.author.id === myId || canManage}
               onDelete={onDelete}
             />
           ))}
           {pending.map((p) => (
-            <PendingRow key={p.tempId} pending={p} channelId={channelId} username={session.useSession.getState().user?.username ?? ""} userId={myId ?? ""} />
+            <PendingRow key={p.tempId} pending={p} convKey={convKey} username={session.useSession.getState().user?.username ?? ""} userId={myId ?? ""} />
           ))}
         </div>
       </div>
@@ -163,28 +229,28 @@ function MessageList({ channelId, channelName, state, canManage }: { channelId: 
         </button>
       )}
       <Dialog open={toDelete !== null} onClose={() => setToDelete(null)} title={t("chat.deleteTitle")}>
-        {toDelete && <DeleteBody message={toDelete} channelId={channelId} onDone={() => setToDelete(null)} />}
+        {toDelete && <DeleteBody message={toDelete} convKey={convKey} onDone={() => setToDelete(null)} />}
       </Dialog>
     </div>
   );
 }
 
-function HistoryEdge({ state, channelId, channelName }: { state: ChannelChat; channelId: string; channelName: string }) {
+function HistoryEdge({ state, convKey, start }: { state: ConvChat; convKey: ConvKey; start: ConversationProps["start"] }) {
   if (state.status !== "ready") return null;
   if (state.reachedStart)
     return (
       <div className="mx-4 mb-4 border-b border-line pb-4">
         <span aria-hidden="true" className="mb-3 grid size-12 place-items-center rounded-full bg-surface-3 text-moss-300">
-          <Hash size={24} />
+          {start.icon}
         </span>
-        <p className="font-display text-2xl font-bold break-words">{t("chat.startTitle", { name: channelName })}</p>
-        <p className="mt-1 text-sm text-ink-muted">{t("chat.startBody")}</p>
+        <p className="font-display text-2xl font-bold break-words">{start.title}</p>
+        <p className="mt-1 text-sm text-ink-muted">{start.body}</p>
       </div>
     );
   if (state.olderFailed)
     return (
       <div className="flex justify-center py-2">
-        <Button variant="ghost" onClick={() => void chat.loadOlder(channelId)}>
+        <Button variant="ghost" onClick={() => void chat.loadOlder(convKey)}>
           <ArrowClockwise aria-hidden="true" />
           {t("chat.olderFailed")}
         </Button>
@@ -225,14 +291,14 @@ type RowProps = {
   message: Message;
   grouped: boolean;
   day?: string;
-  channelId: string;
+  convKey: ConvKey;
   mine: boolean;
   canDelete: boolean;
   onDelete: (m: Message) => void;
 };
 
 /** One message (memoized: with 1000+ loaded, only changed rows re-render). */
-const MessageRow = memo(function MessageRow({ message, grouped, day, channelId, mine, canDelete, onDelete }: RowProps) {
+const MessageRow = memo(function MessageRow({ message, grouped, day, convKey, mine, canDelete, onDelete }: RowProps) {
   const [editing, setEditing] = useState(false);
   const { copied, copy } = useCopy();
   return (
@@ -269,10 +335,11 @@ const MessageRow = memo(function MessageRow({ message, grouped, day, channelId, 
             </p>
           )}
           {editing ? (
-            <EditBox message={message} channelId={channelId} onDone={() => setEditing(false)} />
+            <EditBox message={message} convKey={convKey} onDone={() => setEditing(false)} />
           ) : (
             <>
-              <MessageText content={message.content} />
+              {message.content && <MessageText content={message.content} />}
+              <MessageAttachments attachments={message.attachments} />
               {message.editedAt && (
                 <span title={fullTimestamp(message.editedAt)} className="text-xs text-ink-faint">
                   {t("chat.edited")}
@@ -287,9 +354,11 @@ const MessageRow = memo(function MessageRow({ message, grouped, day, channelId, 
             aria-label={t("chat.actions")}
             className="absolute -top-3 right-4 flex rounded-control border border-line bg-surface-2 p-0.5 opacity-0 shadow-raised group-hover:opacity-100 group-focus-within:opacity-100"
           >
-            <ActionButton label={copied ? t("common.copied") : t("chat.copy")} onClick={() => void copy(message.content)}>
-              <Copy aria-hidden="true" />
-            </ActionButton>
+            {message.content && (
+              <ActionButton label={copied ? t("common.copied") : t("chat.copy")} onClick={() => void copy(message.content)}>
+                <Copy aria-hidden="true" />
+              </ActionButton>
+            )}
             {mine && (
               <ActionButton label={t("chat.edit")} onClick={() => setEditing(true)}>
                 <PencilSimple aria-hidden="true" />
@@ -322,18 +391,18 @@ function ActionButton({ label, danger = false, onClick, children }: { label: str
 }
 
 /** Inline edit: Enter saves, Shift+Enter breaks the line, Esc cancels. */
-function EditBox({ message, channelId, onDone }: { message: Message; channelId: string; onDone: () => void }) {
+function EditBox({ message, convKey, onDone }: { message: Message; convKey: ConvKey; onDone: () => void }) {
   const [text, setText] = useState(message.content);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function save() {
     const content = text.trim();
-    if (!content || busy) return;
+    if ((!content && !message.attachments.length) || busy) return; // text may be emptied only when files remain
     if (content === message.content) return onDone();
     setBusy(true);
     setError("");
     try {
-      await chat.edit(channelId, message.id, content);
+      await chat.edit(convKey, message.id, content);
       onDone();
     } catch (err) {
       setError(errorMessage(err));
@@ -370,7 +439,7 @@ function EditBox({ message, channelId, onDone }: { message: Message; channelId: 
   );
 }
 
-function PendingRow({ pending, channelId, username, userId }: { pending: Pending; channelId: string; username: string; userId: string }) {
+function PendingRow({ pending, convKey, username, userId }: { pending: Pending; convKey: ConvKey; username: string; userId: string }) {
   const failed = pending.status === "failed";
   return (
     <article aria-label={t(failed ? "chat.failed" : "chat.sending")} className="mt-2 flex gap-3 px-4 py-1">
@@ -384,15 +453,16 @@ function PendingRow({ pending, channelId, username, userId }: { pending: Pending
           </span>
         </p>
         <div className={failed ? "" : "opacity-70"}>
-          <MessageText content={pending.content} />
+          {pending.content && <MessageText content={pending.content} />}
+          <MessageAttachments attachments={pending.attachments.map((a) => ({ ...a, url: a.previewUrl }))} preview />
         </div>
         {failed && (
           <div className="mt-1 flex gap-1">
-            <Button variant="ghost" onClick={() => void chat.retry(channelId, pending.tempId)} className="h-10 px-3 text-sm">
+            <Button variant="ghost" onClick={() => void chat.retry(convKey, pending.tempId)} className="h-10 px-3 text-sm">
               <ArrowClockwise aria-hidden="true" />
               {t("chat.retry")}
             </Button>
-            <Button variant="ghost" onClick={() => chat.discard(channelId, pending.tempId)} className="h-10 px-3 text-sm">
+            <Button variant="ghost" onClick={() => chat.discard(convKey, pending.tempId)} className="h-10 px-3 text-sm">
               <Trash aria-hidden="true" />
               {t("chat.discard")}
             </Button>
@@ -403,13 +473,13 @@ function PendingRow({ pending, channelId, username, userId }: { pending: Pending
   );
 }
 
-function DeleteBody({ message, channelId, onDone }: { message: Message; channelId: string; onDone: () => void }) {
+function DeleteBody({ message, convKey, onDone }: { message: Message; convKey: ConvKey; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function remove() {
     setBusy(true);
     try {
-      await chat.remove(channelId, message.id);
+      await chat.remove(convKey, message.id);
       onDone();
     } catch (err) {
       setError(errorMessage(err));
@@ -420,7 +490,7 @@ function DeleteBody({ message, channelId, onDone }: { message: Message; channelI
     <>
       <p className="text-sm text-ink-muted">{t("chat.deleteBody")}</p>
       <blockquote className="max-h-40 overflow-y-auto rounded-control border border-line bg-surface-3 px-3.5 py-2.5 text-sm whitespace-pre-wrap text-ink [overflow-wrap:anywhere]">
-        {message.content}
+        {message.content || message.attachments.map((a) => a.filename).join(", ")}
       </blockquote>
       <DialogError message={error} />
       <DialogActions>

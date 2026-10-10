@@ -1,18 +1,24 @@
-import { createChannelSchema, createGuildSchema, loginSchema, registerSchema } from "@loop/shared";
+import { createChannelSchema, createGuildSchema, loginSchema, registerSchema, usernameSchema } from "@loop/shared";
 import { t } from "../i18n/t";
 
 export type Field = "email" | "username" | "password";
 export type Values = Record<Field, string>;
 type ZodIssue = NonNullable<ReturnType<typeof registerSchema.safeParse>["error"]>["issues"][number];
 
+const usernameMessage = (issue: Pick<ZodIssue, "code">) =>
+  issue.code === "too_small" ? t("validation.usernameShort") : issue.code === "too_big" ? t("validation.usernameLong") : t("validation.usernameChars");
+
 function message(field: Field, issue: ZodIssue): string {
   if (field === "email") return t("validation.email");
-  const tooSmall = issue.code === "too_small";
-  const tooBig = issue.code === "too_big";
-  if (field === "username") {
-    return tooSmall ? t("validation.usernameShort") : tooBig ? t("validation.usernameLong") : t("validation.usernameChars");
-  }
-  return tooBig ? t("validation.passwordLong") : t("validation.passwordShort");
+  if (field === "username") return usernameMessage(issue);
+  return issue.code === "too_big" ? t("validation.passwordLong") : t("validation.passwordShort");
+}
+
+/** A username typed to add a friend (the shared usernameSchema): Vietnamese error, or undefined when valid. */
+export function usernameError(name: string): string | undefined {
+  if (name === "") return t("validation.required");
+  const issue = usernameSchema.safeParse(name).error?.issues[0];
+  return issue ? usernameMessage(issue) : undefined;
 }
 
 /** Per-field Vietnamese errors from the same zod schemas the server uses (first problem per field). */

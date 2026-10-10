@@ -5,7 +5,9 @@ import { Banner } from "../components/Banner";
 import { Button } from "../components/Button";
 import { ChannelColumn } from "../components/ChannelColumn";
 import { ChatView } from "../components/ChatView";
-import { LogoMark } from "../components/Logo";
+import { DmColumn } from "../components/DmColumn";
+import { DmView } from "../components/DmView";
+import { ImageViewer } from "../components/ImageViewer";
 import { MemberList } from "../components/MemberList";
 import { ServerRail } from "../components/ServerRail";
 import { ColumnHeader, EmptyState } from "../components/States";
@@ -13,7 +15,9 @@ import { t } from "../i18n/t";
 import { ApiError } from "../lib/auth-client";
 import { realtime, revalidateGuild, session } from "../lib/app";
 import { goHome, readLastPlace, useNav } from "../lib/nav";
-import { useGuild, useGuilds } from "../lib/queries";
+import { blockFileNavigation } from "../lib/drop";
+import { useDms, useGuild, useGuilds } from "../lib/queries";
+import { FriendsScreen } from "./FriendsScreen";
 
 const subscribeOnline = (cb: () => void) => {
   addEventListener("online", cb);
@@ -34,11 +38,15 @@ export function Shell() {
   const online = useOnline();
   const connection = useStore(realtime.state, (s) => s.status);
   const guildId = useNav((s) => s.guildId);
+  const dmId = useNav((s) => s.dmId);
   const channelId = useValidPlace();
 
   useEffect(() => {
     if (user) useNav.setState(readLastPlace(user.id));
   }, [user?.id]); // only when the account changes, not on every user object
+
+  // A dropped file must never navigate the window to it (the conversation's own drop zone handles real drops).
+  useEffect(() => blockFileNavigation(window), []);
 
   return (
     <div className="flex h-full flex-col">
@@ -76,12 +84,7 @@ export function Shell() {
           {guildId ? (
             <ChannelColumn guildId={guildId} />
           ) : (
-            <>
-              <ColumnHeader>{t("app.name")}</ColumnHeader>
-              <div className="flex-1 overflow-y-auto p-4">
-                <EmptyState icon={<ChatsCircle />} title={t("home.channelsTitle")} body={t("home.channelsBody")} />
-              </div>
-            </>
+            <DmColumn />
           )}
           <section aria-label={t("shell.account")} className="flex h-16 shrink-0 items-center gap-3 bg-surface-0 px-3">
             <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-moss-900 font-display font-bold text-moss-200">
@@ -113,19 +116,10 @@ export function Shell() {
                 <EmptyState icon={<ChatsCircle />} title={t("chat.noChannelTitle")} body={t("chat.noChannelBody")} />
               </div>
             </>
+          ) : dmId ? (
+            <DmView dmId={dmId} />
           ) : (
-            <>
-              <ColumnHeader>{t("shell.home")}</ColumnHeader>
-              <div className="flex-1 overflow-y-auto px-10 py-12">
-                <div className="max-w-[52ch] animate-rise">
-                  <LogoMark className="size-12 text-moss-300" />
-                  <h1 className="mt-6 font-display text-[32px] leading-tight font-bold tracking-tight break-words">
-                    {t("shell.welcomeTitle", { name: user?.username ?? "" })}
-                  </h1>
-                  <p className="mt-3 leading-relaxed text-ink-muted">{t("shell.welcomeBody")}</p>
-                </div>
-              </div>
-            </>
+            <FriendsScreen />
           )}
         </main>
 
@@ -142,6 +136,7 @@ export function Shell() {
           )}
         </aside>
       </div>
+      <ImageViewer />
     </div>
   );
 }
@@ -155,6 +150,13 @@ function useValidPlace(): string | null {
   const channelId = useNav((s) => s.channelId);
   const guilds = useGuilds().data;
   const guild = useGuild(guildId);
+  const dmId = useNav((s) => s.dmId);
+  const dms = useDms().data;
+
+  // a DM that is not in the list (any more) -> the Friends screen
+  useEffect(() => {
+    if (!guildId && dmId && dms && !dms.some((d) => d.id === dmId)) useNav.setState({ dmId: null });
+  }, [guildId, dmId, dms]);
 
   const lostGuild = guild.error instanceof ApiError && guild.error.status === 404;
   useEffect(() => {

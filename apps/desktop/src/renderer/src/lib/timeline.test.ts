@@ -6,6 +6,8 @@ const at = (y: number, mo: number, d: number, h: number, mi: number) => new Date
 const m = (id: string, author: string, createdAt: string): Message => ({
   id,
   channelId: "c",
+  dmChannelId: null,
+  attachments: [],
   author: { id: author, username: author },
   content: id,
   createdAt,

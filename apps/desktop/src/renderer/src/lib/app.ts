@@ -5,6 +5,8 @@ import { createChat } from "./chat";
 import { goHome, useNav, writeLastPlace } from "./nav";
 import { createRealtime } from "./realtime";
 import { createSession } from "./session";
+import { createUploader } from "./upload-client";
+import { applySocialEvent, FRIENDS_KEY } from "./social";
 
 // The app's singletons. REST data goes through TanStack Query using `session.client.request`; messages live in `chat`.
 export const queryClient = new QueryClient({
@@ -30,7 +32,14 @@ export const session = createSession({
 
 const myId = () => session.useSession.getState().user?.id;
 
-export const chat = createChat({ request: session.client.request, myId });
+export const uploadAttachment = createUploader({ request: session.client.request });
+
+export const chat = createChat({
+  request: session.client.request,
+  myId,
+  // a refused DM send means the friends list is stale
+  onForbidden: () => void queryClient.invalidateQueries({ queryKey: FRIENDS_KEY }),
+});
 
 /** Permissions or lists may have changed: refetch this guild's data (guild + channels, members, roles) and the server list. */
 export function revalidateGuild(guildId: string | null) {
@@ -41,12 +50,14 @@ export function revalidateGuild(guildId: string | null) {
 export const realtime = createRealtime({
   url: API_URL,
   getToken: (rejected) => session.client.accessToken(rejected),
-  onEvent: (channelId, event) => chat.receive(channelId, event),
-  onSubscribed: (channelId) => void chat.catchUp(channelId),
-  onRefused: (channelId) => {
-    chat.markUnavailable(channelId);
+  onEvent: (key, event) => chat.receive(key, event),
+  onSubscribed: (key) => void chat.catchUp(key),
+  onRefused: (key) => {
+    chat.markUnavailable(key);
     revalidateGuild(useNav.getState().guildId);
   },
+  onSocial: (event) => applySocialEvent(queryClient, event),
+  // everything may have changed meanwhile: friends, DM list, blocks, permissions (the open conversation catches up separately)
   onReconnected: () => void queryClient.invalidateQueries(),
 });
 

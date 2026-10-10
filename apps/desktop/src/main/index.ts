@@ -1,14 +1,14 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, ipcMain, net, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from "electron";
-import { API_URL, WS_URL } from "../shared/config";
+import { API_URL, STORAGE_ORIGIN, WS_URL } from "../shared/config";
 import { APP_ORIGIN, buildCsp, isSafeExternalUrl, isTrustedSender, isValidRefreshToken, resolveAppFile } from "./security";
 import { createTokenStore } from "./token-store";
 
 // Set by electron-vite in dev only; production loads the built renderer from app://loop.
 const devServerUrl = process.env.ELECTRON_RENDERER_URL;
 const rendererDir = join(__dirname, "../renderer");
-const csp = buildCsp(API_URL, WS_URL, devServerUrl);
+const csp = buildCsp({ api: API_URL, ws: WS_URL, storage: STORAGE_ORIGIN }, devServerUrl);
 
 // Test/dev hook: a separate profile (the E2E smoke test relaunches against the same one).
 if (process.env.LOOP_USER_DATA_DIR) app.setPath("userData", process.env.LOOP_USER_DATA_DIR);

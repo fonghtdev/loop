@@ -2,7 +2,7 @@
 
 App chat kiểu Discord cho Windows và macOS: máy chủ (server) với kênh chat, tin nhắn riêng, bạn bè, vai trò và quyền, tệp đính kèm, gọi thoại và video.
 
-> **Trạng thái:** server đã xong (đăng nhập, server/kênh, chat realtime, vai trò, bạn bè và DM, tệp, voice/video). App desktop đã có **đăng nhập, máy chủ, kênh và chat text trực tiếp**; tin nhắn riêng/bạn bè, tệp đính kèm, gọi thoại/video và màn hình quản lý vai trò đang làm tiếp.
+> **Trạng thái:** server đã xong (đăng nhập, server/kênh, chat realtime, vai trò, bạn bè và DM, tệp, voice/video). App desktop đã có **đăng nhập, máy chủ, kênh, chat text trực tiếp, bạn bè, tin nhắn riêng (DM), chặn, chấm online và tệp đính kèm**; gọi thoại/video, màn hình quản lý vai trò và thông báo hệ điều hành đang làm tiếp.
 
 ## Cần có
 
@@ -46,7 +46,7 @@ pnpm --filter @loop/desktop dev
 
 Lần đầu chạy app desktop, Electron tải bộ chạy của nó (vài chục MB), nên hơi lâu.
 
-Trong app: bấm **Tạo tài khoản**, nhập email, tên người dùng (chữ thường không dấu, số, `_`, `.`) và mật khẩu từ 8 ký tự. Sau khi đăng nhập, bấm nút **+** ở cột trái để tạo máy chủ (có sẵn kênh `#general`), hoặc nút la bàn để tham gia bằng mã mời. Bấm tên máy chủ ở đầu cột kênh để mời bạn bè (lấy mã), tạo kênh hoặc rời máy chủ. Gõ tin ở ô dưới cùng: Enter để gửi, Shift+Enter để xuống dòng; rê chuột (hoặc Tab) vào một tin để sao chép, sửa hoặc xoá. Muốn thử với hai người, mở thêm một tài khoản khác bằng `curl` hoặc nhờ bạn cùng chạy (xem `CLAUDE.md` để biết đường dẫn và sự kiện).
+Trong app: bấm **Tạo tài khoản**, nhập email, tên người dùng (chữ thường không dấu, số, `_`, `.`) và mật khẩu từ 8 ký tự. Sau khi đăng nhập, bấm nút **+** ở cột trái để tạo máy chủ (có sẵn kênh `#general`), hoặc nút la bàn để tham gia bằng mã mời. Bấm tên máy chủ ở đầu cột kênh để mời bạn bè (lấy mã), tạo kênh hoặc rời máy chủ. Gõ tin ở ô dưới cùng: Enter để gửi, Shift+Enter để xuống dòng; rê chuột (hoặc Tab) vào một tin để sao chép, sửa hoặc xoá. Bấm nút Loop trên cùng cột trái để vào **Trang chủ**: tab **Bạn bè** (thêm bạn bằng tên người dùng, lời mời đang chờ, danh sách đã chặn) và danh sách tin nhắn riêng; bấm **Nhắn tin** ở một người bạn để mở DM. Bấm kẹp giấy, kéo thả hoặc dán (Ctrl/Cmd+V) để đính kèm tệp (tối đa 25 MB mỗi tệp, 10 tệp mỗi tin; ảnh PNG/JPEG/GIF/WebP, PDF, TXT, ZIP, MP4, MP3); bấm vào ảnh để xem lớn. Muốn thử với hai người, mở thêm một tài khoản khác bằng `curl` hoặc nhờ bạn cùng chạy (xem `CLAUDE.md` để biết đường dẫn và sự kiện).
 
 ### Tắt mọi thứ
 
@@ -89,7 +89,7 @@ docker/          cấu hình LiveKit và khởi tạo database test
 | `LIVEKIT_*` | máy chủ voice/video (Docker khi dev, LiveKit Cloud khi chạy thật) |
 | `CORS_ORIGINS` | nguồn được gọi API. Dev dùng `http://localhost:5173`, bản đóng gói dùng `app://loop`. Để trống là không cho nguồn nào |
 
-Địa chỉ server mà app desktop gọi mặc định là `http://localhost:3000`. Đổi bằng biến `VITE_API_URL` lúc chạy hoặc build app.
+Địa chỉ server mà app desktop gọi mặc định là `http://localhost:3000`. Đổi bằng biến `VITE_API_URL` lúc chạy hoặc build app. Tệp đính kèm nằm ở kho S3 (MinIO, mặc định `http://localhost:9000`); đổi origin của nó cho app bằng `VITE_STORAGE_ORIGIN`.
 
 ## Gặp lỗi?
 

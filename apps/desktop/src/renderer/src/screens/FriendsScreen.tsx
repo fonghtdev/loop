@@ -1,0 +1,357 @@
+import { ChatCircle, DotsThree, Prohibit, UserMinus, UsersThree } from "@phosphor-icons/react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { PresenceAvatar } from "../components/Avatar";
+import { Banner } from "../components/Banner";
+import { Button } from "../components/Button";
+import { ConfirmBody } from "../components/Confirm";
+import { Dialog } from "../components/Dialog";
+import { ColumnHeader, EmptyState, LoadError, Skeleton } from "../components/States";
+import { TextField } from "../components/TextField";
+import { t } from "../i18n/t";
+import type { MessageKey } from "../i18n/vi";
+import { errorMessage } from "../lib/errors";
+import { arrowNav } from "../lib/focus";
+import { useBlocks, useFriends, useIsOnline } from "../lib/queries";
+import { acceptRequest, blockUser, dismissRequest, openDm, sendFriendRequest, unblockUser, unfriend } from "../lib/social-actions";
+import { sortFriends, type Friend, type PublicUser } from "../lib/social";
+import { usernameError } from "../lib/validation";
+
+type Tab = "all" | "pending" | "blocked";
+const TABS: Tab[] = ["all", "pending", "blocked"];
+const TAB_LABELS: Record<Tab, MessageKey> = { all: "friends.tabAll", pending: "friends.tabPending", blocked: "friends.tabBlocked" };
+
+/** Home's main area when no DM is open: add a friend, and the friends / pending / blocked lists. */
+export function FriendsScreen() {
+  const friends = useFriends();
+  const blocks = useBlocks();
+  const [tab, setTab] = useState<Tab>("all");
+  const tabs = useRef<Record<Tab, HTMLButtonElement | null>>({ all: null, pending: null, blocked: null });
+  const counts: Record<Tab, number | null> = {
+    all: friends.data?.friends.length ?? null,
+    pending: friends.data ? friends.data.incoming.length + friends.data.outgoing.length : null,
+    blocked: blocks.data?.length ?? null,
+  };
+
+  // The tab pattern: arrows (and Home/End) move between tabs and select them; only the selected tab is in the Tab order.
+  const onTabKey = (e: KeyboardEvent) => {
+    const i = TABS.indexOf(tab);
+    const next = e.key === "ArrowRight" ? (i + 1) % TABS.length : e.key === "ArrowLeft" ? (i + TABS.length - 1) % TABS.length : e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : -1;
+    if (next === -1) return;
+    e.preventDefault();
+    setTab(TABS[next]);
+    tabs.current[TABS[next]]?.focus();
+  };
+
+  const incoming = friends.data?.incoming;
+  const seen = useRef<Set<string> | null>(null);
+  const [announce, setAnnounce] = useState("");
+  useEffect(() => {
+    if (!incoming) return;
+    const fresh = seen.current ? incoming.find((u) => !seen.current!.has(u.id)) : undefined;
+    seen.current = new Set(incoming.map((u) => u.id));
+    if (fresh) setAnnounce(t("friends.announceRequest", { name: fresh.username }));
+  }, [incoming]);
+
+  return (
+    <>
+      <ColumnHeader>
+        <UsersThree aria-hidden="true" className="shrink-0 text-ink-faint" />
+        <h1 className="min-w-0 truncate">{t("home.friends")}</h1>
+      </ColumnHeader>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex max-w-[760px] flex-col gap-5 px-6 py-5">
+          <AddFriendForm />
+          <div role="tablist" aria-label={t("friends.tabs")} onKeyDown={onTabKey} className="flex gap-1 border-b border-line">
+            {TABS.map((id) => (
+              <button
+                key={id}
+                ref={(el) => void (tabs.current[id] = el)}
+                type="button"
+                role="tab"
+                id={`friends-tab-${id}`}
+                aria-selected={tab === id}
+                aria-controls="friends-panel"
+                tabIndex={tab === id ? 0 : -1}
+                onClick={() => setTab(id)}
+                className={`-mb-px h-10 rounded-t-control border-b-2 px-4 text-sm font-semibold whitespace-nowrap transition-colors duration-(--duration-fast) ${tab === id ? "border-moss-300 text-ink" : "border-transparent text-ink-muted hover:bg-surface-3 hover:text-ink"}`}
+              >
+                {t(TAB_LABELS[id])}
+                {counts[id] !== null && ` (${counts[id]})`}
+              </button>
+            ))}
+          </div>
+          <div role="tabpanel" id="friends-panel" aria-labelledby={`friends-tab-${tab}`}>
+            {tab === "all" && <FriendList />}
+            {tab === "pending" && <PendingList />}
+            {tab === "blocked" && <BlockedList />}
+          </div>
+        </div>
+      </div>
+      <p aria-live="polite" className="sr-only">
+        {announce}
+      </p>
+    </>
+  );
+}
+
+function AddFriendForm() {
+  const [name, setName] = useState("");
+  const [tried, setTried] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [serverError, setServerError] = useState("");
+  const [done, setDone] = useState("");
+  const normalized = name.trim().toLowerCase();
+  const error = serverError || (tried ? usernameError(normalized) : undefined);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setTried(true);
+    setDone("");
+    setServerError("");
+    if (busy || usernameError(normalized)) return;
+    setBusy(true);
+    try {
+      const { status, user } = await sendFriendRequest(normalized);
+      setDone(t(status === "ACCEPTED" ? "friends.nowFriends" : "friends.requestSent", { name: user.username }));
+      setName("");
+      setTried(false);
+    } catch (err) {
+      setServerError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} noValidate aria-label={t("friends.addTitle")} className="flex flex-col gap-2">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <TextField
+            label={t("friends.addLabel")}
+            hint={t("friends.addHint")}
+            spellCheck={false}
+            autoCapitalize="none"
+            autoComplete="off"
+            maxLength={32}
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              setServerError("");
+            }}
+            error={error}
+          />
+        </div>
+        {/* aligned with the input (the label above it is 20px + 6px gap) */}
+        <Button type="submit" loading={busy} className="mt-[26px] shrink-0">
+          {t("friends.addSubmit")}
+        </Button>
+      </div>
+      <p role="status" className="text-[13px] font-medium text-moss-300 empty:hidden">
+        {done}
+      </p>
+    </form>
+  );
+}
+
+/** Runs a row action: one at a time, its failure shown above the list. */
+function useRowAction() {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  async function run(id: string, action: () => Promise<unknown>) {
+    setBusy(id);
+    setError("");
+    try {
+      await action();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+  return { busy, error, run };
+}
+
+function ListState({ query, empty }: { query: { isPending: boolean; isError: boolean; error: unknown; refetch: () => unknown }; empty: ReactNode }) {
+  if (query.isPending) return <Skeleton rows={5} />;
+  if (query.isError) return <LoadError message={errorMessage(query.error)} onRetry={() => void query.refetch()} />;
+  return empty;
+}
+
+function Row({ user, online, subtitle, children }: { user: PublicUser; online?: boolean; subtitle?: string; children: ReactNode }) {
+  return (
+    <li className="flex min-h-14 items-center gap-3 rounded-control px-3 py-1 hover:bg-surface-3">
+      <PresenceAvatar id={user.id} name={user.username} online={!!online} ring={2} className="size-10 rounded-full text-sm" />
+      <span className="min-w-0 flex-1">
+        <span title={user.username} className="block truncate text-[15px] font-semibold text-ink select-text">
+          {user.username}
+        </span>
+        {subtitle && <span className="block truncate text-xs text-ink-muted">{subtitle}</span>}
+      </span>
+      <div className="flex shrink-0 items-center gap-1">{children}</div>
+    </li>
+  );
+}
+
+function FriendList() {
+  const friends = useFriends();
+  const blocks = useBlocks();
+  const isOnline = useIsOnline();
+  const [dialog, setDialog] = useState<{ kind: "unfriend" | "block"; user: Friend } | null>(null);
+  const action = useRowAction();
+  const sorted = useMemo(() => sortFriends(friends.data?.friends ?? [], new Set(blocks.data?.map((u) => u.id))), [friends.data, blocks.data]);
+
+  return (
+    <>
+      {action.error && (
+        <div role="alert" className="mb-3">
+          <Banner tone="danger">{action.error}</Banner>
+        </div>
+      )}
+      <ListState query={friends} empty={sorted.length === 0 && <EmptyState icon={<UsersThree />} title={t("friends.noneTitle")} body={t("friends.noneBody")} />} />
+      {friends.data && sorted.length > 0 && (
+        <ul aria-label={t("friends.list")} className="flex flex-col gap-0.5">
+          {sorted.map((f) => (
+            <Row key={f.id} user={f} online={isOnline(f)} subtitle={isOnline(f) ? t("presence.online") : t("presence.offline")}>
+              <IconButton label={t("friends.message", { name: f.username })} onClick={() => void action.run(f.id, () => openDm(f.id))}>
+                <ChatCircle aria-hidden="true" />
+              </IconButton>
+              <FriendMenu friend={f} onMessage={() => void action.run(f.id, () => openDm(f.id))} onPick={(kind) => setDialog({ kind, user: f })} />
+            </Row>
+          ))}
+        </ul>
+      )}
+      <Dialog open={dialog?.kind === "unfriend"} onClose={() => setDialog(null)} title={t("friends.unfriendTitle", { name: dialog?.user.username ?? "" })}>
+        {dialog && <ConfirmBody body={t("friends.unfriendBody")} submit={t("friends.unfriend")} onDone={() => setDialog(null)} action={() => unfriend(dialog.user.id)} />}
+      </Dialog>
+      <Dialog open={dialog?.kind === "block"} onClose={() => setDialog(null)} title={t("friends.blockTitle", { name: dialog?.user.username ?? "" })}>
+        {dialog && <ConfirmBody body={t("friends.blockBody")} submit={t("friends.block")} onDone={() => setDialog(null)} action={() => blockUser(dialog.user)} />}
+      </Dialog>
+    </>
+  );
+}
+
+function IconButton({ label, onClick, children, ...rest }: { label: string; onClick?: () => void; children: ReactNode } & { popoverTarget?: string; style?: CSSProperties }) {
+  return (
+    <button type="button" aria-label={label} title={label} onClick={onClick} {...rest} className="grid size-10 place-items-center rounded-control text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 hover:text-ink">
+      {children}
+    </button>
+  );
+}
+
+/** Per-friend actions in a native popover anchored to its button (light dismiss, Esc; arrows move between items). */
+function FriendMenu({ friend, onMessage, onPick }: { friend: Friend; onMessage: () => void; onPick: (kind: "unfriend" | "block") => void }) {
+  const menu = useRef<HTMLDivElement>(null);
+  const id = `friend-menu-${friend.id}`;
+  const anchor = `--${id}`;
+  const pick = (fn: () => void) => () => {
+    menu.current?.hidePopover();
+    fn();
+  };
+  return (
+    <>
+      <IconButton label={t("friends.options", { name: friend.username })} popoverTarget={id} style={{ anchorName: anchor } as CSSProperties}>
+        <DotsThree aria-hidden="true" weight="bold" />
+      </IconButton>
+      <div
+        ref={menu}
+        id={id}
+        popover="auto"
+        style={{ positionAnchor: anchor } as CSSProperties}
+        onToggle={(e) => (e as unknown as ToggleEvent).newState === "open" && menu.current?.querySelector<HTMLElement>("[data-nav-item]")?.focus()}
+        onKeyDown={arrowNav}
+        className="m-0 w-56 glass rounded-control p-1.5 text-ink [inset:auto] [top:calc(anchor(bottom)+6px)] [right:anchor(right)]"
+      >
+        <MenuItem icon={<ChatCircle aria-hidden="true" />} label={t("friends.messageShort")} onClick={pick(onMessage)} />
+        <MenuItem icon={<UserMinus aria-hidden="true" />} label={t("friends.unfriend")} danger onClick={pick(() => onPick("unfriend"))} />
+        <MenuItem icon={<Prohibit aria-hidden="true" />} label={t("friends.block")} danger onClick={pick(() => onPick("block"))} />
+      </div>
+    </>
+  );
+}
+
+function MenuItem({ icon, label, danger = false, onClick }: { icon: ReactNode; label: string; danger?: boolean; onClick: () => void }) {
+  return (
+    <button type="button" data-nav-item onClick={onClick} className={`flex h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 text-left text-sm font-medium hover:bg-surface-4 ${danger ? "text-danger" : "text-ink"}`}>
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function PendingList() {
+  const friends = useFriends();
+  const action = useRowAction();
+  const { incoming = [], outgoing = [] } = friends.data ?? {};
+  return (
+    <>
+      {action.error && (
+        <div role="alert" className="mb-3">
+          <Banner tone="danger">{action.error}</Banner>
+        </div>
+      )}
+      <ListState query={friends} empty={incoming.length + outgoing.length === 0 && <EmptyState icon={<UsersThree />} title={t("friends.noPendingTitle")} body={t("friends.noPendingBody")} />} />
+      {incoming.length > 0 && (
+        <Section title={t("friends.incoming", { count: String(incoming.length) })}>
+          {incoming.map((u) => (
+            <Row key={u.id} user={u}>
+              <Button loading={action.busy === u.id} onClick={() => void action.run(u.id, () => acceptRequest(u))} className="h-10 px-3 text-sm">
+                {t("friends.accept")}
+              </Button>
+              <Button variant="ghost" disabled={action.busy === u.id} onClick={() => void action.run(u.id, () => dismissRequest(u.id))} className="px-3 text-sm">
+                {t("friends.decline")}
+              </Button>
+            </Row>
+          ))}
+        </Section>
+      )}
+      {outgoing.length > 0 && (
+        <Section title={t("friends.outgoing", { count: String(outgoing.length) })}>
+          {outgoing.map((u) => (
+            <Row key={u.id} user={u} subtitle={t("friends.awaiting")}>
+              <Button variant="ghost" loading={action.busy === u.id} onClick={() => void action.run(u.id, () => dismissRequest(u.id))} className="px-3 text-sm">
+                {t("friends.cancel")}
+              </Button>
+            </Row>
+          ))}
+        </Section>
+      )}
+    </>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="mb-4">
+      <h2 className="mb-1 px-3 text-xs font-semibold text-ink-muted">{title}</h2>
+      <ul className="flex flex-col gap-0.5">
+        {children}
+      </ul>
+    </section>
+  );
+}
+
+function BlockedList() {
+  const blocks = useBlocks();
+  const action = useRowAction();
+  return (
+    <>
+      {action.error && (
+        <div role="alert" className="mb-3">
+          <Banner tone="danger">{action.error}</Banner>
+        </div>
+      )}
+      <ListState query={blocks} empty={blocks.data?.length === 0 && <EmptyState icon={<Prohibit />} title={t("friends.noBlockedTitle")} body={t("friends.noBlockedBody")} />} />
+      {!!blocks.data?.length && (
+        <ul aria-label={t("friends.blockedList")} className="flex flex-col gap-0.5">
+          {blocks.data.map((u) => (
+            <Row key={u.id} user={u}>
+              <Button variant="ghost" loading={action.busy === u.id} onClick={() => void action.run(u.id, () => unblockUser(u.id))} className="px-3 text-sm">
+                {t("friends.unblock")}
+              </Button>
+            </Row>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}

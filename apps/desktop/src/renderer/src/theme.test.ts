@@ -49,6 +49,9 @@ const text: [string, string][] = [
   ["on-moss", "danger"], // destructive confirm buttons (leave, delete)
   ["danger", "surface-3"], // delete action in the message toolbar / menu
   ["danger", "surface-4"], // the same item hovered
+  ["moss-300", "surface-4"], // "Thử lại" on a broken image, hovered
+  ["ink-faint", "surface-2"], // image file name under a picture
+  ["danger", "surface-3"], // failed upload line in the tray
 ];
 // Non-text UI (WCAG 1.4.11, 3:1): input boundaries, the focus ring, the primary button's shape.
 const ui: [string, string][] = [
@@ -58,6 +61,9 @@ const ui: [string, string][] = [
   ["moss-400", "surface-2"],
   ["warning", "surface-1"], // owner crown in the member list
   ["moss-300", "surface-4"], // focus ring on the active channel
+  // online dot (moss-400) on whatever the avatar sits on: channel column, friends rows, header, hovered rows
+  ...["surface-1", "surface-2", "surface-3", "surface-4"].map((bg): [string, string] => ["moss-400", bg]),
+  ["moss-300", "surface-2"], // drop-zone dashed border
 ];
 
 // Worst-case backdrops behind glass, from the same tokens: each ambient glow at full strength (auth card); the dialog
@@ -67,7 +73,12 @@ const behindAuth = glows.map(([n, c]) => [`auth card over ${n}`, c] as const);
 const behindDialog = [["dialog over dimmed ink text", dimmed(rgb(tokens.ink))]] as const;
 const behindPopover = [["popover over ink text", rgb(tokens.ink)]] as const;
 const textOnGlass = ["ink", "ink-muted", "ink-faint", "danger", "moss-300"];
+// The drop overlay (surface-2 at 90%) over the lightest thing that could be behind it: ink text.
+const overlay = composite(rgb(tokens["surface-2"]), 0.9, rgb(tokens.ink));
 describe("design tokens meet WCAG AA", () => {
+  it("drop-zone text (moss-300) on its overlay over the worst-case backdrop >= 4.5:1", () => {
+    expect(contrast(tokens["moss-300"], overlay)).toBeGreaterThanOrEqual(4.5);
+  });
   it("parses the tokens", () => {
     expect(Object.keys(tokens).length).toBeGreaterThan(15);
   });

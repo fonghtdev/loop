@@ -63,7 +63,7 @@ test("register, restore the session after a relaunch, logout, wrong password", a
   await page.getByLabel("Tên người dùng").fill(name);
   await page.getByLabel("Mật khẩu", { exact: true }).fill(password);
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("heading", { name: `Chào ${name}!` })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bạn bè" })).toBeVisible();
   await expect(page.getByText("không hỗ trợ lưu đăng nhập an toàn")).toHaveCount(0); // macOS: keychain available
   await shot(page, "06-shell-1280x800");
   await resize(app, 960, 600);
@@ -76,7 +76,7 @@ test("register, restore the session after a relaunch, logout, wrong password", a
 
   ({ app, page } = await launch());
   await page.screenshot({ path: join(shots, "09a-relaunch-first-paint-splash.png") }); // no wait: catch the splash if we can
-  await expect(page.getByRole("heading", { name: `Chào ${name}!` })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bạn bè" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Chào mừng trở lại" })).toHaveCount(0);
   await shot(page, "09-shell-restored-after-relaunch");
 
