@@ -1,6 +1,7 @@
 import { hasPermission } from "@loop/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { standingFor } from "./admin";
 import { session } from "./app";
 import { BLOCKS_KEY, DMS_KEY, FRIENDS_KEY, showOnline, type Dm, type FriendsData, type PublicUser } from "./social";
 import { permissionsFor, type Channel, type Guild, type Member, type Role } from "./permissions";
@@ -33,10 +34,11 @@ export function usePermissions(guildId: string | null, channelId?: string | null
   const guild = useGuild(guildId).data;
   const members = useMembers(guildId).data;
   const roles = useRoles(guildId).data;
-  if (!userId || !guild || !members || !roles) return { ready: false, can: () => false };
+  if (!userId || !guild || !members || !roles) return { ready: false, can: () => false, bits: 0, standing: null };
+  const data = { userId, guild: guild.guild, members, roles };
   const channel = channelId ? guild.channels.find((c) => c.id === channelId) : undefined;
-  const bits = channelId && !channel ? 0 : permissionsFor({ userId, guild: guild.guild, members, roles }, channel);
-  return { ready: true, can: (perm: number) => hasPermission(bits, perm) };
+  const bits = channelId && !channel ? 0 : permissionsFor(data, channel);
+  return { ready: true, can: (perm: number) => hasPermission(bits, perm), bits, standing: standingFor(data) };
 }
 
 // Friends, DMs and blocks: kept live in place by the socket events (lib/social.ts); refetched after a reconnect.

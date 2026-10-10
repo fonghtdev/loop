@@ -62,5 +62,5 @@ export async function unblockUser(userId: string) {
 export async function openDm(userId: string) {
   const dm = await api<{ id: string; user: Friend }>("POST", "/dms", { userId });
   queryClient.setQueryData<Dm[]>(DMS_KEY, (d) => (d ? addDm(d, dm) : d));
-  useNav.setState({ guildId: null, channelId: null, dmId: dm.id });
+  useNav.setState({ guildId: null, channelId: null, dmId: dm.id, settings: null });
 }

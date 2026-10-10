@@ -175,8 +175,8 @@ test("create a server (validation, long name), empty channel, create channel, du
   await create.getByLabel("Tên kênh").fill("tro chuyen");
   await create.getByRole("button", { name: "Tạo kênh" }).click();
   await expect(create).toBeHidden();
-  await expect(channelList().getByRole("button", { name: "tro-chuyen" })).toHaveAttribute("aria-current", "page");
-  await channelList().getByRole("button", { name: "general" }).click();
+  await expect(channelList().getByRole("button", { name: "tro-chuyen", exact: true })).toHaveAttribute("aria-current", "page");
+  await channelList().getByRole("button", { name: "general", exact: true }).click();
 });
 
 test("invite with copy feedback; B joins by API; live messages both ways; IME Enter does not send", async () => {
@@ -288,7 +288,7 @@ test("history: 130 seeded messages page in on scroll without jumping, down to th
   const channel = await api<{ id: string }>(A.token, "POST", `/guilds/${guildId}/channels`, { name: "lich-su", type: "TEXT" });
   for (let i = 1; i <= 130; i++) await post(B, channel.id, `Lịch sử #${i}`);
   await rail().getByRole("button", { name: longName }).click(); // reopening a server refetches its channels
-  await channelList().getByRole("button", { name: "lich-su" }).click();
+  await channelList().getByRole("button", { name: "lich-su", exact: true }).click();
   await expect(messageText("Lịch sử #130")).toBeVisible();
   await expect(log().getByRole("article")).toHaveCount(50);
   // pinned to the bottom after the first load
@@ -328,7 +328,7 @@ test("performance with 1100 loaded messages", async () => {
   const texts = Array.from({ length: 1100 }, (_, i) => `Tin hiệu năng ${i + 1}: xem https://example.com/${i} nhé, có dấu tiếng Việt ạ ơ ư.`);
   for (let i = 0; i < texts.length; i += 20) await Promise.all(texts.slice(i, i + 20).map((t) => post(B, channel.id, t)));
   await rail().getByRole("button", { name: longName }).click();
-  await channelList().getByRole("button", { name: "hieu-nang" }).click();
+  await channelList().getByRole("button", { name: "hieu-nang", exact: true }).click();
   await expect(log().getByRole("article")).toHaveCount(50);
 
   const pageTimes: number[] = [];
@@ -421,7 +421,7 @@ test("layout stress: 40 channels, 60 members, 2000-char unbroken message, diacri
   await post(B, generalId, "x".repeat(2000));
   await post(B, generalId, "Thử dấu: Ạ Ặ Ậ Ẹ Ệ Ị Ọ Ộ Ợ Ụ Ự Ỵ ẳ ẵ ẩ ẫ ể ễ ỉ ĩ ỏ õ ổ ỗ ở ỡ ủ ũ ử ữ ỷ ỹ đường phố Hà Nội nghiêng ngả.");
   await rail().getByRole("button", { name: longName }).click();
-  await channelList().getByRole("button", { name: "general" }).click();
+  await channelList().getByRole("button", { name: "general", exact: true }).click();
   await expect(log().getByText("Thử dấu:", { exact: false })).toBeVisible();
   await expect(page.getByRole("complementary", { name: "Thành viên" }).getByRole("listitem")).toHaveCount(62);
   await expect(channelList().getByRole("listitem")).toHaveCount(44);
@@ -467,7 +467,7 @@ test("joining another server: bad code, disabled composer (no SEND), private cha
   await expect(rail().getByRole("button", { name: `Server của C ${run}` })).toHaveAttribute("aria-current", "page");
   await expect(composer()).toBeDisabled();
   await expect(composer()).toHaveAttribute("placeholder", "Bạn không có quyền gửi tin nhắn trong kênh này.");
-  await expect(channelList().getByRole("button", { name: "bi-mat" })).toHaveCount(0);
+  await expect(channelList().getByRole("button", { name: "bi-mat", exact: true })).toHaveCount(0);
   // the owner of C's server is marked in the member list
   await expect(page.getByRole("complementary", { name: "Thành viên" }).getByText("Chủ máy chủ")).toHaveCount(1);
 
@@ -476,8 +476,8 @@ test("joining another server: bad code, disabled composer (no SEND), private cha
   await api(C.token, "PUT", `/guilds/${guild.id}/members/${A.user.id}/roles/${role.id}`);
   // the trigger: reopening the server refetches guild, roles and members (no server push for permission changes)
   await rail().getByRole("button", { name: `Server của C ${run}` }).click();
-  await expect(channelList().getByRole("button", { name: "bi-mat" })).toBeVisible();
-  await channelList().getByRole("button", { name: "bi-mat" }).click();
+  await expect(channelList().getByRole("button", { name: "bi-mat", exact: true })).toBeVisible();
+  await channelList().getByRole("button", { name: "bi-mat", exact: true }).click();
   await expect(composer()).toBeEnabled();
 
   await page.getByRole("button", { name: /^Tuỳ chọn máy chủ/ }).click();

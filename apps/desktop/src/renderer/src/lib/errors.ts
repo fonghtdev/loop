@@ -1,5 +1,19 @@
 import { t } from "../i18n/t";
+import type { MessageKey } from "../i18n/vi";
 import { ApiError } from "./auth-client";
+
+// Administration refusals, told apart by the server's own text (guilds/access.ts, roles.ts, routes.ts).
+const ADMIN_ERRORS: [status: number, serverText: RegExp, key: MessageKey][] = [
+  [403, /not below your highest role/, "admin.errors.hierarchy"],
+  [403, /cannot grant permissions/, "admin.errors.grant"],
+  [403, /owner cannot be/, "admin.errors.owner"],
+  [403, /Only the owner/, "admin.errors.ownerOnly"],
+  [403, /need a role above/, "admin.errors.needRole"],
+  [400, /@everyone/, "admin.errors.everyone"],
+  [400, /yourself/, "admin.errors.self"],
+  [400, /already own/, "admin.errors.alreadyOwner"],
+  [409, /at least one channel/, "admin.errors.lastChannel"],
+];
 
 /** What to tell the user about a failed call. */
 export function errorMessage(err: unknown): string {
@@ -25,6 +39,8 @@ export function errorMessage(err: unknown): string {
     if (status === 404) return t("call.errors.gone");
   }
   if (status === 403 && /^\/dms\/[^/]+\/messages$/.test(path)) return t("errors.notFriends");
+  const admin = ADMIN_ERRORS.find(([s, text]) => s === status && text.test(err.serverMessage ?? ""));
+  if (admin) return t(admin[2]);
   if (status === 400) return t("errors.invalid");
   // A 401 from login means wrong credentials; anywhere else it means the session ended.
   if (status === 401) return path === "/auth/login" ? t("errors.wrongCredentials") : t("errors.sessionExpired");

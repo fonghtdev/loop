@@ -2,7 +2,7 @@ import type { LoopApi } from "../../../preload/api";
 
 export type User = { id: string; email: string; username: string };
 type Tokens = { user: User; accessToken: string; refreshToken: string };
-type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /** A failed call: HTTP `status` (0 = the server could not be reached) plus the server's `error` text, if any. */
 export class ApiError extends Error {

@@ -41,3 +41,27 @@ describe("voice and call errors", () => {
     expect(e(404, "/dms/d1/call")).toBe("Không tìm thấy cuộc trò chuyện này.");
   });
 });
+
+describe("administration refusals (told apart by the server's text)", () => {
+  const e = (status: number, path: string, text: string) => errorMessage(new ApiError(status, path, text));
+  it.each([
+    [403, "/guilds/g/roles/r", "This role is not below your highest role", /ngang hoặc cao hơn/],
+    [403, "/guilds/g/members/u", "This member is not below your highest role", /ngang hoặc cao hơn/],
+    [403, "/guilds/g/roles/r", "You cannot grant permissions you do not have", /không thể cấp hoặc gỡ quyền/],
+    [403, "/channels/c/overwrites/r", "You cannot grant permissions you do not have", /không thể cấp hoặc gỡ quyền/],
+    [403, "/guilds/g/members/u", "The owner cannot be managed by others", /chủ máy chủ/],
+    [403, "/guilds/g/members/u", "The owner cannot be kicked", /chủ máy chủ/],
+    [403, "/guilds/g", "Only the owner can do this", /Chỉ chủ máy chủ/],
+    [403, "/guilds/g/roles", "You need a role above the new one", /cần có một vai trò/],
+    [400, "/guilds/g/roles/g", "@everyone cannot be renamed, deleted or assigned", /@everyone/],
+    [400, "/guilds/g/members/u", "Not allowed on yourself", /Rời máy chủ/],
+    [400, "/guilds/g/transfer", "You already own this guild", /đã là chủ/],
+    [409, "/guilds/g/channels/c", "A guild must keep at least one channel", /ít nhất một kênh/],
+  ])("%i %s: %s", (status, path, text, expected) => {
+    expect(e(status, path, text)).toMatch(expected);
+  });
+  it("other 403/404 keep the general words", () => {
+    expect(e(403, "/guilds/g/roles", "Missing permission")).toBe("Bạn không có quyền làm việc này.");
+    expect(e(404, "/guilds/g/roles/r", "Not found")).toMatch(/Không tìm thấy/);
+  });
+});

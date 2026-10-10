@@ -377,7 +377,7 @@ test("loading images moves nothing: boxes keep their size and the text below sta
     await route.continue().catch(() => {});
   });
   await openGuild(); // reopening a server refetches its channels
-  await page.getByRole("navigation", { name: "Kênh" }).getByRole("button", { name: "cuon" }).click();
+  await page.getByRole("navigation", { name: "Kênh" }).getByRole("button", { name: "cuon", exact: true }).click();
   await expect(log().getByText("Dòng 68", { exact: true })).toBeVisible();
   const scroller = log().locator("..");
   // page up until the oldest message is loaded
@@ -403,7 +403,7 @@ test("loading images moves nothing: boxes keep their size and the text below sta
   expect(new Set(after.boxes).size).toBe(1); // every picture box is the same fixed size
   console.log(`image-load shift: anchor ${before.anchorTop.toFixed(1)} -> ${after.anchorTop.toFixed(1)} px, ${after.boxes.length} boxes of ${after.boxes[0]} px`);
   await page.unroute(storage);
-  await page.getByRole("navigation", { name: "Kênh" }).getByRole("button", { name: "general" }).click();
+  await page.getByRole("navigation", { name: "Kênh" }).getByRole("button", { name: "general", exact: true }).click();
 });
 
 test("a message with 10 long-named files and 2000 unbroken characters does not overflow (1280x800 and 960x600)", async () => {

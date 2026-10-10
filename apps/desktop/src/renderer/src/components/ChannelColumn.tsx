@@ -1,10 +1,11 @@
 import { Permission } from "@loop/shared";
-import { CaretDown, Check, Copy, Hash, LinkSimple, MicrophoneSlash, Plus, SignOut as Leave, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
+import { CaretDown, Check, Copy, Gear, Hash, LinkSimple, MicrophoneSlash, Plus, ShieldCheck, SignOut as Leave, SpeakerHigh, SpeakerSlash, Trash } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
-import { queryClient, revalidateGuild, session, voice } from "../lib/app";
+import { settingsSections } from "../lib/admin";
+import { admin, queryClient, revalidateGuild, session, voice } from "../lib/app";
 import { useCopy } from "../lib/clipboard";
 import { errorMessage } from "../lib/errors";
 import { arrowNav } from "../lib/focus";
@@ -14,6 +15,8 @@ import { useGuild, usePermissions } from "../lib/queries";
 import { useVoiceParticipants } from "../lib/voice-hooks";
 import { channelNameError, normalizeChannelName } from "../lib/validation";
 import { Button } from "./Button";
+import { ConfirmBody } from "./Confirm";
+import { MenuItem, RowMenu } from "./RowMenu";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
 import { Avatar } from "./Avatar";
 import { ColumnHeader, LoadError, Skeleton } from "./States";
@@ -27,13 +30,22 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
   const guild = useGuild(guildId);
   const perms = usePermissions(guildId);
   const channelId = useNav((s) => s.channelId);
+  const settings = useNav((s) => s.settings);
   const [dialog, setDialog] = useState<DialogName>(null);
+  const [deleting, setDeleting] = useState<Channel | null>(null);
+  const sections = settingsSections(perms.bits, perms.standing?.isOwner ?? false);
   const close = () => setDialog(null);
   const name = guild.data?.guild.name ?? "";
 
   return (
     <>
-      <GuildMenu name={name} canInvite={perms.can(Permission.CREATE_INVITE)} canManage={perms.can(Permission.MANAGE_CHANNELS)} onPick={setDialog} />
+      <GuildMenu
+        name={name}
+        canInvite={perms.can(Permission.CREATE_INVITE)}
+        canManage={perms.can(Permission.MANAGE_CHANNELS)}
+        onPick={setDialog}
+        onSettings={sections.length ? () => useNav.setState({ settings: sections[0] }) : undefined}
+      />
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         {guild.isPending && <Skeleton rows={6} />}
         {guild.isError && <LoadError message={errorMessage(guild.error)} onRetry={() => void guild.refetch()} />}
@@ -41,13 +53,47 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
           <ul aria-label={t("channels.list")} onKeyDown={arrowNav} className="flex flex-col gap-0.5">
             {guild.data.channels.map((c) => (
               <li key={c.id}>
-                <ChannelItem channel={c} active={c.id === channelId} />
+                <div className="group flex items-center">
+                  <ChannelItem channel={c} active={c.id === channelId && !settings} />
+                  {perms.can(Permission.MANAGE_CHANNELS) && (
+                    <RowMenu id={`ch-${c.id}`} label={t("channels.menu", { name: c.name })} className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100">
+                      {(close) => (
+                        <>
+                          {perms.can(Permission.MANAGE_ROLES) && (
+                            <MenuItem
+                              icon={<ShieldCheck aria-hidden="true" />}
+                              label={t("channels.permissions")}
+                              onClick={() => {
+                                close();
+                                useNav.setState({ channelId: c.id, settings: "overwrites" });
+                              }}
+                            />
+                          )}
+                          <MenuItem
+                            icon={<Trash aria-hidden="true" />}
+                            label={t("channels.delete")}
+                            danger
+                            onClick={() => {
+                              close();
+                              setDeleting(c);
+                            }}
+                          />
+                        </>
+                      )}
+                    </RowMenu>
+                  )}
+                </div>
                 {c.type === "VOICE" && <VoiceMembers channel={c} />}
               </li>
             ))}
           </ul>
         )}
       </div>
+      <Dialog open={!!deleting} onClose={() => setDeleting(null)} title={t("channels.deleteTitle", { name: deleting?.name ?? "" })}>
+        {deleting && (
+          <ConfirmBody body={t("channels.deleteBody")} submit={t("channels.delete")} onDone={() => setDeleting(null)} action={() => admin.deleteChannel(guildId, deleting.id)} />
+        )}
+      </Dialog>
       <Dialog open={dialog === "invite"} onClose={close} title={t("invite.title", { name })}>
         <InviteBody guildId={guildId} onDone={close} />
       </Dialog>
@@ -66,7 +112,7 @@ function ChannelItem({ channel, active }: { channel: Channel; active: boolean })
   const joined = useStore(voice.store, (s) => s.target?.kind === "channel" && s.target.id === channel.id && s.status !== "disconnected");
   // a voice channel is opened AND joined by the click (a user gesture, which the OS prompts for mic need)
   const open = () => {
-    useNav.setState({ channelId: channel.id });
+    useNav.setState({ channelId: channel.id, settings: null });
     if (voiceChannel) void voice.joinChannel(channel.id, channel.name);
   };
   return (
@@ -76,7 +122,7 @@ function ChannelItem({ channel, active }: { channel: Channel; active: boolean })
       aria-current={active ? "page" : undefined}
       aria-label={voiceChannel ? t("channels.voiceLabel", { name: channel.name }) : undefined}
       onClick={open}
-      className={`flex h-10 w-full items-center gap-2 rounded-control px-2.5 text-left text-[15px] transition-colors duration-(--duration-fast) ${
+      className={`flex h-10 min-w-0 flex-1 items-center gap-2 rounded-control px-2.5 text-left text-[15px] transition-colors duration-(--duration-fast) ${
         active ? "bg-surface-4 font-semibold text-ink" : "text-ink-muted hover:bg-surface-3 hover:text-ink"
       }`}
     >
@@ -122,7 +168,7 @@ function VoiceMembers({ channel }: { channel: Channel }) {
 }
 
 /** Server name as the menu button; the menu is a native popover (light dismiss, Esc) anchored under it. */
-function GuildMenu({ name, canInvite, canManage, onPick }: { name: string; canInvite: boolean; canManage: boolean; onPick: (d: DialogName) => void }) {
+function GuildMenu({ name, canInvite, canManage, onPick, onSettings }: { name: string; canInvite: boolean; canManage: boolean; onPick: (d: DialogName) => void; onSettings?: () => void }) {
   const menu = useRef<HTMLDivElement>(null);
   const pick = (d: DialogName) => {
     menu.current?.hidePopover();
@@ -149,23 +195,19 @@ function GuildMenu({ name, canInvite, canManage, onPick }: { name: string; canIn
       >
         {canInvite && <MenuItem icon={<LinkSimple aria-hidden="true" />} label={t("guildMenu.invite")} onClick={() => pick("invite")} />}
         {canManage && <MenuItem icon={<Plus aria-hidden="true" />} label={t("guildMenu.createChannel")} onClick={() => pick("channel")} />}
+        {onSettings && (
+          <MenuItem
+            icon={<Gear aria-hidden="true" />}
+            label={t("guildMenu.settings")}
+            onClick={() => {
+              menu.current?.hidePopover();
+              onSettings();
+            }}
+          />
+        )}
         <MenuItem icon={<Leave aria-hidden="true" />} label={t("guildMenu.leave")} danger onClick={() => pick("leave")} />
       </div>
     </ColumnHeader>
-  );
-}
-
-function MenuItem({ icon, label, danger = false, onClick }: { icon: ReactNode; label: string; danger?: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      data-nav-item
-      onClick={onClick}
-      className={`flex h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 text-left text-sm font-medium hover:bg-surface-4 ${danger ? "text-danger" : "text-ink"}`}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }
 
@@ -232,7 +274,7 @@ function CreateChannelForm({ guildId, onDone }: { guildId: string; onDone: () =>
         old ? { ...old, channels: [...old.channels, { ...channel, overwrites: [] }] } : old,
       );
       revalidateGuild(guildId);
-      if (type === "TEXT") useNav.setState({ channelId: channel.id });
+      if (type === "TEXT") useNav.setState({ channelId: channel.id, settings: null });
       onDone();
     } catch (err) {
       setServerError(errorMessage(err));

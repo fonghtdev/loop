@@ -194,7 +194,7 @@ describe("errorMessage", () => {
     [new ApiError(404, "/invites/abc/join"), "Mã mời không tồn tại hoặc đã hết hạn."],
     [new ApiError(404, "/messages/m1"), "Không tìm thấy. Có thể nó đã bị xoá hoặc bạn không còn quyền truy cập."],
     [new ApiError(403, "/channels/c1/messages"), "Bạn không có quyền làm việc này."],
-    [new ApiError(409, "/guilds/g1/members/me"), "Bạn là chủ máy chủ nên chưa thể rời đi. Hãy chuyển quyền chủ cho thành viên khác hoặc xoá máy chủ."],
+    [new ApiError(409, "/guilds/g1/members/me"), "Bạn là chủ máy chủ nên chưa thể rời đi. Hãy chuyển quyền chủ cho thành viên khác hoặc xoá máy chủ (Cài đặt máy chủ, mục Nguy hiểm)."],
     [new ApiError(409, "/guilds/g1/channels"), "Máy chủ đã có kênh tên này. Chọn tên khác nhé."],
     [new ApiError(400, "/guilds"), "Thông tin chưa hợp lệ, vui lòng kiểm tra lại."],
     [new Error("boom"), "Đã có lỗi xảy ra, vui lòng thử lại."],

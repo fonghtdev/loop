@@ -1,11 +1,13 @@
 import { create } from "zustand";
+import type { SettingsTab } from "./admin";
 
 /**
  * Where the user is: a server and its open channel, or (guildId null = Home) an open DM, or the Friends screen
- * (no DM open).
+ * (no DM open). `settings` = the open tab of the server's settings view (`settings:<guildId>`), only with a guild.
  */
-export type Place = { guildId: string | null; channelId: string | null; dmId: string | null };
-const HOME: Place = { guildId: null, channelId: null, dmId: null };
+export type Place = { guildId: string | null; channelId: string | null; dmId: string | null; settings: SettingsTab | null };
+const HOME: Place = { guildId: null, channelId: null, dmId: null, settings: null };
+const TABS: unknown[] = ["roles", "members", "overwrites", "danger"];
 const key = (userId: string) => `loop.lastPlace.${userId}`;
 
 export const useNav = create<Place>(() => HOME);
@@ -19,7 +21,9 @@ export function parsePlace(raw: string | null): Place {
     if (!v || typeof v !== "object") return HOME;
     const guildId = idOrNull(v.guildId);
     // one place at a time: a server has channels, Home has a DM
-    return guildId ? { guildId, channelId: idOrNull(v.channelId), dmId: null } : { guildId: null, channelId: null, dmId: idOrNull(v.dmId) };
+    // the restored settings tab is only a request: the view re-checks the user's rights (guardSettings) before showing it
+    const settings = TABS.includes(v.settings) ? (v.settings as SettingsTab) : null;
+    return guildId ? { guildId, channelId: idOrNull(v.channelId), dmId: null, settings } : { ...HOME, dmId: idOrNull(v.dmId) };
   } catch {
     return HOME;
   }

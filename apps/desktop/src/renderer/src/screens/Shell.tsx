@@ -11,6 +11,7 @@ import { ImageViewer } from "../components/ImageViewer";
 import { IncomingCall } from "../components/IncomingCall";
 import { MemberList } from "../components/MemberList";
 import { ServerRail } from "../components/ServerRail";
+import { ServerSettings } from "../components/ServerSettings";
 import { VoiceBar } from "../components/VoiceBar";
 import { VoiceRoom } from "../components/VoiceRoom";
 import { ColumnHeader, EmptyState } from "../components/States";
@@ -42,6 +43,7 @@ export function Shell() {
   const connection = useStore(realtime.state, (s) => s.status);
   const guildId = useNav((s) => s.guildId);
   const dmId = useNav((s) => s.dmId);
+  const settings = useNav((s) => s.settings);
   const channelId = useValidPlace();
   const channels = useGuild(guildId).data?.channels;
   const voiceChannelIds = channels?.filter((c) => c.type === "VOICE").map((c) => c.id);
@@ -134,7 +136,9 @@ export function Shell() {
         </nav>
 
         <main className="flex min-h-0 min-w-0 flex-col bg-surface-2">
-          {guildId && channelId ? (
+          {guildId && settings ? (
+            <ServerSettings guildId={guildId} />
+          ) : guildId && channelId ? (
             isVoiceChannel ? <VoiceRoom guildId={guildId} channelId={channelId} /> : <ChatView guildId={guildId} channelId={channelId} />
           ) : guildId ? (
             <>

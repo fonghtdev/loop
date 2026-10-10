@@ -59,6 +59,13 @@ const text: [string, string][] = [
   ["moss-200", "moss-900"], // pressed camera button, incoming-call icon
   ["danger", "danger-bg"], // pressed mute / deafen button
   ["ink-muted", "surface-1"], // voice participant names and the bar's second line
+  ["warning", "surface-2"], // ADMINISTRATOR warning in the role editor (settings view, solid surface-2)
+  ["moss-200", "moss-900"], // "Cho phép" selected in the overwrite editor (also above)
+  ["danger", "danger-bg"], // "Từ chối" selected (also above)
+  ["ink", "surface-4"], // "Mặc định" selected, active settings tab
+  ["ink-muted", "surface-3"], // role chips on member rows
+  ["moss-300", "surface-2"], // "Đã lưu" and permitted lines in the preview
+  ["danger", "surface-4"], // Nguy hiểm tab selected
 ];
 // Non-text UI (WCAG 1.4.11, 3:1): input boundaries, the focus ring, the primary button's shape.
 const ui: [string, string][] = [
@@ -76,6 +83,10 @@ const ui: [string, string][] = [
   ["moss-300", "surface-4"], // the same ring on a hovered row
   ["danger", "danger-bg"], // pressed mute / deafen button icon
   ["moss-200", "moss-900"], // pressed camera icon
+  ["danger", "surface-2"], // border of the delete-server panel, denied preview marks
+  ["moss-300", "moss-900"], // border of the selected "Cho phép"
+  ["line-strong", "surface-4"], // border of the selected "Mặc định"
+  ["danger", "danger-bg"], // border of the selected "Từ chối" (also above)
 ];
 
 // Worst-case backdrops behind glass, from the same tokens: each ambient glow at full strength (auth card); the dialog

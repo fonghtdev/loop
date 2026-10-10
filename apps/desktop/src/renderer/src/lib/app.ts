@@ -1,11 +1,13 @@
 import { QueryClient } from "@tanstack/react-query";
 import { Room } from "livekit-client";
 import { API_URL, LIVEKIT_ORIGIN } from "../../../shared/config";
+import { createAdminApi } from "./admin-api";
 import { ApiError } from "./auth-client";
 import { createAudioSink } from "./audio-sink";
 import { createCalls } from "./calls";
 import { createChat } from "./chat";
 import { goHome, useNav, writeLastPlace } from "./nav";
+import type { Guild } from "./permissions";
 import { createRealtime } from "./realtime";
 import { createSession } from "./session";
 import { createUploader } from "./upload-client";
@@ -54,6 +56,17 @@ export function revalidateGuild(guildId: string | null) {
   void queryClient.invalidateQueries({ queryKey: ["guilds"] });
   if (guildId) void queryClient.invalidateQueries({ queryKey: ["guild", guildId] });
 }
+
+/** Server administration calls (9e); each refetches the guild's data afterwards. */
+export const admin = createAdminApi({
+  request: session.client.request,
+  changed: (guildId) => Promise.all([queryClient.invalidateQueries({ queryKey: ["guilds"] }), queryClient.invalidateQueries({ queryKey: ["guild", guildId] })]),
+  gone: (guildId) => {
+    queryClient.setQueryData<Guild[]>(["guilds"], (old) => old?.filter((g) => g.id !== guildId));
+    queryClient.removeQueries({ queryKey: ["guild", guildId] });
+    goHome();
+  },
+});
 
 /** Who is in each visible voice channel (pushes + REST catch-up); the live room takes over for the one we are in. */
 export const voicePresence = createVoicePresence();

@@ -18,7 +18,7 @@ import { TextField } from "./TextField";
 /** Opening a server (again) also refetches its data: permissions or channels may have changed since. */
 function openGuild(guildId: string) {
   revalidateGuild(guildId);
-  if (useNav.getState().guildId !== guildId) useNav.setState({ guildId, channelId: null, dmId: null });
+  useNav.setState(useNav.getState().guildId === guildId ? { settings: null } : { guildId, channelId: null, dmId: null, settings: null });
 }
 
 /** Server rail: home, one button per server (keyboard: Tab in, arrows between), create and join. */
@@ -135,7 +135,7 @@ function CreateServerForm({ onDone }: { onDone: () => void }) {
   const f = useOneFieldForm(guildNameError, async (name) => {
     const { guild, channels } = await session.client.request<{ guild: Guild; channels: Channel[] }>("POST", "/guilds", { name: name.trim() });
     enterGuild(guild);
-    useNav.setState({ guildId: guild.id, channelId: channels[0]?.id ?? null, dmId: null });
+    useNav.setState({ guildId: guild.id, channelId: channels[0]?.id ?? null, dmId: null, settings: null });
     onDone();
   });
   return (
