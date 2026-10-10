@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_ATTACHMENTS_PER_MESSAGE } from "./attachments.js";
 import { ALL_PERMISSIONS, CHANNEL_PERMISSIONS } from "./permissions.js";
 
 export const usernameSchema = z
@@ -49,10 +50,22 @@ export const createInviteSchema = z.object({
 });
 
 // Postgres text cannot hold NUL bytes, so reject them here instead of failing with a 500
-export const messageContentSchema = z.string().trim().min(1).max(2000).regex(/^[^\0]*$/);
+export const messageContentSchema = z.string().trim().max(2000).regex(/^[^\0]*$/);
 
-/** Body for both sending and editing a message. */
-export const messageBodySchema = z.object({ content: messageContentSchema });
+/** Sending: text, attachments or both. Ids stay plain strings: the route gives every bad one the same 400. */
+export const messageBodySchema = z
+  .object({
+    content: messageContentSchema.default(""),
+    attachmentIds: z
+      .array(z.string().max(64))
+      .max(MAX_ATTACHMENTS_PER_MESSAGE)
+      .refine((ids) => new Set(ids).size === ids.length, "duplicate attachment")
+      .default([]),
+  })
+  .refine((b) => b.content !== "" || b.attachmentIds.length > 0, "content or attachment required");
+
+/** Editing changes text only; the route requires non-empty text unless the message has attachments. */
+export const editMessageSchema = z.object({ content: messageContentSchema.default("") });
 
 // seq travels as a decimal string (BigInt is not JSON-serializable); 18 digits always fit a Postgres bigint
 const seqSchema = z.string().regex(/^\d{1,18}$/);
@@ -65,6 +78,7 @@ export const historyQuerySchema = z
   })
   .refine((q) => !(q.before && q.after), { message: "before and after are mutually exclusive" });
 
+export * from "./attachments.js";
 export * from "./permissions.js";
 
 // Only known bits; anything else is a client bug or a probe, so 400 rather than silently masking.

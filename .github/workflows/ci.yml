@@ -19,12 +19,24 @@ jobs:
       TEST_DATABASE_URL: postgresql://loop:loop@localhost:5432/loop_test
       DATABASE_URL: postgresql://loop:loop@localhost:5432/loop_test
       REDIS_URL: redis://localhost:6379
+      S3_ENDPOINT: http://localhost:9000
+      S3_REGION: us-east-1
+      S3_BUCKET: loop-test
+      S3_ACCESS_KEY: loopminio
+      S3_SECRET_KEY: loopminio-secret
       JWT_SECRET: ci-secret-ci-secret-ci-secret-ci-secret
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
+      # a service container cannot pass `server` args, so MinIO is started by hand (unverified: CI has never run)
+      - name: MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER=loopminio -e MINIO_ROOT_PASSWORD=loopminio-secret bitnamilegacy/minio:2025.5.24
+          timeout 60 sh -c 'until curl -sf http://localhost:9000/minio/health/ready; do sleep 1; done'
+          docker exec minio mc alias set local http://localhost:9000 loopminio loopminio-secret
+          docker exec minio mc mb --ignore-existing local/loop-test
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm build

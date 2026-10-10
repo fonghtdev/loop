@@ -25,6 +25,7 @@ model User {
   blocksReceived  Block[]      @relation("Blocked")
   dmsLow          DmChannel[]  @relation("DmLow")
   dmsHigh         DmChannel[]  @relation("DmHigh")
+  attachments     Attachment[]
 }
 
 model Session {
@@ -57,15 +58,16 @@ enum ChannelType {
 }
 
 model Channel {
-  id         String             @id @default(uuid()) @db.Uuid
-  guildId    String             @db.Uuid
-  guild      Guild              @relation(fields: [guildId], references: [id], onDelete: Cascade)
-  name       String
-  type       ChannelType
-  position   Int
-  createdAt  DateTime           @default(now())
-  messages   Message[]
-  overwrites ChannelOverwrite[]
+  id          String             @id @default(uuid()) @db.Uuid
+  guildId     String             @db.Uuid
+  guild       Guild              @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  name        String
+  type        ChannelType
+  position    Int
+  createdAt   DateTime           @default(now())
+  messages    Message[]
+  overwrites  ChannelOverwrite[]
+  attachments Attachment[]
 
   @@unique([guildId, name])
   @@unique([guildId, id]) // target of composite FKs that keep overwrites inside one guild
@@ -112,6 +114,8 @@ model Message {
   content     String
   createdAt   DateTime   @default(now())
   editedAt    DateTime?
+
+  attachments Attachment[]
 
   @@index([channelId, seq])
   @@index([dmChannelId, seq])
@@ -190,15 +194,44 @@ model Block {
 
 /// Two participants, stored as userLowId < userHighId (CHECK) so get-or-create cannot race into two channels.
 model DmChannel {
-  id            String    @id @default(uuid()) @db.Uuid
-  userLowId     String    @db.Uuid
-  userLow       User      @relation("DmLow", fields: [userLowId], references: [id], onDelete: Cascade)
-  userHighId    String    @db.Uuid
-  userHigh      User      @relation("DmHigh", fields: [userHighId], references: [id], onDelete: Cascade)
-  createdAt     DateTime  @default(now())
+  id            String       @id @default(uuid()) @db.Uuid
+  userLowId     String       @db.Uuid
+  userLow       User         @relation("DmLow", fields: [userLowId], references: [id], onDelete: Cascade)
+  userHighId    String       @db.Uuid
+  userHigh      User         @relation("DmHigh", fields: [userHighId], references: [id], onDelete: Cascade)
+  createdAt     DateTime     @default(now())
   lastMessageAt DateTime? // set with each message insert; orders GET /dms
   messages      Message[]
+  attachments   Attachment[]
 
   @@unique([userLowId, userHighId])
   @@index([userHighId])
+}
+
+enum AttachmentStatus {
+  PENDING
+  READY
+}
+
+/// Exactly one of channelId / dmChannelId (CHECK in the migration): the conversation it was uploaded for, which is
+/// also the only one it can be attached to. messageId is set once, in the message's own transaction.
+model Attachment {
+  id          String           @id @default(uuid()) @db.Uuid
+  uploaderId  String           @db.Uuid
+  uploader    User             @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
+  channelId   String?          @db.Uuid
+  channel     Channel?         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  dmChannelId String?          @db.Uuid
+  dmChannel   DmChannel?       @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
+  messageId   String?          @db.Uuid
+  message     Message?         @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  objectKey   String           @unique // server-generated `uploads/<uuid>`, never derived from user input
+  filename    String // sanitized display name
+  contentType String
+  size        Int // declared at upload, verified against the stored object at completion
+  status      AttachmentStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+
+  @@index([messageId])
+  @@index([uploaderId, status])
 }

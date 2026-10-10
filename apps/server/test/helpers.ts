@@ -1,7 +1,22 @@
 import type { buildApp } from "../src/app.js";
+import { removeObjects } from "../src/attachments/sweep.js";
 import { prisma } from "../src/db.js";
+import { createStorage } from "../src/storage.js";
 
-export const env = { databaseUrl: "", redisUrl: process.env.REDIS_URL!, jwtSecret: "test-secret-test-secret-test-secret-1234", port: 0 };
+export const env = {
+  databaseUrl: "",
+  redisUrl: process.env.REDIS_URL!,
+  jwtSecret: "test-secret-test-secret-test-secret-1234",
+  port: 0,
+  s3: {
+    endpoint: process.env.S3_ENDPOINT!,
+    region: process.env.S3_REGION!,
+    bucket: process.env.S3_BUCKET!,
+    accessKey: process.env.S3_ACCESS_KEY!,
+    secretKey: process.env.S3_SECRET_KEY!,
+  },
+};
+export const testStorage = createStorage(env.s3);
 
 type App = ReturnType<typeof buildApp>;
 export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -20,8 +35,14 @@ export const signUp = async (app: App, name: string) => {
   return { token: body.accessToken as string, id: body.user.id as string, name };
 };
 
-export const resetDb = () =>
-  prisma.$executeRaw`TRUNCATE "Message", "Invite", "Member", "Channel", "Guild", "Session", "User" CASCADE`;
+/** Empties the test bucket's known objects (every key is in an Attachment row), then the tables. */
+export async function resetDb() {
+  await removeObjects(testStorage, (await prisma.attachment.findMany({ select: { id: true } })).map((a) => a.id));
+  await prisma.$executeRaw`TRUNCATE "Message", "Invite", "Member", "Channel", "Guild", "Session", "User" CASCADE`;
+}
+
+/** Routes of the attachments plugin; they have their own guard test. */
+export const isAttachmentRoute = (route: string) => /^[A-Z]+ \/attachments\b/.test(route);
 
 type User = { token: string; id: string; name: string };
 
@@ -53,3 +74,32 @@ export async function makeRole(guildId: string, position: number, permissions = 
 
 export const setEveryone = (guildId: string, permissions: number) =>
   prisma.role.update({ where: { id: guildId }, data: { permissions } });
+
+export const sizeOf = async (key: string) => (await testStorage.head(key))?.size ?? null;
+
+/** A real 1x1 PNG. */
+export const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+
+type Target = { channelId: string } | { dmChannelId: string };
+
+/** Step 1 + 2 + 3 of the upload flow. `declared` overrides what is announced (type / size lies). */
+export async function uploadAttachment(
+  app: App,
+  token: string,
+  target: Target,
+  bytes: Uint8Array = PNG,
+  declared: { filename?: string; contentType?: string; size?: number } = {},
+) {
+  const call = caller(app);
+  const create = await call("POST", "/attachments", token, {
+    filename: "pic.png",
+    contentType: "image/png",
+    size: bytes.length,
+    ...declared,
+    ...target,
+  });
+  const { id, uploadUrl, headers } = create.json();
+  const put = uploadUrl ? await fetch(uploadUrl, { method: "PUT", headers, body: bytes }) : undefined;
+  const complete = id ? await call("POST", `/attachments/${id}/complete`, token) : undefined;
+  return { id: id as string, create, put, complete: complete!, dto: complete?.json() };
+}

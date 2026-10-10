@@ -96,4 +96,25 @@ describe("two instances sharing Redis", () => {
     await until(() => goes.disconnected);
     expect(stays.connected).toBe(true);
   });
+
+  it("closing instances while sockets are disconnecting leaves no unhandled rejections", { timeout: 30_000 }, async () => {
+    const rejections: unknown[] = [];
+    const record = (e: unknown) => rejections.push(e);
+    process.on("unhandledRejection", record);
+    try {
+      const [a, b] = await Promise.all([signUp("alice"), signUp("bob")]);
+      await befriend(instA, a, b);
+      for (let i = 0; i < 5; i++) {
+        const [x, y] = [buildApp(env), buildApp(env)];
+        const [portX] = await Promise.all([listen(x), listen(y)]);
+        const tab = await connectTo(portX, a.token, EVENTS, []);
+        tab.disconnect(); // the server-side disconnect starts presence work through the adapter...
+        await Promise.all([x.close(), y.close()]); // ...while the Redis connections are being closed
+      }
+      await settle();
+    } finally {
+      process.off("unhandledRejection", record);
+    }
+    expect(rejections).toEqual([]);
+  });
 });

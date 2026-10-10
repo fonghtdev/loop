@@ -1,8 +1,8 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../app.js";
 import { prisma } from "../db.js";
+import { env } from "../../test/helpers.js";
 
-const env = { databaseUrl: "", jwtSecret: "test-secret-test-secret-test-secret-1234", port: 0 };
 const app = buildApp(env);
 
 type Method = "GET" | "POST" | "DELETE";

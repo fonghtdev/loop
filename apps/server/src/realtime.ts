@@ -56,9 +56,22 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
   // last disconnects) on different instances in the same instant can both see 2 (or 1) and send nothing, and a
   // crashed instance sends no offline; lists always recompute, so the ceiling is a stale live dot until the next
   // fetch. Upgrade = a TTL'd presence key in Redis with heartbeats. Best effort: failures are swallowed.
-  const trackPresence = async (userId: string, up: boolean) => {
-    const count = (await io.in(userRoom(userId)).fetchSockets()).length;
-    if (count === (up ? 1 : 0)) await announce(userId, up);
+  // Presence work talks to Redis through the adapter, so `close` must let it finish before quitting the clients
+  // (a command queued on a closing connection rejects inside the adapter, where nobody can catch it).
+  // ponytail: the wait is capped at 1 s because a peer that is closing too never answers `fetchSockets` (the
+  // adapter would wait its full 5 s); a request still pending after the cap only ends by its own timeout, which
+  // our `.catch` swallows. Ceiling = a peer that stalls mid-shutdown; upgrade = a shorter `requestsTimeout`.
+  const DRAIN_MS = 1000;
+  let closing = false;
+  const presenceTasks = new Set<Promise<void>>();
+  const trackPresence = (userId: string, up: boolean) => {
+    if (closing) return;
+    const task = (async () => {
+      const count = (await io.in(userRoom(userId)).fetchSockets()).length;
+      if (count === (up ? 1 : 0)) await announce(userId, up);
+    })().catch(() => {});
+    presenceTasks.add(task);
+    void task.then(() => presenceTasks.delete(task));
   };
 
   // ponytail: the token is only checked at handshake, so a socket outlives the 15 min access token;
@@ -74,7 +87,7 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
   io.on("connection", (socket) => {
     const userId: string = socket.data.userId;
     socket.join(userRoom(userId));
-    socket.on("disconnect", () => void trackPresence(userId, false).catch(() => {}));
+    socket.on("disconnect", () => trackPresence(userId, false));
 
     const handle = (action: "join" | "leave") => async (payload: unknown, ack?: unknown) => {
       const reply = typeof ack === "function" ? ack : () => {};
@@ -95,7 +108,7 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
     };
     socket.on("channel:subscribe", handle("join"));
     socket.on("channel:unsubscribe", handle("leave"));
-    void trackPresence(userId, true).catch(() => {});
+    trackPresence(userId, true);
   });
 
   // The cluster adapter applies a leave locally only AFTER its Redis publish returns, so do the local part
@@ -137,6 +150,8 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
     // local: this instance's sockets only; other instances keep theirs
     disconnectAll: () => io.local.disconnectSockets(true),
     close: async () => {
+      closing = true;
+      await Promise.race([Promise.all(presenceTasks), new Promise((r) => setTimeout(r, DRAIN_MS).unref())]);
       await io.close();
       await Promise.all([pub.quit(), sub.quit()]);
     },

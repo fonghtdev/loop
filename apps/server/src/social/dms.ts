@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { historyQuerySchema, messageBodySchema, openDmSchema } from "@loop/shared";
 import { prisma } from "../db.js";
 import { parse } from "../http.js";
-import { history, select, toDto } from "../messages/routes.js";
+import { createMessage, history, toDto } from "../messages/routes.js";
 import { areFriends, NOT_FOUND, otherOf, pair, requireDm, requireFriendsUnblocked, requireReachableUser, requireUser, userSelect } from "./access.js";
 
 export function dmRoutes(app: FastifyInstance) {
@@ -48,11 +48,14 @@ export function dmRoutes(app: FastifyInstance) {
     await requireFriendsUnblocked(req.userId, otherId);
     const body = parse(messageBodySchema, req.body, reply);
     if (!body) return;
-    const message = await prisma.$transaction(async (tx) => {
-      const created = await tx.message.create({ data: { dmChannelId: dm.id, authorId: req.userId, content: body.content }, select });
-      await tx.dmChannel.update({ where: { id: dm.id }, data: { lastMessageAt: created.createdAt } });
-      return toDto(created);
-    });
+    const message = await toDto(
+      await prisma.$transaction(async (tx) => {
+        const created = await createMessage(tx, { dmChannelId: dm.id }, req.userId, body);
+        await tx.dmChannel.update({ where: { id: dm.id }, data: { lastMessageAt: created.createdAt } });
+        return created;
+      }),
+      app.storage,
+    );
     app.realtime.emitDm(dm, "new", message);
     return reply.code(201).send(message);
   });
@@ -62,6 +65,6 @@ export function dmRoutes(app: FastifyInstance) {
     const { dm } = await requireDm(req.params.dmId, req.userId);
     const q = parse(historyQuerySchema, req.query, reply);
     if (!q) return;
-    return history({ dmChannelId: dm.id }, q);
+    return history({ dmChannelId: dm.id }, q, app.storage);
   });
 }

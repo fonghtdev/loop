@@ -11,6 +11,13 @@ export function loadEnv() {
     databaseUrl: required("DATABASE_URL"),
     redisUrl: required("REDIS_URL"),
     jwtSecret,
+    s3: {
+      endpoint: required("S3_ENDPOINT"),
+      region: required("S3_REGION"),
+      bucket: required("S3_BUCKET"),
+      accessKey: required("S3_ACCESS_KEY"),
+      secretKey: required("S3_SECRET_KEY"),
+    },
     port: Number(process.env.PORT ?? 3000),
   };
 }

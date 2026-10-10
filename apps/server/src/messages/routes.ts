@@ -1,11 +1,15 @@
 import { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
-import { hasPermission, historyQuerySchema, messageBodySchema, Permission } from "@loop/shared";
+import { editMessageSchema, hasPermission, historyQuerySchema, messageBodySchema, Permission } from "@loop/shared";
 import type { z } from "zod";
 import { prisma } from "../db.js";
 import { HttpError, parse } from "../http.js";
 import { isUuid, NOT_FOUND, requireChannelPermission } from "../guilds/access.js";
 import { requireDm } from "../social/access.js";
+import type { ObjectStorage } from "../storage.js";
+import { claimAttachments } from "../attachments/access.js";
+import { attachmentDto, attachmentSelect } from "../attachments/dto.js";
+import { removeObjects } from "../attachments/sweep.js";
 
 export const select = {
   id: true,
@@ -16,10 +20,30 @@ export const select = {
   createdAt: true,
   editedAt: true,
   author: { select: { id: true, username: true } }, // never email/passwordHash
+  attachments: { select: attachmentSelect, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }, // one extra query for a whole page
 } satisfies Prisma.MessageSelect;
 
-/** The one place seq (BigInt) becomes a JSON-safe string. */
-export const toDto = ({ seq, ...m }: Prisma.MessageGetPayload<{ select: typeof select }>) => ({ ...m, seq: String(seq) });
+/** The one place seq (BigInt) becomes a JSON-safe string and attachments get their download URLs. */
+export const toDto = async ({ seq, attachments, ...m }: Prisma.MessageGetPayload<{ select: typeof select }>, storage: ObjectStorage) => ({
+  ...m,
+  seq: String(seq),
+  attachments: await Promise.all(attachments.map((a) => attachmentDto(a, storage))),
+});
+
+/**
+ * Creates the message and claims its attachments in the caller's transaction: if any attachment is not
+ * claimable the whole thing rolls back. Returns the row ready for `toDto`.
+ */
+export async function createMessage(
+  tx: Prisma.TransactionClient,
+  target: { channelId: string } | { dmChannelId: string },
+  authorId: string,
+  body: z.output<typeof messageBodySchema>,
+) {
+  const { id } = await tx.message.create({ data: { ...target, authorId, content: body.content }, select: { id: true } });
+  await claimAttachments(tx, body.attachmentIds, authorId, target, id);
+  return tx.message.findUniqueOrThrow({ where: { id }, select });
+}
 
 const isMissingRow = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025";
 
@@ -28,7 +52,7 @@ const isMissingRow = (e: unknown) => e instanceof Prisma.PrismaClientKnownReques
  * `after` (reconnect catch-up): the `limit` messages just newer than it; page on with after = last seq.
  * Shared by guild channels and DMs: `where` picks the conversation.
  */
-export async function history(where: Prisma.MessageWhereInput, q: z.output<typeof historyQuerySchema>) {
+export async function history(where: Prisma.MessageWhereInput, q: z.output<typeof historyQuerySchema>, storage: ObjectStorage) {
   const newerFirst = !q.after;
   const rows = await prisma.message.findMany({
     where: { ...where, seq: { lt: q.before ? BigInt(q.before) : undefined, gt: q.after ? BigInt(q.after) : undefined } },
@@ -37,7 +61,7 @@ export async function history(where: Prisma.MessageWhereInput, q: z.output<typeo
     select,
   });
   if (newerFirst) rows.reverse();
-  return { messages: rows.map(toDto) };
+  return { messages: await Promise.all(rows.map((m) => toDto(m, storage))) };
 }
 
 /**
@@ -78,8 +102,9 @@ export function messageRoutes(app: FastifyInstance) {
     const body = parse(messageBodySchema, req.body, reply);
     if (!body) return;
     if (channel.type !== "TEXT") throw new HttpError(400, "Only text channels accept messages");
-    const message = toDto(
-      await prisma.message.create({ data: { channelId: channel.id, authorId: req.userId, content: body.content }, select }),
+    const message = await toDto(
+      await prisma.$transaction((tx) => createMessage(tx, { channelId: channel.id }, req.userId, body)),
+      app.storage,
     );
     app.realtime.emit(channel.id, "message:new", message);
     return reply.code(201).send(message);
@@ -89,17 +114,21 @@ export function messageRoutes(app: FastifyInstance) {
     const { channel } = await requireChannelPermission(req.params.channelId, req.userId);
     const q = parse(historyQuerySchema, req.query, reply);
     if (!q) return;
-    return history({ channelId: channel.id }, q);
+    return history({ channelId: channel.id }, q, app.storage);
   });
 
   app.patch<{ Params: { messageId: string } }>("/messages/:messageId", async (req, reply) => {
     const { message, announceUpdate } = await requireMessage(app, req.params.messageId, req.userId);
     if (message.author.id !== req.userId) throw new HttpError(403, "Only the author can edit a message");
-    const body = parse(messageBodySchema, req.body, reply);
+    const body = parse(editMessageSchema, req.body, reply);
     if (!body) return;
+    // ponytail: attachments are immutable here (no add/remove on edit); the text may be emptied only when some remain
+    if (!body.content && !(await prisma.attachment.count({ where: { messageId: message.id } })))
+      throw new HttpError(400, "Content or attachment required");
     try {
-      const updated = toDto(
+      const updated = await toDto(
         await prisma.message.update({ where: { id: message.id }, data: { content: body.content, editedAt: new Date() }, select }),
+        app.storage,
       );
       announceUpdate(updated);
       return updated;
@@ -112,8 +141,10 @@ export function messageRoutes(app: FastifyInstance) {
     const { message, canModerate, announceDelete } = await requireMessage(app, req.params.messageId, req.userId);
     const allowed = message.author.id === req.userId || canModerate;
     if (!allowed) throw new HttpError(403, "Not allowed to delete this message");
-    const { count } = await prisma.message.deleteMany({ where: { id: message.id } });
+    const ids = (await prisma.attachment.findMany({ where: { messageId: message.id }, select: { id: true } })).map((a) => a.id);
+    const { count } = await prisma.message.deleteMany({ where: { id: message.id } }); // rows cascade
     if (count === 0) throw NOT_FOUND;
+    await removeObjects(app.storage, ids);
     announceDelete();
     return reply.code(204).send();
   });
