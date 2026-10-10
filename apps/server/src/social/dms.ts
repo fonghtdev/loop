@@ -3,7 +3,7 @@ import { historyQuerySchema, messageBodySchema, openDmSchema } from "@loop/share
 import { prisma } from "../db.js";
 import { parse } from "../http.js";
 import { createMessage, history, toDto } from "../messages/routes.js";
-import { areFriends, NOT_FOUND, otherOf, pair, requireDm, requireFriendsUnblocked, requireReachableUser, requireUser, userSelect } from "./access.js";
+import { areFriends, blockedWith, NOT_FOUND, otherOf, pair, requireDm, requireFriendsUnblocked, requireReachableUser, requireUser, userSelect } from "./access.js";
 
 export function dmRoutes(app: FastifyInstance) {
   const dmDto = (id: string, user: { id: string; username: string }, online: boolean) => ({ id, user: { ...user, online } });
@@ -33,13 +33,14 @@ export function dmRoutes(app: FastifyInstance) {
       where: { OR: [{ userLowId: me }, { userHighId: me }] },
       include: { userLow: { select: userSelect }, userHigh: { select: userSelect } },
     });
-    const online = await app.realtime.onlineIds(rows.map((r) => otherOf(r, me)));
+    // A block ends the friendship but keeps the DM: presence must not leak across it, in either direction.
+    const [online, blocked] = await Promise.all([app.realtime.onlineIds(rows.map((r) => otherOf(r, me))), blockedWith(me)]);
     const activity = (r: (typeof rows)[number]) => (r.lastMessageAt ?? r.createdAt).getTime();
     return rows
       .sort((a, b) => activity(b) - activity(a))
       .map((r) => {
         const user = r.userLowId === me ? r.userHigh : r.userLow;
-        return { ...dmDto(r.id, user, online.has(user.id)), lastMessageAt: r.lastMessageAt };
+        return { ...dmDto(r.id, user, online.has(user.id) && !blocked.has(user.id)), lastMessageAt: r.lastMessageAt };
       });
   });
 

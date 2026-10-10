@@ -153,6 +153,20 @@ describe("presence", () => {
     await vi.waitFor(async () => expect(await online()).toEqual([false, false]), { timeout: 3000, interval: 20 });
   });
 
+  it("GET /dms never shows a user online across a block, in either direction", async () => {
+    const [a, b, c, d] = await Promise.all([signUp("alice"), signUp("bob"), signUp("carol"), signUp("dave")]);
+    for (const other of [b, c, d]) await befriend(app, a, other);
+    for (const other of [b, c, d]) await call("POST", "/dms", a.token, { userId: other.id });
+    await Promise.all([a, b, c, d].map(connect));
+    await call("PUT", `/blocks/${b.id}`, a.token); // alice blocks bob
+    await call("PUT", `/blocks/${a.id}`, c.token); // carol blocks alice
+    const online = async (me: typeof a) =>
+      Object.fromEntries(((await call("GET", "/dms", me.token)).json() as { user: { username: string; online: boolean } }[]).map((r) => [r.user.username, r.user.online]));
+    expect(await online(a)).toEqual({ bob: false, carol: false, dave: true }); // dave is the control: still visible
+    expect(await online(b)).toEqual({ alice: false });
+    expect(await online(c)).toEqual({ alice: false });
+  });
+
   it("non-friends and pending requests get no presence", async () => {
     const [a, b, c] = await Promise.all([signUp("alice"), signUp("bob"), signUp("carol")]);
     await call("POST", "/friends/requests", c.token, { username: "bob" }); // pending only

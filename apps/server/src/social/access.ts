@@ -18,6 +18,15 @@ export const otherOf = (p: { userLowId: string; userHighId: string }, me: string
 export const isBlockedBetween = async (a: string, b: string) =>
   (await prisma.block.count({ where: { OR: [{ blockerId: a, blockedId: b }, { blockerId: b, blockedId: a }] } })) > 0;
 
+/** Everyone with a block against `userId` in either direction (presence and the like stay hidden between them). */
+export async function blockedWith(userId: string) {
+  const rows = await prisma.block.findMany({
+    where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+    select: { blockerId: true, blockedId: true },
+  });
+  return new Set(rows.map((r) => (r.blockerId === userId ? r.blockedId : r.blockerId)));
+}
+
 export const areFriends = async (a: string, b: string) =>
   (await prisma.friendship.count({ where: { ...pair(a, b), status: "ACCEPTED" } })) > 0;
 
