@@ -21,7 +21,7 @@ export function Dialog({ open, onClose, title, children }: { open: boolean; onCl
       onClose={onClose}
       // a click on the backdrop lands on the dialog element itself
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      className="m-auto w-[min(440px,calc(100vw-48px))] animate-rise rounded-panel bg-surface-2 p-0 text-ink shadow-raised"
+      className="m-auto w-[min(440px,calc(100vw-48px))] animate-rise glass rounded-panel p-0 text-ink"
     >
       {open && (
         <div className="flex flex-col gap-4 p-6">

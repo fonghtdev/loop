@@ -14,7 +14,7 @@ export function ColumnHeader({ children }: { children: ReactNode }) {
 
 export function EmptyState({ icon, title, body }: { icon: ReactNode; title?: string; body: string }) {
   return (
-    <div className="flex flex-col items-start gap-2 rounded-panel bg-surface-2/60 p-4">
+    <div className="flex flex-col items-start gap-2 rounded-panel bg-surface-2 p-4">
       <span aria-hidden="true" className="grid size-9 place-items-center rounded-control bg-surface-3 text-moss-300">
         {icon}
       </span>

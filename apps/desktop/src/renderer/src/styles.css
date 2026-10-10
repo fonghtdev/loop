@@ -12,44 +12,44 @@
   --font-sans: "Be Vietnam Pro", system-ui, sans-serif;
   --font-display: "Nunito Variable", "Be Vietnam Pro", system-ui, sans-serif;
 
-  /* warm charcoal surfaces, darkest (server rail) to lightest (hover) */
-  --color-surface-0: #171310;
-  --color-surface-1: #1e1915;
-  --color-surface-2: #25201b;
-  --color-surface-3: #2f2822;
-  --color-surface-4: #3b332c;
-  --color-line: #3d352e;
-  --color-line-strong: #85776a;
+  /* cosmic surfaces (cool violet-grey), darkest (server rail) to lightest (hover); surface-2 is the base #23212C */
+  --color-surface-0: #14131a;
+  --color-surface-1: #1b1a23;
+  --color-surface-2: #23212c;
+  --color-surface-3: #2d2b38;
+  --color-surface-4: #383645;
+  --color-line: #3d3a4b;
+  --color-line-strong: #9490a8;
 
-  --color-ink: #f4ede5;
-  --color-ink-muted: #c4b7a8;
-  --color-ink-faint: #a39586;
+  --color-ink: #f2f0f7;
+  --color-ink-muted: #c3bfd0;
+  --color-ink-faint: #a29eb4;
 
-  /* moss green accent */
-  --color-moss-200: #d6e3b5;
-  --color-moss-300: #b6cb8c;
-  --color-moss-400: #9bb46b;
-  --color-moss-500: #829b54;
-  --color-moss-900: #2a3319;
-  --color-on-moss: #161a0e;
+  /* moss green accent: the only tokens to edit to change the accent */
+  --color-moss-200: #d5e6b8;
+  --color-moss-300: #b4d08c;
+  --color-moss-400: #98b96e;
+  --color-moss-500: #7e9f57;
+  --color-moss-900: #263220;
+  --color-on-moss: #151b0f;
 
-  --color-danger: #f29a84;
-  --color-danger-bg: #3b221b;
-  --color-warning: #ebc678;
-  --color-warning-bg: #372c17;
+  --color-danger: #f4a0a8;
+  --color-danger-bg: #3b1f2a;
+  --color-warning: #e8c77e;
+  --color-warning-bg: #352d1f;
 
   /* avatar backgrounds (initials in ink), picked per id by avatarColor() in lib/text.ts */
   --color-avatar-1: #5b4a8a;
   --color-avatar-2: #2f6b5e;
-  --color-avatar-3: #8a4b3a;
+  --color-avatar-3: #8a4b52;
   --color-avatar-4: #3f5f8a;
-  --color-avatar-5: #7a5a1f;
+  --color-avatar-5: #75601f;
   --color-avatar-6: #4f6b2f;
 
   --radius-control: 12px; /* buttons, inputs, rail icons */
   --radius-panel: 18px; /* cards, banners */
 
-  --shadow-raised: inset 0 1px 0 rgb(255 240 220 / 0.05), 0 16px 40px -16px rgb(8 5 3 / 0.7);
+  --shadow-raised: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 16px 40px -16px rgb(6 5 12 / 0.7);
 
   --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
   --duration-fast: 120ms;
@@ -73,6 +73,51 @@
   }
 }
 
+/*
+ * Glass and its ambient backdrop. Glass is ONLY for the auth card, dialog panels and popover menus (CLAUDE.md lists
+ * where it may and may not go); theme.test.ts composites these values over the worst-case backdrop, so retune there.
+ */
+:root {
+  --glass-tint: #17161e;
+  --glass-tint-alpha: 86%;
+  --glass-sheen: 7%; /* white lift over the tint */
+  --glass-edge: 13%; /* white hairline */
+  --glass-blur: 16px;
+  --glass-saturate: 1.4;
+  /* ambient glows behind the auth card; the test takes each full-strength colour as the worst backdrop */
+  --glow-violet: #6a58d8;
+  --glow-teal: #2f8fa0;
+  --glow-blue: #4560d0;
+}
+
+/* ponytail: CSS-only glass; native vibrancy/Mica/acrylic is the upgrade path if a true OS material is ever wanted. */
+@utility glass {
+  background-color: color-mix(in srgb, var(--glass-tint) var(--glass-tint-alpha), transparent);
+  background-image: linear-gradient(color-mix(in srgb, white var(--glass-sheen), transparent), color-mix(in srgb, white var(--glass-sheen), transparent));
+  border: 1px solid color-mix(in srgb, white var(--glass-edge), transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1), 0 24px 48px -20px rgb(6 5 12 / 0.8);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  /* no blur available or wanted: the same panel as a solid surface from the scale, same border */
+  @supports not (backdrop-filter: blur(1px)) {
+    background: var(--color-surface-3);
+    border-color: var(--color-line);
+  }
+  @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+    background: var(--color-surface-3);
+    border-color: var(--color-line);
+    backdrop-filter: none;
+  }
+}
+
+/* Soft glows over the cosmic base, static. */
+@utility ambient {
+  background-color: var(--color-surface-2);
+  background-image:
+    radial-gradient(55% 60% at 12% 8%, color-mix(in srgb, var(--glow-violet) 60%, transparent), transparent 70%),
+    radial-gradient(50% 55% at 92% 20%, color-mix(in srgb, var(--glow-teal) 50%, transparent), transparent 70%),
+    radial-gradient(60% 60% at 60% 105%, color-mix(in srgb, var(--glow-blue) 55%, transparent), transparent 70%);
+}
+
 @layer base {
   html,
   body,
@@ -91,7 +136,7 @@
     user-select: text;
   }
   dialog::backdrop {
-    background: rgb(8 5 3 / 0.7);
+    background: rgb(10 9 16 / 0.72);
   }
   :focus-visible {
     outline: 2px solid var(--color-moss-300);

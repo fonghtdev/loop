@@ -6,17 +6,29 @@ import { describe, expect, it } from "vitest";
 const css = readFileSync(join(__dirname, "styles.css"), "utf8");
 const tokens = Object.fromEntries([...css.matchAll(/--color-([\w-]+):\s*(#[0-9a-f]{6});/gi)].map((m) => [m[1], m[2]]));
 
-function luminance(hex: string) {
-  const [r, g, b] = [1, 3, 5].map((i) => {
-    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-function contrast(a: string, b: string) {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+type Rgb = [number, number, number];
+const rgb = (hex: string): Rgb => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as Rgb;
+const channel = (v: number) => {
+  const c = v / 255;
+  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+const luminance = ([r, g, b]: Rgb) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+/** WCAG contrast ratio of two opaque colours (hex strings or rgb triples). */
+function contrast(a: string | Rgb, b: string | Rgb) {
+  const [hi, lo] = [luminance(typeof a === "string" ? rgb(a) : a), luminance(typeof b === "string" ? rgb(b) : b)].sort((x, y) => y - x);
   return (hi + 0.05) / (lo + 0.05);
 }
+/** `fg` at `alpha` (0..1) painted over the opaque `bg`. */
+const composite = (fg: Rgb, alpha: number, bg: Rgb): Rgb => fg.map((v, i) => v * alpha + bg[i] * (1 - alpha)) as Rgb;
+
+// Glass values from :root, so the test checks what ships.
+const rootVar = (name: string) => css.match(new RegExp(`--${name}:\\s*([^;]+);`))![1].trim();
+const percent = (name: string) => parseFloat(rootVar(name)) / 100;
+const glass = { tint: rgb(rootVar("glass-tint")), alpha: percent("glass-tint-alpha"), sheen: percent("glass-sheen") };
+/** The final colour of the glass panel's fill over an opaque backdrop: tint first, then the white sheen. */
+const glassOver = (backdrop: Rgb): Rgb => composite([255, 255, 255], glass.sheen, composite(glass.tint, glass.alpha, backdrop));
+const dim = css.match(/dialog::backdrop\s*{\s*background:\s*rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)/)!;
+const dimmed = (under: Rgb) => composite([+dim[1], +dim[2], +dim[3]], +dim[4], under);
 
 // [foreground, background] pairs the UI actually uses.
 const text: [string, string][] = [
@@ -36,6 +48,7 @@ const text: [string, string][] = [
   ...[1, 2, 3, 4, 5, 6].map((n): [string, string] => ["ink", `avatar-${n}`]), // avatar initials
   ["on-moss", "danger"], // destructive confirm buttons (leave, delete)
   ["danger", "surface-3"], // delete action in the message toolbar / menu
+  ["danger", "surface-4"], // the same item hovered
 ];
 // Non-text UI (WCAG 1.4.11, 3:1): input boundaries, the focus ring, the primary button's shape.
 const ui: [string, string][] = [
@@ -47,6 +60,13 @@ const ui: [string, string][] = [
   ["moss-300", "surface-4"], // focus ring on the active channel
 ];
 
+// Worst-case backdrops behind glass, from the same tokens: each ambient glow at full strength (auth card); the dialog
+// dim over the lightest content, ink text (dialog panel); ink itself (popover menu, floating over the app).
+const glows = ["violet", "teal", "blue"].map((g) => [`glow-${g}`, rgb(rootVar(`glow-${g}`))] as const);
+const behindAuth = glows.map(([n, c]) => [`auth card over ${n}`, c] as const);
+const behindDialog = [["dialog over dimmed ink text", dimmed(rgb(tokens.ink))]] as const;
+const behindPopover = [["popover over ink text", rgb(tokens.ink)]] as const;
+const textOnGlass = ["ink", "ink-muted", "ink-faint", "danger", "moss-300"];
 describe("design tokens meet WCAG AA", () => {
   it("parses the tokens", () => {
     expect(Object.keys(tokens).length).toBeGreaterThan(15);
@@ -58,6 +78,36 @@ describe("design tokens meet WCAG AA", () => {
   });
   it.each(ui)("ui %s on %s >= 3:1", (fg, bg) => {
     expect(contrast(tokens[fg], tokens[bg])).toBeGreaterThanOrEqual(3);
+  });
+  describe("on composited glass (worst-case backdrop)", () => {
+    // ink-faint (hints) and moss-300 (links) never sit on a popover; ink and danger do
+    for (const [where, backdrop] of [...behindAuth, ...behindDialog, ...behindPopover])
+      for (const tk of textOnGlass.filter((tk) => !where.startsWith("popover") || ["ink", "danger"].includes(tk)))
+        it(`text ${tk} on ${where} >= 4.5:1`, () => {
+          expect(contrast(tokens[tk], glassOver(backdrop))).toBeGreaterThanOrEqual(4.5);
+        });
+    for (const [where, backdrop] of [...behindAuth, ...behindDialog])
+      it(`input border line-strong on ${where} >= 3:1`, () => {
+        expect(contrast(tokens["line-strong"], glassOver(backdrop))).toBeGreaterThanOrEqual(3);
+      });
+  });
+  describe("solid fallback (no backdrop-filter, reduced transparency)", () => {
+    it.each(["ink", "ink-muted", "ink-faint", "danger", "moss-300"])("%s on surface-3 >= 4.5:1", (tk) => {
+      expect(contrast(tokens[tk], tokens["surface-3"])).toBeGreaterThanOrEqual(4.5);
+    });
+    it("the fallback block is solid with the same border, for each trigger", () => {
+      const block = css.slice(css.indexOf("@utility glass"), css.indexOf("@utility ambient"));
+      expect(block).toMatch(/@supports not \(backdrop-filter: blur\(1px\)\)\s*{[^}]*background: var\(--color-surface-3\);[^}]*border-color: var\(--color-line\)/);
+      expect(block).toMatch(
+        /@media \(prefers-reduced-transparency: reduce\), \(forced-colors: active\)\s*{[^}]*background: var\(--color-surface-3\);[^}]*border-color: var\(--color-line\);[^}]*backdrop-filter: none/,
+      );
+    });
+  });
+  it("composite() and contrast() behave", () => {
+    expect(composite([255, 255, 255], 0.5, [0, 0, 0])).toEqual([127.5, 127.5, 127.5]);
+    expect(composite([10, 20, 30], 1, [200, 200, 200])).toEqual([10, 20, 30]);
+    expect(composite([10, 20, 30], 0, [200, 100, 50])).toEqual([200, 100, 50]);
+    expect(contrast([0, 0, 0], [255, 255, 255])).toBeCloseTo(21, 5);
   });
   it("the formula matches known values", () => {
     expect(contrast("#000000", "#ffffff")).toBeCloseTo(21, 5);

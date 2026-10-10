@@ -40,6 +40,10 @@ test("register, restore the session after a relaunch, logout, wrong password", a
 
   await expect(page.getByRole("heading", { name: "Chào mừng trở lại" })).toBeVisible();
   await shot(page, "02-login");
+  // the auth card is the glass panel of the screen
+  const card = page.getByRole("heading", { name: "Chào mừng trở lại" }).locator("xpath=ancestor::div[contains(@class,'glass')]");
+  const glass = await card.evaluate((el) => getComputedStyle(el).backdropFilter);
+  expect(glass).toMatch(/^blur\(\d+px\)/);
   await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
   await expect(page.getByText("Vui lòng điền mục này.").first()).toBeVisible();
   await shot(page, "03-login-validation");

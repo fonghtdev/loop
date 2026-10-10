@@ -102,7 +102,7 @@ function GuildMenu({ name, canInvite, canManage, onPick }: { name: string; canIn
         popover="auto"
         onToggle={(e) => (e as unknown as ToggleEvent).newState === "open" && menu.current?.querySelector<HTMLElement>("[data-nav-item]")?.focus()}
         onKeyDown={arrowNav}
-        className="m-0 w-56 rounded-control bg-surface-3 p-1.5 text-ink shadow-raised [position-anchor:--guild-menu] [inset:auto] [top:calc(anchor(bottom)+6px)] [left:anchor(left)]"
+        className="m-0 w-56 glass rounded-control p-1.5 text-ink [position-anchor:--guild-menu] [inset:auto] [top:calc(anchor(bottom)+6px)] [left:anchor(left)]"
       >
         {canInvite && <MenuItem icon={<LinkSimple aria-hidden="true" />} label={t("guildMenu.invite")} onClick={() => pick("invite")} />}
         {canManage && <MenuItem icon={<Plus aria-hidden="true" />} label={t("guildMenu.createChannel")} onClick={() => pick("channel")} />}

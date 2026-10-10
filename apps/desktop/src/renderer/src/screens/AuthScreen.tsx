@@ -13,11 +13,13 @@ type Mode = "login" | "register";
 export function AuthScreen() {
   const [mode, setMode] = useState<Mode>("login");
   return (
-    <div className="grid h-full grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+    <div className="ambient grid h-full grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
       <BrandPanel />
-      <main className="overflow-y-auto bg-surface-2">
-        <div className="mx-auto flex min-h-full w-full max-w-[400px] flex-col justify-center px-6 py-6">
-          <AuthForm key={mode} mode={mode} onSwitch={() => setMode(mode === "login" ? "register" : "login")} />
+      <main className="overflow-y-auto">
+        <div className="mx-auto flex min-h-full w-full max-w-[440px] flex-col justify-center px-6 py-6">
+          <div className="glass rounded-panel p-7">
+            <AuthForm key={mode} mode={mode} onSwitch={() => setMode(mode === "login" ? "register" : "login")} />
+          </div>
         </div>
       </main>
     </div>
@@ -26,7 +28,7 @@ export function AuthScreen() {
 
 function BrandPanel() {
   return (
-    <section className="relative flex flex-col justify-between overflow-hidden bg-surface-1 p-10">
+    <section className="relative flex flex-col justify-between overflow-hidden p-10">
       <Wordmark />
       {/* the mark again, oversized and quiet: the one decorative moment of the screen */}
       <LogoMark animate className="pointer-events-none absolute -top-36 -right-36 size-[380px] rotate-180 text-moss-900" />

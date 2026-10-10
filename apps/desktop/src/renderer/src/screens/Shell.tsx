@@ -83,7 +83,7 @@ export function Shell() {
               </div>
             </>
           )}
-          <section aria-label={t("shell.account")} className="flex h-16 shrink-0 items-center gap-3 bg-surface-0/60 px-3">
+          <section aria-label={t("shell.account")} className="flex h-16 shrink-0 items-center gap-3 bg-surface-0 px-3">
             <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-moss-900 font-display font-bold text-moss-200">
               {user?.username.charAt(0).toUpperCase()}
             </span>

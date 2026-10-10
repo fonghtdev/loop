@@ -73,6 +73,42 @@ async function expectEllipsis(l: Locator) {
   expect(r).toEqual({ overflow: "ellipsis", cut: true });
 }
 
+/** Frame times (ms) while scrolling the message list from top to bottom, 400px per frame. */
+const sweepFrames = () =>
+  scroller().evaluate(
+    (el) =>
+      new Promise<number[]>((resolve) => {
+        const times: number[] = [];
+        let last = performance.now();
+        el.scrollTop = 0;
+        const step = () => {
+          const now = performance.now();
+          times.push(now - last);
+          last = now;
+          el.scrollTop += 400;
+          if (el.scrollTop + el.clientHeight >= el.scrollHeight - 1) resolve(times.slice(1));
+          else requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      }),
+  );
+const percentile = (xs: number[], q: number) => [...xs].sort((a, b) => a - b)[Math.floor(q * (xs.length - 1))];
+
+/** backdrop-filter and the alpha of the background colour, as the browser computes them. */
+const surface = (l: Locator) =>
+  l.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { blur: cs.backdropFilter, alpha: Number(cs.backgroundColor.match(/\/\s*([\d.]+)\)/)?.[1] ?? 1) };
+  });
+async function expectGlass(l: Locator) {
+  const { blur, alpha } = await surface(l);
+  expect(blur).toMatch(/^blur\(\d+px\)/);
+  expect(alpha).toBeLessThan(1);
+}
+async function expectSolid(l: Locator) {
+  expect(await surface(l)).toEqual({ blur: "none", alpha: 1 });
+}
+
 test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async () => {
@@ -303,23 +339,7 @@ test("performance with 1100 loaded messages", async () => {
     pageTimes.push(Date.now() - t0);
   }
   // scroll sweep: frame times while scrolling through all 1100 rows
-  const frames = await scroller().evaluate(
-    (el) =>
-      new Promise<number[]>((resolve) => {
-        const times: number[] = [];
-        let last = performance.now();
-        el.scrollTop = 0;
-        const step = () => {
-          const now = performance.now();
-          times.push(now - last);
-          last = now;
-          el.scrollTop += 400;
-          if (el.scrollTop + el.clientHeight >= el.scrollHeight - 1) resolve(times.slice(1));
-          else requestAnimationFrame(step);
-        };
-        requestAnimationFrame(step);
-      }),
-  );
+  const frames = await sweepFrames();
   // a live message with 1100 rows mounted: time from the event to the DOM (React commit), measured in the page
   await scroller().evaluate((el) => (el.scrollTop = el.scrollHeight));
   const waitLive = page.evaluate(
@@ -351,6 +371,39 @@ test("performance with 1100 loaded messages", async () => {
   console.log(`performance (1100 messages): ${JSON.stringify(summary)}`);
   expect(Number(p(0.95))).toBeLessThan(50);
   expect(endToEnd).toBeLessThan(3000);
+});
+
+test("glass only on the auth card, dialogs and popovers; solid app surfaces; solid fallback; scroll cost under a dialog", async () => {
+  const solid = [rail(), page.getByRole("navigation", { name: "Kênh" }), page.getByRole("main"), page.getByRole("complementary", { name: "Thành viên" }), scroller(), composer().locator("..")];
+  for (const l of solid) await expectSolid(l);
+
+  await page.getByRole("button", { name: /^Tuỳ chọn máy chủ/ }).click();
+  const menu = page.locator("#guild-menu");
+  await expect(menu).toBeVisible();
+  await expectGlass(menu);
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+
+  await rail().getByRole("button", { name: "Tạo máy chủ" }).click();
+  const dialog = page.getByRole("dialog", { name: "Tạo máy chủ" });
+  await expect(dialog).toBeVisible();
+  await expectGlass(dialog);
+  for (const l of solid) await expectSolid(l); // nothing leaked onto the app behind it
+  await expectNoHorizontalOverflow([dialog]);
+
+  const frames = await sweepFrames();
+  console.log(`scroll frames with a dialog open: ${JSON.stringify({ count: frames.length, p50: percentile(frames, 0.5).toFixed(1), p95: percentile(frames, 0.95).toFixed(1), max: percentile(frames, 1).toFixed(1) })}`);
+
+  // reduced transparency: the same panel turns solid (if this Chromium can emulate the media feature)
+  const cdp = (globalThis as { cdp?: { send: (m: string, p: object) => Promise<unknown> } }).cdp!;
+  await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "reduce" }] });
+  expect(await page.evaluate(() => matchMedia("(prefers-reduced-transparency: reduce)").matches), "Chromium cannot emulate prefers-reduced-transparency").toBe(true);
+  await expectSolid(dialog);
+  await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "no-preference" }] });
+  await expectGlass(dialog);
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
 });
 
 test("layout stress: 40 channels, 60 members, 2000-char unbroken message, diacritics, min window", async () => {
