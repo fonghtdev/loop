@@ -7,3 +7,4 @@ allowBuilds:
   prisma: true
   "@prisma/engines": true
   "@prisma/client": true
+  electron-winstaller: false

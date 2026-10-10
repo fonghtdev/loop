@@ -1,5 +1,6 @@
 import type { NotifyPayload } from "../shared/notify";
 import type { Settings } from "../shared/settings";
+import type { UpdateStatus } from "../shared/update";
 
 /** Everything the renderer can ask of the main process. Nothing else crosses the bridge. */
 export type LoopApi = {
@@ -17,6 +18,15 @@ export type LoopApi = {
     get(): Promise<Settings>;
     /** Known boolean keys only; rejects on an invalid patch. Resolves to the settings now in force. */
     set(patch: Partial<Settings>): Promise<Settings>;
+  };
+  update: {
+    get(): Promise<UpdateStatus>;
+    /** Starts a check when one makes sense; resolves to the status now in force. */
+    check(): Promise<UpdateStatus>;
+    /** Quit and install; only acts once an update is downloaded. */
+    install(): Promise<void>;
+    /** Status changes pushed by the main process (already validated); returns the unsubscribe. */
+    onStatus(cb: (status: UpdateStatus) => void): () => void;
   };
   /** Asks the main process for an OS notification (it validates, redacts and respects the settings). */
   notify(payload: NotifyPayload): Promise<void>;

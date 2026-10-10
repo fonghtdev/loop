@@ -112,6 +112,53 @@ docker compose down -v     # XÓA toàn bộ dữ liệu Postgres, Redis, MinIO,
 
 Lệnh này không hoàn tác được. Sau đó chạy lại từ bước 3 ở phần "Chạy lần đầu".
 
+## Đóng gói và phát hành
+
+Bản đóng gói **chưa ký** (chưa có chữ ký số, chưa notarize): chạy được để thử, nhưng chưa nên phát cho người dùng thật.
+
+```bash
+# Cần: địa chỉ server thật, được "đóng cứng" vào app lúc build (xem bảng dưới)
+export VITE_API_URL=https://api.example.com VITE_STORAGE_ORIGIN=https://files.example.com VITE_LIVEKIT_ORIGIN=wss://xxx.livekit.cloud
+pnpm --filter @loop/desktop dist        # máy đang dùng: macOS -> .dmg + .zip, Windows -> installer
+pnpm --filter @loop/desktop dist:dir    # chỉ thư mục chạy được (nhanh nhất), để thử
+pnpm --filter @loop/desktop dist:mac    # dmg + zip (kiến trúc của máy build)
+pnpm --filter @loop/desktop dist:win    # NSIS x64 (build được từ macOS, chưa chạy thử trên Windows)
+```
+
+Kết quả nằm ở `apps/desktop/release/` (đã git-ignore). Build thử trên máy với server cục bộ: thêm `LOOP_ALLOW_LOCAL=1`.
+
+| Biến (lúc build) | Ý nghĩa |
+| --- | --- |
+| `VITE_API_URL` | địa chỉ server (`https://`) |
+| `VITE_STORAGE_ORIGIN` | địa chỉ S3/R2 chứa tệp đính kèm (`https://`) |
+| `VITE_LIVEKIT_ORIGIN` | LiveKit (`wss://`) |
+| `VITE_UPDATE_URL` | (tuỳ chọn) thư mục `https://` chứa bản cập nhật; không đặt = app KHÔNG tự cập nhật và không gọi mạng để kiểm tra |
+
+`apps/desktop/scripts/check-release-env.mjs` chạy trước mỗi `dist*`: thiếu biến, dùng `http://`/`ws://` hoặc trỏ về localhost thì dừng build với thông báo rõ. `LOOP_ALLOW_LOCAL=1` bỏ qua. `appId` (`app.loop.desktop`) là giá trị tạm; đổi cùng lúc ở `apps/desktop/electron-builder.yml` và `apps/desktop/src/shared/app-id.ts` (có test giữ hai nơi bằng nhau).
+
+Nếu `dist` báo `spawn ENOEXEC` khi "searching for node modules": file `pnpm` trên máy bạn là script không có dòng `#!`; chạy lại với một wrapper `#!/bin/sh` + `exec pnpm "$@"` đứng đầu `PATH`.
+
+### Ký và notarize (bạn cần tự làm; chưa bước nào được chạy)
+
+- **macOS**: cần tài khoản Apple Developer (Developer ID Application certificate). Bỏ dòng `identity: null` trong `electron-builder.yml`, đặt `CSC_LINK` (đường dẫn/base64 file .p12) + `CSC_KEY_PASSWORD`; notarize thêm `mac.notarize: true` và `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`. File `apps/desktop/build/entitlements.mac.plist` (JIT, micro, camera) chỉ có tác dụng khi app được ký. Chưa ký thì Gatekeeper chặn lần mở đầu (chuột phải > Open).
+- **Windows**: chứng chỉ ký code (`CSC_LINK`, `CSC_KEY_PASSWORD`). Chưa ký thì SmartScreen cảnh báo, nhưng cập nhật tự động vẫn chạy.
+
+### Cập nhật tự động
+
+Dùng `electron-updater` (provider `generic`). Chỉ bật khi app đã cài (`app.isPackaged`) VÀ lúc build có `VITE_UPDATE_URL` (https). Kiểm tra sau khi mở 30 giây rồi mỗi 6 giờ, tải nền, tự cài khi thoát app, không bao giờ ép khởi động lại (nút "Khởi động lại để cập nhật" ở Cài đặt > Cập nhật).
+
+Phát hành bản mới: tăng `version` trong `apps/desktop/package.json`, build với cùng các biến `VITE_*`, rồi tải lên `VITE_UPDATE_URL` (S3/R2 công khai, GitHub Pages hay web tĩnh bất kỳ) các file trong `release/`: `latest.yml`, `latest-mac.yml`, `.exe`, `.zip`, `.dmg` và các `.blockmap`. Lưu ý: **macOS chỉ tự cập nhật được với app đã ký** (Squirrel.Mac), bản chưa ký sẽ báo lỗi; Windows NSIS cập nhật được cả khi chưa ký. Luồng cập nhật thật chưa được thử vì chưa có feed.
+
+### Danh sách kiểm tra khi đưa server lên production
+
+- `JWT_SECRET` dài, ngẫu nhiên (>= 32 ký tự), khác dev.
+- `CORS_ORIGINS` phải có `app://loop` (origin của app đóng gói).
+- Bucket S3/R2: bật CORS cho `PUT` và `GET` từ `app://loop`, nếu không upload/hiện ảnh trong app sẽ lỗi.
+- LiveKit Cloud: đặt `LIVEKIT_URL`, `LIVEKIT_API_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`; client `livekit-client` đang ghim **2.9.9** cho server LiveKit **1.9.0**, nâng một bên thì kiểm tra lại cặp phiên bản.
+- Mọi thứ qua HTTPS/WSS (API, storage, LiveKit, feed cập nhật).
+- Server **chưa có rate limit** (đặc biệt `/auth/*`): đặt sau một lớp giới hạn (reverse proxy/CDN) trước khi mở cho người ngoài.
+- Sao lưu Postgres (và Redis nếu cần) định kỳ; thử khôi phục ít nhất một lần.
+
 ## Ghi chú cho người phát triển
 
 Quy ước, hợp đồng API và sự kiện realtime, luật phân quyền và giới hạn đã biết nằm trong `CLAUDE.md` ở thư mục gốc (file này chỉ dùng cục bộ, không được commit).

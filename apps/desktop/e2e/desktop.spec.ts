@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { _electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { api, befriend, expectNoHorizontalOverflow, hook, launchAs, launchEnv, MAIN, makePng, register, resize, run, uploadAs, type Session } from "./helpers";
+import { api, befriend, expectNoHorizontalOverflow, hook, appArgs, launchAs, launchEnv, launchOptions, makePng, register, resize, run, uploadAs, type Session } from "./helpers";
 import { callToken, joinRoom, leaveAll } from "./livekit";
 
 // 9f: unread tracking, OS notifications (recorded by the LOOP_E2E hook, never shown), badges, tray, close-to-tray,
@@ -311,7 +311,7 @@ test("restart: a DM that got a message while the app was closed shows unread aga
 });
 
 async function relaunch() {
-  const a = await _electron.launch({ args: [...FAKE_MEDIA, MAIN], env: launchEnv(userData) });
+  const a = await _electron.launch(launchOptions(userData, FAKE_MEDIA));
   const p = await a.firstWindow();
   await expect(p.getByRole("heading", { name: /Bạn bè|Cài đặt|.+/ }).first()).toBeVisible({ timeout: 30_000 });
   await hook(a, "setFocused", false); // the restored place may be a DM: keep it unread-able
@@ -342,7 +342,7 @@ test.describe("tray, close-to-tray, single instance, quit", () => {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
     await expect.poll(() => hook<{ visible: boolean }>(app, "window").then((w) => w.visible)).toBe(false);
     const exe = await app.evaluate(() => process.execPath);
-    const child = spawn(exe, [MAIN], { env: launchEnv(userData), stdio: "ignore" });
+    const child = spawn(exe, appArgs(), { env: launchEnv(userData), stdio: "ignore" });
     const code = await new Promise<number | null>((resolve, reject) => {
       const t = setTimeout(() => (child.kill(), reject(new Error("second instance did not exit"))), 20_000);
       child.once("exit", (c) => (clearTimeout(t), resolve(c)));

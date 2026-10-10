@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { appArgs, PACKAGED } from "./helpers";
 
 // Screenshots go to E2E_SCREENSHOT_DIR (default: test-results/screens).
 const shots = process.env.E2E_SCREENSHOT_DIR ?? join(__dirname, "../test-results/screens");
@@ -11,10 +12,7 @@ const email = `${name}@example.com`;
 const password = "correct-horse-battery";
 
 async function launch(): Promise<{ app: ElectronApplication; page: Page }> {
-  const app = await _electron.launch({
-    args: [join(__dirname, "../out/main/index.js")],
-    env: { ...process.env, LOOP_USER_DATA_DIR: userData },
-  });
+  const app = await _electron.launch({ executablePath: PACKAGED, args: appArgs(), env: { ...process.env, LOOP_USER_DATA_DIR: userData } });
   return { app, page: await app.firstWindow() };
 }
 const shot = async (page: Page, file: string) => {
@@ -40,6 +38,7 @@ test("register, restore the session after a relaunch, logout, wrong password", a
     "session",
     "setBadge",
     "settings",
+    "update",
     "version",
   ]);
   const inlineRan = await page.evaluate(() => {

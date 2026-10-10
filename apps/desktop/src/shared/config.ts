@@ -13,3 +13,8 @@ export const STORAGE_ORIGIN = new URL(import.meta.env.VITE_STORAGE_ORIGIN || "ht
  * pointing elsewhere is refused with a clear message. Production = the LiveKit Cloud wss URL. Build time: `VITE_LIVEKIT_ORIGIN`.
  */
 export const LIVEKIT_ORIGIN = new URL(import.meta.env.VITE_LIVEKIT_ORIGIN || "ws://127.0.0.1:7880").origin;
+/**
+ * Where the installed app looks for updates (electron-updater "generic" provider: a folder holding latest.yml /
+ * latest-mac.yml and the artifacts). Build time: `VITE_UPDATE_URL`. Empty = automatic updates are off and the app makes no update request.
+ */
+export const UPDATE_URL = import.meta.env.VITE_UPDATE_URL || "";

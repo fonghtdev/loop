@@ -1,0 +1,42 @@
+# Packaging config. Builds are UNSIGNED; signing/notarization are driven by env vars (see README "Đóng gói và phát hành").
+# appId is a placeholder: change it together with src/shared/app-id.ts (a test keeps the two equal).
+appId: app.loop.desktop
+productName: Loop
+directories:
+  output: release
+  buildResources: build
+# Only the built app goes into the asar (the runtime dependency electron-updater is added automatically).
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+# The tray icons: src/main/tray.ts reads them from process.resourcesPath when packaged.
+extraResources:
+  - from: resources
+    to: resources
+icon: build/icon.png
+mac:
+  category: public.app-category.social-networking
+  target: [dmg, zip]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  identity: null # unsigned: do not look for a certificate (set CSC_LINK + remove this line, or use CSC_NAME, to sign)
+  extendInfo:
+    NSMicrophoneUsageDescription: Loop cần dùng micro để bạn trò chuyện thoại trong kênh và cuộc gọi.
+    NSCameraUsageDescription: Loop cần dùng camera để bạn bật video trong kênh và cuộc gọi.
+win:
+  target:
+    - target: nsis
+      arch: x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+# Makes the build write latest.yml / latest-mac.yml next to the artifacts (upload all of them to VITE_UPDATE_URL).
+# The url is a placeholder: the file lists relative names, and the app is told the real feed by setFeedURL (src/main/updater.ts).
+# The dist scripts pass --publish never, so electron-builder uploads nothing.
+publish:
+  provider: generic
+  url: https://updates.invalid/loop

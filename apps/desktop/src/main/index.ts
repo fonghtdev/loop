@@ -1,8 +1,11 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { autoUpdater } from "electron-updater";
 import { app, BrowserWindow, ipcMain, net, Notification, protocol, safeStorage, session, shell, systemPreferences, type IpcMainInvokeEvent } from "electron";
-import { API_URL, LIVEKIT_ORIGIN, STORAGE_ORIGIN, WS_URL } from "../shared/config";
+import { APP_ID } from "../shared/app-id";
+import { API_URL, LIVEKIT_ORIGIN, STORAGE_ORIGIN, UPDATE_URL, WS_URL } from "../shared/config";
 import type { Settings } from "../shared/settings";
+import { updatesEnabled } from "../shared/update";
 import { APP_ORIGIN, buildCsp, ensureMediaAccess, isMediaKind, isPermissionAllowed, isSafeExternalUrl, isTrustedSender, isValidRefreshToken, resolveAppFile } from "./security";
 import { installE2eHook, newRecorder } from "./e2e-hook";
 import { createNotifier } from "./notifications";
@@ -10,6 +13,7 @@ import { loginItemSettings, normalizeBadge, revealWindow, shouldHideOnClose, sta
 import { createSettingsStore } from "./settings";
 import { createTokenStore } from "./token-store";
 import { createTray, type TrayHandle } from "./tray";
+import { createUpdater } from "./updater";
 
 // Set by electron-vite in dev only; production loads the built renderer from app://loop.
 const devServerUrl = process.env.ELECTRON_RENDERER_URL;
@@ -19,8 +23,8 @@ const csp = buildCsp({ api: API_URL, ws: WS_URL, storage: STORAGE_ORIGIN, liveki
 // Test/dev hook: a separate profile (the E2E smoke test relaunches against the same one).
 if (process.env.LOOP_USER_DATA_DIR) app.setPath("userData", process.env.LOOP_USER_DATA_DIR);
 
-// Windows needs an app id for notifications to show (and group) under the app's name. ponytail: step 10's installer must use the same id.
-app.setAppUserModelId("app.loop.desktop");
+// Windows needs an app id for notifications to show (and group) under the app's name; the installer's appId is the same (a test keeps them equal).
+app.setAppUserModelId(APP_ID);
 
 // Test hook (see e2e-hook.ts): off unless LOOP_E2E=1.
 const e2e = process.env.LOOP_E2E === "1";
@@ -31,6 +35,7 @@ let tray: TrayHandle | null = null;
 let quitting = false; // a real quit is under way: closing windows must not be intercepted
 let focusOverride: boolean | null = null; // e2e only
 let settings: ReturnType<typeof createSettingsStore>;
+let updater: ReturnType<typeof createUpdater>;
 
 // A standard + secure scheme gives the renderer a real origin (app://loop) for CORS, unlike file://.
 protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
@@ -88,6 +93,12 @@ function registerIpc() {
     applySettings(next);
     return next;
   });
+  handle("update:get", () => updater.status());
+  handle("update:check", () => {
+    updater.check();
+    return updater.status();
+  });
+  handle("update:install", () => updater.install());
   handle("notify:show", (payload) => notifier.show(payload));
   handle("notify:close", (key) => notifier.close(key));
   handle("badge:set", (count) => {
@@ -174,6 +185,17 @@ function startTray() {
   });
 }
 
+/** Automatic updates: only for the installed app with a baked https feed; otherwise inert (no network). */
+function startUpdater() {
+  const enabled = updatesEnabled({ isPackaged: app.isPackaged, feedUrl: UPDATE_URL });
+  updater = createUpdater({
+    getAutoUpdater: () => autoUpdater,
+    feedUrl: enabled ? UPDATE_URL : null,
+    send: (status) => win && !win.isDestroyed() && win.webContents.send("update:status", status),
+  });
+  updater.start();
+}
+
 function hookE2e() {
   installE2eHook({
     notifications: () => recorder!.log,
@@ -221,6 +243,7 @@ if (!app.requestSingleInstanceLock()) {
     } else {
       serveRenderer();
     }
+    startUpdater();
     registerIpc();
     applySettings(settings.get()); // keeps the login item in step with the stored choice
     startTray();

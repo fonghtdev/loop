@@ -2,6 +2,7 @@ import { Gear, SignOut, X } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useStore } from "zustand";
 import type { Settings } from "../../../shared/settings";
+import type { UpdateStatus } from "../../../shared/update";
 import { t } from "../i18n/t";
 import type { MessageKey } from "../i18n/vi";
 import { appSettings, devices, session, unlockDeviceLabels } from "../lib/app";
@@ -60,6 +61,9 @@ export function UserSettings() {
             <Switch label={t("userSettings.closeToTray")} description={t("userSettings.closeToTrayHint")} checked={settings.closeToTray} onChange={save("closeToTray")} />
             <Switch label={t("userSettings.startAtLogin")} description={t("userSettings.startAtLoginHint")} checked={settings.startAtLogin} onChange={save("startAtLogin")} />
           </Group>
+          <Group id="update" title="userSettings.update">
+            <UpdateSection />
+          </Group>
           <Group id="media" title="userSettings.media">
             <DevicePickers />
           </Group>
@@ -91,6 +95,50 @@ function Group({ id, title, children }: { id: string; title: MessageKey; childre
       </h2>
       {children}
     </section>
+  );
+}
+
+const UPDATE_TEXT: Record<UpdateStatus["state"], MessageKey> = {
+  disabled: "userSettings.updateDisabled",
+  idle: "userSettings.updateIdle",
+  checking: "userSettings.updateChecking",
+  available: "userSettings.updateAvailable",
+  downloading: "userSettings.updateDownloading",
+  downloaded: "userSettings.updateDownloaded",
+  error: "userSettings.updateError",
+};
+
+/** Current version, the updater's state (live region) and its two actions. The main process owns the state; this only shows it. */
+function UpdateSection() {
+  const [version, setVersion] = useState("");
+  const [status, setStatus] = useState<UpdateStatus | null>(null);
+
+  useEffect(() => {
+    void window.loop.version().then(setVersion);
+    void window.loop.update.get().then(setStatus);
+    return window.loop.update.onStatus(setStatus);
+  }, []);
+
+  const state = status?.state;
+  const text = state ? t(UPDATE_TEXT[state], { version: status?.version ?? "", error: status?.error ?? "" }) : "";
+  return (
+    <div className="flex flex-col gap-3 px-3 py-2">
+      <p className="text-[15px]">
+        <span className="text-ink-muted">{t("userSettings.version")} </span>
+        <span className="select-text">{version}</span>
+      </p>
+      <p role="status" aria-live="polite" className={`min-h-5 text-[13px] leading-relaxed ${state === "error" ? "text-danger" : "text-ink-muted"}`}>
+        {text}
+      </p>
+      {state && state !== "disabled" && (
+        <div className="flex flex-wrap gap-2">
+          {state === "downloaded" && <Button onClick={() => void window.loop.update.install()}>{t("userSettings.updateInstall")}</Button>}
+          <Button variant="ghost" loading={state === "checking"} disabled={state !== "idle" && state !== "error"} onClick={() => void window.loop.update.check().then(setStatus)}>
+            {t("userSettings.updateCheck")}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 

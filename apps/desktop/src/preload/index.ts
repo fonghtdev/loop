@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { isConversationKey } from "../shared/notify";
+import { parseUpdateStatus } from "../shared/update";
 import type { LoopApi } from "./api";
 
 const api: LoopApi = {
@@ -10,6 +11,16 @@ const api: LoopApi = {
   },
   media: { ensureAccess: (kind) => ipcRenderer.invoke("media:ensureAccess", kind) },
   settings: { get: () => ipcRenderer.invoke("settings:get"), set: (patch) => ipcRenderer.invoke("settings:set", patch) },
+  update: {
+    get: () => ipcRenderer.invoke("update:get"),
+    check: () => ipcRenderer.invoke("update:check"),
+    install: () => ipcRenderer.invoke("update:install"),
+    onStatus: (cb) => {
+      const listener = (_e: unknown, status: unknown) => cb(parseUpdateStatus(status));
+      ipcRenderer.on("update:status", listener);
+      return () => void ipcRenderer.removeListener("update:status", listener);
+    },
+  },
   notify: (payload) => ipcRenderer.invoke("notify:show", payload),
   closeNotification: (key) => ipcRenderer.invoke("notify:close", key),
   onNavigate: (cb) => {

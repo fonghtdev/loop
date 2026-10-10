@@ -1,4 +1,5 @@
-// Rasterises the Loop mark (the stroke in src/renderer/src/components/Logo.tsx) into the tray PNGs in resources/.
+// Rasterises the Loop mark (the stroke in src/renderer/src/components/Logo.tsx) into the tray PNGs in resources/
+// and the 1024px app icon build/icon.png (the mark on a rounded dark tile; electron-builder derives .icns / .ico from it).
 // No dependencies: a distance-to-polyline coverage test, supersampled, written with node:zlib.
 // Run: node apps/desktop/scripts/make-tray-icons.mjs   (the generated files are committed)
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -6,7 +7,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 
-const out = join(dirname(fileURLToPath(import.meta.url)), "../resources");
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const out = join(root, "resources");
 const STROKE = 4.5; // in the logo's 40x40 viewBox
 
 // "M6.5 33.5 L11.81 28.19 A13 13 0 1 1 18.74 31.8": a tail, then a large clockwise arc (r=13) back near the start.
@@ -35,21 +37,42 @@ function distToSegment([px, py], [ax, ay], [bx, by]) {
 }
 const covered = (p) => path.slice(1).some((b, i) => distToSegment(p, path[i], b) <= STROKE / 2); // round caps come for free
 
-function render(size, rgb) {
-  const SS = 4;
+// `shade(x, y)` (in the logo's 40x40 space) gives [r, g, b, a] or null; subsamples are averaged premultiplied.
+function rasterise(size, shade, SS = 4, empty = [0, 0, 0]) {
   const raw = Buffer.alloc((size * 4 + 1) * size);
   for (let y = 0; y < size; y++) {
     raw[y * (size * 4 + 1)] = 0;
     for (let x = 0; x < size; x++) {
-      let hits = 0;
+      const sum = [0, 0, 0];
+      let alpha = 0;
       for (let sy = 0; sy < SS; sy++)
-        for (let sx = 0; sx < SS; sx++) if (covered([((x + (sx + 0.5) / SS) * 40) / size, ((y + (sy + 0.5) / SS) * 40) / size])) hits++;
+        for (let sx = 0; sx < SS; sx++) {
+          const c = shade(((x + (sx + 0.5) / SS) * 40) / size, ((y + (sy + 0.5) / SS) * 40) / size);
+          if (!c) continue;
+          for (let i = 0; i < 3; i++) sum[i] += c[i] * c[3];
+          alpha += c[3];
+        }
       const o = y * (size * 4 + 1) + 1 + x * 4;
-      raw.set([...rgb, Math.round((255 * hits) / (SS * SS))], o);
+      raw.set(alpha ? [...sum.map((v) => Math.round(v / alpha)), Math.round(alpha / (SS * SS))] : [...empty, 0], o);
     }
   }
   return png(size, raw);
 }
+const render = (size, rgb) => rasterise(size, (x, y) => (covered([x, y]) ? [...rgb, 255] : null), 4, rgb);
+
+// App icon: the Apple icon grid (an 824/1024 rounded tile, centred, radius ~18%): dark surface-0 with the moss-300 mark.
+const TILE = { half: 20 * (824 / 1024), radius: 40 * (185 / 1024) };
+const inTile = (x, y) => {
+  const dx = Math.max(Math.abs(x - 20) - (TILE.half - TILE.radius), 0);
+  const dy = Math.max(Math.abs(y - 20) - (TILE.half - TILE.radius), 0);
+  return Math.hypot(dx, dy) <= TILE.radius;
+};
+const MARK = 0.62; // the mark's share of the tile; the logo's visual centre is near (19.5, 19.5) of its 40x40 box
+const renderIcon = (size) =>
+  rasterise(size, (x, y) => {
+    if (!inTile(x, y)) return null;
+    return covered([(x - 20) / MARK + 19.5, (y - 20) / MARK + 19.5]) ? [0xb4, 0xd0, 0x8c, 255] : [0x14, 0x13, 0x1a, 255];
+  }, 2);
 
 const crcTable = Array.from({ length: 256 }, (_, n) => {
   let c = n;
@@ -87,4 +110,6 @@ const files = {
   "tray@2x.png": render(32, [0xb4, 0xd0, 0x8c]),
 };
 for (const [name, data] of Object.entries(files)) writeFileSync(join(out, name), data);
-console.log(`wrote ${Object.keys(files).join(", ")} to ${out}`);
+mkdirSync(join(root, "build"), { recursive: true });
+writeFileSync(join(root, "build/icon.png"), renderIcon(1024));
+console.log(`wrote ${Object.keys(files).join(", ")} to ${out}, and build/icon.png`);
