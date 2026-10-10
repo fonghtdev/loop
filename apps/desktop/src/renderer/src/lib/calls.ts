@@ -120,4 +120,3 @@ export function createCalls({ voice, request, now = Date.now, setTimer = setTime
     },
   };
 }
-export type Calls = ReturnType<typeof createCalls>;

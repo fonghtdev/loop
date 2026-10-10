@@ -26,4 +26,3 @@ export function createSettingsStore(file: string) {
     },
   };
 }
-export type SettingsStore = ReturnType<typeof createSettingsStore>;

@@ -101,4 +101,3 @@ export function createDevices({ storage, enumerate, apply }: Deps) {
     },
   };
 }
-export type Devices = ReturnType<typeof createDevices>;

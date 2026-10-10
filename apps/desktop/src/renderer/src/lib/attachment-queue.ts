@@ -90,4 +90,3 @@ export function createAttachmentQueue({ convKey, upload, newId = () => crypto.ra
     },
   };
 }
-export type AttachmentQueue = ReturnType<typeof createAttachmentQueue>;
