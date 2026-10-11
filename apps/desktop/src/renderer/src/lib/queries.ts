@@ -11,12 +11,12 @@ const api = session.client.request;
 // Every key of one guild starts with ["guild", id], so `revalidateGuild` refreshes them all at once.
 export const useGuilds = () => useQuery({ queryKey: ["guilds"], queryFn: () => api<Guild[]>("GET", "/guilds") });
 
-export const useGuild = (guildId: string | null) =>
-  useQuery({
-    queryKey: ["guild", guildId],
-    queryFn: () => api<{ guild: Guild; channels: Channel[] }>("GET", `/guilds/${guildId}`),
-    enabled: !!guildId,
-  });
+export const guildQuery = (guildId: string | null) => ({
+  queryKey: ["guild", guildId],
+  queryFn: () => api<{ guild: Guild; channels: Channel[] }>("GET", `/guilds/${guildId}`),
+});
+
+export const useGuild = (guildId: string | null) => useQuery({ ...guildQuery(guildId), enabled: !!guildId });
 
 export const useMembers = (guildId: string | null) =>
   useQuery({ queryKey: ["guild", guildId, "members"], queryFn: () => api<Member[]>("GET", `/guilds/${guildId}/members`), enabled: !!guildId });

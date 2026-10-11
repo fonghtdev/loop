@@ -11,6 +11,7 @@ import { ImageViewer } from "../components/ImageViewer";
 import { ChatArt, PeopleArt } from "../components/Illustrations";
 import { IncomingCall } from "../components/IncomingCall";
 import { MemberList } from "../components/MemberList";
+import { QuickSwitcher } from "../components/QuickSwitcher";
 import { ServerRail } from "../components/ServerRail";
 import { ServerSettings } from "../components/ServerSettings";
 import { UserSettings } from "../components/UserSettings";
@@ -21,13 +22,15 @@ import { ToastHost } from "../components/Toast";
 import { Tooltip } from "../components/Tooltip";
 import { t } from "../i18n/t";
 import { ApiError } from "../lib/auth-client";
-import { realtime, revalidateGuild, session, unread, voice, voicePresence } from "../lib/app";
+import { queryClient, realtime, revalidateGuild, session, unread, voice, voicePresence } from "../lib/app";
 import { density } from "../lib/density";
 import { move, reducedNow } from "../lib/motion";
 import { goHome, readLastPlace, useNav } from "../lib/nav";
 import { stageShift, type StagePlace } from "../lib/stage";
 import { blockFileNavigation } from "../lib/drop";
 import { useDms, useGuild, useGuilds } from "../lib/queries";
+import { recentKeyOf, recordRecent } from "../lib/quick-switch-recents";
+import { DMS_KEY, type Dm } from "../lib/social";
 import { FriendsScreen } from "./FriendsScreen";
 
 const subscribeOnline = (cb: () => void) => {
@@ -114,6 +117,15 @@ export function Shell() {
   useEffect(() => {
     if (user) useNav.setState(readLastPlace(user.id));
   }, [user?.id]); // only when the account changes, not on every user object
+
+  // Every place the user reaches (the quick switcher or any click) becomes a recent of this account.
+  useEffect(() => {
+    if (!user) return;
+    return useNav.subscribe((place) => {
+      const key = recentKeyOf(place, queryClient.getQueryData<Dm[]>(DMS_KEY));
+      if (key) recordRecent(user.id, key);
+    });
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The message density is the account's own: it follows the user in, and nothing of it stays after sign-out.
   useLayoutEffect(() => {
@@ -240,6 +252,7 @@ export function Shell() {
           </aside>
         )}
       </div>
+      <QuickSwitcher />
       <ImageViewer />
       <IncomingCall />
       <ToastHost />

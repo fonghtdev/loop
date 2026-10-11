@@ -21,7 +21,7 @@ import { TextField } from "./TextField";
 import { Tooltip } from "./Tooltip";
 
 /** Opening a server (again) also refetches its data: permissions or channels may have changed since. */
-function openGuild(guildId: string) {
+export function openGuild(guildId: string) {
   revalidateGuild(guildId);
   useNav.setState(useNav.getState().guildId === guildId ? { settings: null } : { guildId, channelId: null, dmId: null, settings: null });
 }

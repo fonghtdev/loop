@@ -11,6 +11,7 @@ import { errorMessage } from "../lib/errors";
 import { arrowNav } from "../lib/focus";
 import { goHome, useNav } from "../lib/nav";
 import type { Channel, Guild } from "../lib/permissions";
+import { openChannel } from "../lib/channel-open";
 import { channelKey } from "../lib/conversation";
 import { useGuild, usePermissions } from "../lib/queries";
 import { useUnreadCount } from "../lib/unread-hooks";
@@ -23,6 +24,7 @@ import { navRow } from "./navRow";
 import { MenuItem, RowMenu } from "./RowMenu";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
 import { Avatar } from "./Avatar";
+import { QuickSwitchButton } from "./QuickSwitcher";
 import { ColumnHeader, LoadError, Skeleton } from "./States";
 import { Spinner } from "./Spinner";
 import { TextField } from "./TextField";
@@ -117,10 +119,7 @@ function ChannelItem({ channel, active }: { channel: Channel; active: boolean })
   const unread = useUnreadCount(channelKey(channel.id)) > 0 && !active;
   const joined = useStore(voice.store, (s) => s.target?.kind === "channel" && s.target.id === channel.id && s.status !== "disconnected");
   // a voice channel is opened AND joined by the click (a user gesture, which the OS prompts for mic need)
-  const open = () => {
-    useNav.setState({ channelId: channel.id, settings: null });
-    if (voiceChannel) void voice.joinChannel(channel.id, channel.name);
-  };
+  const open = () => openChannel(channel);
   return (
     <button
       type="button"
@@ -184,7 +183,7 @@ function GuildMenu({ name, canInvite, canManage, onPick, onSettings }: { name: s
         type="button"
         popoverTarget="guild-menu"
         aria-label={t("guildMenu.open", { name })}
-        className="-mx-2 flex h-10 w-[calc(100%+16px)] items-center gap-2 rounded-control px-2 text-left font-display text-[15px] font-bold [anchor-name:--guild-menu] hover:bg-surface-3"
+        className="-ml-2 flex h-10 min-w-0 flex-1 items-center gap-2 rounded-control px-2 text-left font-display text-[15px] font-bold [anchor-name:--guild-menu] hover:bg-surface-3"
       >
         <span className="min-w-0 flex-1 truncate">{name}</span>
         <CaretDown aria-hidden="true" className="shrink-0 text-ink-muted" />
@@ -211,6 +210,7 @@ function GuildMenu({ name, canInvite, canManage, onPick, onSettings }: { name: s
         )}
         <MenuItem icon={<Leave aria-hidden="true" />} label={t("guildMenu.leave")} danger onClick={() => pick("leave")} />
       </div>
+      <QuickSwitchButton />
     </ColumnHeader>
   );
 }

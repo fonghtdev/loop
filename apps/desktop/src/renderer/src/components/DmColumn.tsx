@@ -9,6 +9,7 @@ import { useDms, useIsOnline } from "../lib/queries";
 import { useUnreadMark } from "../lib/unread-hooks";
 import { Badge, UnreadDot } from "./Badge";
 import { navRow } from "./navRow";
+import { QuickSwitchButton } from "./QuickSwitcher";
 import { PresenceAvatar } from "./Avatar";
 import { FriendsArt } from "./Illustrations";
 import { ColumnHeader, EmptyState, LoadError, Skeleton } from "./States";
@@ -21,7 +22,10 @@ export function DmColumn() {
   const dmId = useNav((s) => s.dmId);
   return (
     <>
-      <ColumnHeader>{t("home.dms")}</ColumnHeader>
+      <ColumnHeader>
+        <span className="min-w-0 flex-1 truncate">{t("home.dms")}</span>
+        <QuickSwitchButton />
+      </ColumnHeader>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         <ul aria-label={t("home.dmList")} onKeyDown={arrowNav} className="flex flex-col gap-0.5">
           <li>

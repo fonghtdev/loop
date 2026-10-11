@@ -289,6 +289,25 @@ describe("redesign R4 voice, calls, friends, settings, viewer", () => {
   });
 });
 
+describe("redesign R5 quick switcher", () => {
+  const wash = css.match(/--color-cosmic-wash:\s*rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)/)!;
+  const worstGlass = glassOver(dimmed(rgb(tokens.ink))); // the palette is a dialog: the lightest thing behind its dim is ink text
+  const activeRow = composite([255, 255, 255], 0.05, composite([+wash[1], +wash[2], +wash[3]], +wash[4], worstGlass));
+  const hoverRow = composite([255, 255, 255], 0.045, worstGlass);
+
+  it.each(["ink", "ink-muted", "cosmic-200"])("%s (name, second line, matched letters) on the active row over the worst-case glass >= 4.5:1", (tk) => {
+    expect(contrast(rgb(tokens[tk]), activeRow)).toBeGreaterThanOrEqual(4.5);
+  });
+  it.each(["ink", "ink-muted", "cosmic-200"])("%s on the glass and on a hovered row >= 4.5:1", (tk) => {
+    expect(contrast(rgb(tokens[tk]), worstGlass)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(rgb(tokens[tk]), hoverRow)).toBeGreaterThanOrEqual(4.5);
+  });
+  it("the highlight is not colour alone: bold and underlined", () => {
+    const src = readFileSync(join(__dirname, "components/QuickSwitcher.tsx"), "utf8");
+    expect(src).toMatch(/data-match className="font-bold text-cosmic-200 underline/);
+  });
+});
+
 describe("design tokens meet WCAG AA", () => {
   it("parses the tokens", () => {
     expect(Object.keys(tokens).length).toBeGreaterThan(15);
