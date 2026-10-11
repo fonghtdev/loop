@@ -111,8 +111,11 @@ test("PNG by the file chooser in a channel: progress, Send closed while uploadin
   await sendButton().click();
   const img = imageIn("ảnh to.png");
   await expect(img).toBeVisible();
-  await loaded(img);
-  expect(await img.evaluate((el: HTMLImageElement) => [el.naturalWidth, el.naturalHeight])).toEqual([64, 48]);
+  // The optimistic message first shows a local blob: preview, then the server's message replaces the element:
+  // wait for the final image (not the blob) to have loaded, in one poll, so the element cannot change between checks.
+  await expect
+    .poll(() => img.evaluate((el: HTMLImageElement) => (el.complete && !el.src.startsWith("blob:") ? [el.naturalWidth, el.naturalHeight] : null)), { timeout: 15_000 })
+    .toEqual([64, 48]);
   await expect(trayItem("ảnh to.png")).toHaveCount(0);
 
   await bConn.waitFor("message:new", (m) => m.attachments?.length === 1);
