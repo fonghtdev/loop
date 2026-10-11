@@ -102,6 +102,7 @@ test("register, restore the session after a relaunch, logout, wrong password", a
   await network(false);
   await expect(page.getByText("Mất kết nối mạng.")).toHaveCount(0);
 
+  await page.getByRole("button", { name: "Menu tài khoản" }).click();
   await page.getByRole("button", { name: "Đăng xuất" }).click();
   await expect(page.getByRole("heading", { name: "Chào mừng trở lại" })).toBeVisible();
   await page.getByLabel("Email").fill(email);

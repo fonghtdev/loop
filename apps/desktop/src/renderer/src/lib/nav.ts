@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import type { SettingsTab } from "./admin";
+import type { Channel } from "./permissions";
+import type { VoiceTarget } from "./voice";
 import { channelKey, dmKey, parseKey, type ConvKey } from "./conversation";
 
 /**
@@ -64,3 +66,12 @@ export function placeForKey(key: ConvKey, dmIds: readonly string[] | undefined):
   const { kind, id } = parseKey(key);
   return kind === "dm" && dmIds?.includes(id) ? { ...HOME, dmId: id } : null;
 }
+
+/**
+ * What choosing a channel does. A text channel is opened. A voice channel you are not in is only JOINED (the main
+ * area stays where it is, like Discord); one you are already in opens its room view.
+ */
+export const planOpen = (type: Channel["type"], connected: boolean) => ({ navigate: type !== "VOICE" || connected, join: type === "VOICE" && !connected });
+
+/** The place of a connected voice channel's room view; null for a DM call or a target without a server. */
+export const roomPlace = (t: VoiceTarget | null) => (t?.kind === "channel" && t.guildId ? { guildId: t.guildId, channelId: t.id, dmId: null, settings: null } : null);

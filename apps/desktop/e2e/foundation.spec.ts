@@ -61,7 +61,7 @@ test("film grain is a background layer on the solid surfaces and the setting swi
 
 test("the motion preference reaches CSS: reduced = 1 ms, full overrides the OS, system follows the OS", async () => {
   const cdp = await page.context().newCDPSession(page);
-  const duration = () => style("button[aria-label='Đăng xuất']", "transition-duration");
+  const duration = () => style("button[aria-label='Cài đặt của bạn']", "transition-duration");
   const choose = async (name: string) => {
     await page.locator("label").filter({ hasText: new RegExp(`^${name}$`) }).click();
     await expect(page.getByRole("radio", { name })).toBeChecked();

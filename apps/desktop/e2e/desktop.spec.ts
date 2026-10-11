@@ -369,7 +369,7 @@ test.describe("tray, close-to-tray, single instance, quit", () => {
     await setFocused(true);
     await rail().getByRole("button", { name: `Noti ${run}` }).click();
     await page.getByRole("button", { name: "Kênh thoại voz", exact: true }).click();
-    await expect(page.getByRole("region", { name: "Đang trong cuộc gọi" }).getByText("Đã kết nối", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("region", { name: "Đang trong cuộc gọi" }).getByText("Đã kết nối giọng nói", { exact: true })).toBeVisible({ timeout: 20_000 });
     const inRoom = async () => (await api<{ participants: { userId: string }[] }>(B.token, "GET", `/channels/${voz}/voice`)).participants.some((p) => p.userId === A.user.id);
     await expect.poll(inRoom).toBe(true);
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());

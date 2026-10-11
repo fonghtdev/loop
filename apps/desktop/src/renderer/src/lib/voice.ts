@@ -4,15 +4,18 @@ import { t } from "../i18n/t";
 import { isAllowedLivekitUrl } from "../../../shared/url";
 import type { AudioSink, AudioTrackLike } from "./audio-sink";
 import { errorMessage } from "./errors";
+import { encodeDeafened, parseDeafened } from "./voice-flags";
 import type { Participant } from "./voice-presence";
 
 /** What a session is joined to: a guild voice channel or a DM call. `name` is for the voice bar. */
-export type VoiceTarget = { kind: "channel" | "dm"; id: string; name: string };
+export type VoiceTarget = { kind: "channel" | "dm"; id: string; name: string; /** The server of a channel (the panel names it, "Mở phòng thoại" goes there). */ guildId?: string };
 /**
  * idle -> requestingToken -> connecting -> connected <-> reconnecting; any state -> idle (left) or
  * disconnected (the server ended it; `reason` + `notice` say why). Both resting states can start a new join.
  */
 export type VoiceStatus = "idle" | "requestingToken" | "connecting" | "connected" | "reconnecting" | "disconnected";
+/** A session that holds (or is acquiring) a room; the voice panel shows for these. */
+export const isActive = (status: VoiceStatus) => status !== "idle" && status !== "disconnected";
 
 export type VoiceState = {
   status: VoiceStatus;
@@ -39,9 +42,9 @@ export type VoiceState = {
 
 // ---- the slice of livekit-client's Room that is used (tests pass a fake) ----
 type TrackPublicationLike = { track?: (Participant["video"] & Partial<AudioTrackLike>) | undefined; isMuted: boolean };
-export type ParticipantLike = { identity: string; name?: string; getTrackPublication(source: string): TrackPublicationLike | undefined };
+export type ParticipantLike = { identity: string; name?: string; metadata?: string; permissions?: { canPublish: boolean; canPublishSources: number[] }; getTrackPublication(source: string): TrackPublicationLike | undefined };
 export type LocalParticipantLike = ParticipantLike & {
-  permissions?: { canPublish: boolean; canPublishSources: number[] };
+  setMetadata(metadata: string): Promise<unknown>;
   setMicrophoneEnabled(on: boolean): Promise<unknown>;
   setCameraEnabled(on: boolean): Promise<unknown>;
 };
@@ -130,7 +133,10 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
 
   const toParticipant = (p: ParticipantLike, isLocal: boolean): Participant => {
     const cam = p.getTrackPublication("camera");
-    return { userId: p.identity, username: p.name || p.identity, isLocal, speaking: speaking.has(p.identity), video: cam?.track && !cam.isMuted ? cam.track : undefined };
+    const mic = p.getTrackPublication("microphone");
+    // someone who may not speak has no microphone state to show; for everyone else a missing or muted track is "mic off"
+    const micOff = rightsOf(p.permissions ?? { canPublish: true, canPublishSources: [] }).canSpeak && (!mic || mic.isMuted);
+    return { userId: p.identity, username: p.name || p.identity, isLocal, speaking: speaking.has(p.identity), video: cam?.track && !cam.isMuted ? cam.track : undefined, micOff, deafened: parseDeafened(p.metadata) };
   };
   const refresh = () => {
     if (!room) return;
@@ -221,9 +227,12 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
     on("participantPermissionsChanged", (_prev: unknown, p: { identity: string }) => {
       if (p.identity === r.localParticipant.identity) applyRights(rightsOf(r.localParticipant.permissions));
     });
-    for (const e of ["participantConnected", "participantDisconnected", "trackMuted", "trackUnmuted", "localTrackPublished", "localTrackUnpublished", "trackPublished", "trackUnpublished"])
+    for (const e of ["participantMetadataChanged", "participantConnected", "participantDisconnected", "trackMuted", "trackUnmuted", "localTrackPublished", "localTrackUnpublished", "trackPublished", "trackUnpublished"])
       on(e, refresh);
   }
+
+  /** Tells the others (cosmetically, see voice-flags) whether we are deafened; a refusal (older server) is harmless. */
+  const publishDeafened = (on: boolean) => void room?.localParticipant.setMetadata(encodeDeafened(on)).catch(() => undefined);
 
   function leave() {
     if (get().status === "idle") return;
@@ -279,7 +288,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
   return {
     store,
     join,
-    joinChannel: (id: string, name: string) => join({ kind: "channel", id, name }),
+    joinChannel: (id: string, name: string, guildId?: string) => join({ kind: "channel", id, name, guildId }),
     joinDm: (id: string, name: string, video: boolean) => join({ kind: "dm", id, name }, { video }),
     leave,
     toggleMic: async () => {
@@ -294,9 +303,11 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
       if (!s.deafened) {
         sink.setMuted(true);
         set({ deafened: true, micBeforeDeafen: s.micEnabled });
+        publishDeafened(true);
         if (s.micEnabled) await setMic(false);
       } else {
         sink.setMuted(false);
+        publishDeafened(false);
         const restore = s.micBeforeDeafen;
         set({ deafened: false, micBeforeDeafen: false });
         if (restore) await setMic(true);

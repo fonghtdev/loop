@@ -164,7 +164,7 @@ test("tooltips: after the delay with aria-describedby, on the right of rail butt
 
   // every migrated chrome button keeps an accessible name and none keeps a native title
   expect(await page.locator("button[title], [role=button][title], a[title]").count()).toBe(0);
-  for (const name of ["Tạo máy chủ", "Tham gia bằng mã mời", "Đính kèm tệp", "Đăng xuất"]) await expect(page.getByRole("button", { name: new RegExp(name) }).first()).toBeVisible();
+  for (const name of ["Tạo máy chủ", "Tham gia bằng mã mời", "Đính kèm tệp", "Menu tài khoản"]) await expect(page.getByRole("button", { name: new RegExp(name) }).first()).toBeVisible();
 });
 
 test("chat rows: sticky day separator, toolbar buttons >= 40x40 in order Sửa/Sao chép/Xóa, Sao chép puts the exact text on the clipboard and morphs for ~1.5 s", async () => {
@@ -417,7 +417,10 @@ test("density: Gọn is a switch in Giao diện, applies at once, persists acros
   await expect(html()).toHaveAttribute("data-density", "compact");
 
   // another account on the same profile starts at the default; the first keeps its own
-  const logout = () => page.getByRole("button", { name: "Đăng xuất" }).first().click();
+  const logout = async () => {
+    await page.getByRole("button", { name: "Menu tài khoản" }).click();
+    await page.getByRole("button", { name: "Đăng xuất" }).first().click();
+  };
   await logout();
   await page.getByLabel("Email").fill(`${B.user.username}@example.com`);
   await page.getByLabel("Mật khẩu", { exact: true }).fill(password);

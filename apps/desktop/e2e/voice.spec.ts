@@ -26,14 +26,15 @@ const channelList = () => page.getByRole("list", { name: "Danh sách kênh" });
 const channelButton = (name: string) => page.getByRole("button", { name: `Kênh thoại ${name}`, exact: true });
 const seatsUnder = (name: string) => page.getByRole("list", { name: `Người đang ở trong kênh ${name}` });
 const bar = () => page.getByRole("region", { name: "Đang trong cuộc gọi" });
-const mic = () => bar().getByRole("button", { name: "Tắt micro" });
-const deafen = () => bar().getByRole("button", { name: "Tắt tiếng nghe" });
+const strip = () => page.getByRole("region", { name: "Tài khoản" }); // mute / deafen live in the account strip
+const mic = () => strip().getByRole("button", { name: "Tắt micro" });
+const deafen = () => strip().getByRole("button", { name: "Tắt tiếng nghe" });
 const camera = () => bar().getByRole("button", { name: "Bật camera" });
 const leave = () => bar().getByRole("button", { name: /^(Rời kênh thoại|Kết thúc cuộc gọi|Huỷ cuộc gọi)$/ });
 const grid = () => page.getByRole("list", { name: "Người trong kênh thoại" });
 const notice = () => page.locator("[aria-live=polite]").filter({ hasText: /Đóng thông báo/ });
 const audioElements = () => page.evaluate(() => ({ count: document.querySelectorAll("audio").length, muted: [...document.querySelectorAll("audio")].map((a) => a.muted) }));
-const connected = () => expect(bar().getByText("Đã kết nối", { exact: true })).toBeVisible({ timeout: 15_000 });
+const connected = () => expect(bar().getByText(/^Đã kết nối (giọng nói|cuộc gọi)$/)).toBeVisible({ timeout: 15_000 });
 const idle = () => expect(bar()).toBeHidden();
 
 async function newUser(tag: string) {
@@ -144,6 +145,8 @@ test("join: A is listed, the bar appears, B hears A's microphone and A hears B; 
   const joinMs = Date.now() - t0;
   console.log(`[9d] click Join -> connected: ${joinMs} ms`);
   await expect(bar()).toContainText("voz-chinh");
+  await expect(grid()).toHaveCount(0); // joining does not open the room
+  await channelButton("voz-chinh").click(); // already connected: this opens it
   expect((await api<{ participants: { userId: string }[] }>(A.token, "GET", `/channels/${voz}/voice`)).participants.map((p) => p.userId).sort()).toEqual([A.user.id, B.user.id].sort());
   await expect.poll(() => b.sees(A.user.id)).toMatchObject({ present: true, audio: 1, audioMuted: false }); // the fake mic reached LiveKit
   await expect(grid().getByRole("listitem")).toHaveCount(2);
@@ -156,7 +159,7 @@ test("join: A is listed, the bar appears, B hears A's microphone and A hears B; 
   await mic().click();
   await expect(mic()).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => b.sees(A.user.id).audioMuted).toBe(true);
-  await expect(seatsUnder("voz-chinh").getByText("Bạn đã tắt micro")).toHaveCount(1);
+  await expect(seatsUnder("voz-chinh").getByText("Đã tắt micro")).toHaveCount(1);
   await mic().click();
   await expect.poll(() => b.sees(A.user.id).audioMuted).toBe(false);
 
@@ -299,7 +302,7 @@ test.describe("DM calls", () => {
     await expect(page.getByRole("button", { name: "Trả lời" })).toBeFocused();
     await page.getByRole("button", { name: "Trả lời" }).click();
     await connected();
-    await expect(bar()).toContainText(`Cuộc gọi với ${B.user.username}`);
+    await expect(bar()).toContainText(B.user.username);
     await expect.poll(() => b.sees(A.user.id)).toMatchObject({ present: true, audio: 1 });
     await expect.poll(async () => (await audioElements()).count).toBe(1);
     expect(bc.events.filter((e) => e.event === "call:incoming")).toHaveLength(0); // B started it
@@ -333,7 +336,7 @@ test.describe("DM calls", () => {
     expect(conn[0].events.filter((e) => e.event === "call:incoming").length).toBe(before + 1);
     await expect(phone()).toBeDisabled(); // already in this call
     const b = await joinRoom(await callToken(B, dmId)); // B answers
-    await expect(bar()).toContainText(`Cuộc gọi với ${B.user.username}`);
+    await expect(bar()).toContainText(B.user.username);
     await expect.poll(() => b.sees(A.user.id).audio).toBe(1);
     await expect.poll(() => b.identities()).toEqual([A.user.id]);
     await leave().click();
@@ -367,7 +370,7 @@ test.describe("DM calls", () => {
     await expect(dialog()).toContainText("rời khỏi kênh thoại");
     await expect(bar()).toContainText("voz-chinh"); // untouched
     await page.getByRole("button", { name: "Trả lời" }).click();
-    await expect(bar()).toContainText(`Cuộc gọi với ${B.user.username}`);
+    await expect(bar()).toContainText(B.user.username);
     await expect(seatsUnder("voz-chinh")).toBeHidden();
     await b.leave();
     await leave().click().catch(() => undefined);
@@ -410,6 +413,7 @@ test("signing out while in a call leaves the room (the other side sees A go)", a
   await page.getByRole("button", { name: "Trả lời" }).click();
   await connected();
   await expect.poll(() => b.sees(A.user.id).present).toBe(true);
+  await page.getByRole("button", { name: "Menu tài khoản" }).click();
   await page.getByRole("button", { name: "Đăng xuất" }).click();
   await expect(page.getByLabel("Email")).toBeVisible();
   await expect.poll(() => b.sees(A.user.id).present).toBe(false);

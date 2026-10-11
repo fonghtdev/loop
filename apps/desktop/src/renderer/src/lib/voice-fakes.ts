@@ -13,6 +13,7 @@ export class FakeRoom implements RoomLike {
   micFails = false;
   micGate: Promise<void> | null = null;
   remoteParticipants = new Map<string, ParticipantLike>();
+  metadata: string[] = [];
   localParticipant: LocalParticipantLike = {
     identity: "me",
     name: "Me",
@@ -24,6 +25,7 @@ export class FakeRoom implements RoomLike {
       this.mic.push(on);
     },
     setCameraEnabled: async (on) => void this.cam.push(on),
+    setMetadata: async (m) => void this.metadata.push(m),
   };
   on(event: string, fn: (...a: never[]) => void) {
     this.handlers.set(event, [...(this.handlers.get(event) ?? []), fn]);

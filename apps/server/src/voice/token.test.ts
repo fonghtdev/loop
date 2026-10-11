@@ -78,6 +78,7 @@ describe("token contents", () => {
       room: f.room,
       canSubscribe: true,
       canPublishData: false,
+      canUpdateOwnMetadata: true, // cosmetic deafen flag only (the client draws the headphones-off icon from it)
       canPublish: true,
       canPublishSources: ["microphone", "camera"],
     });

@@ -2,7 +2,7 @@ import { createStore } from "zustand/vanilla";
 
 export type Seat = { userId: string; username: string };
 /** Someone in a voice room as the UI draws them (`video` only for people in the room we are connected to). */
-export type Participant = Seat & { isLocal?: boolean; speaking?: boolean; video?: { attach(el: HTMLVideoElement): unknown; detach(el: HTMLVideoElement): unknown } };
+export type Participant = Seat & { isLocal?: boolean; speaking?: boolean; /** Mic muted/absent, and deafened (their own cosmetic flag): undefined = unknown. */ micOff?: boolean; deafened?: boolean; video?: { attach(el: HTMLVideoElement): unknown; detach(el: HTMLVideoElement): unknown } };
 
 const dedupe = (seats: Seat[]): Seat[] => [...new Map(seats.map((s) => [s.userId, { userId: s.userId, username: s.username }])).values()];
 

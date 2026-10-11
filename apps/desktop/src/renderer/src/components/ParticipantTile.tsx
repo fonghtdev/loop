@@ -4,6 +4,7 @@ import { move, spring } from "../lib/motion";
 import type { Tile } from "../lib/voice-grid";
 import { Avatar } from "./Avatar";
 import { Tooltip } from "./Tooltip";
+import { VoiceIndicators } from "./VoiceIndicators";
 
 function Video({ source }: { source: NonNullable<Tile["p"]["video"]> }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -58,12 +59,15 @@ export function ParticipantTile({ tile, onGone }: { tile: Tile; onGone: (userId:
         </div>
       )}
       <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-1 rounded-panel opacity-(--lv) shadow-[inset_0_0_0_2px_var(--color-cosmic-300),inset_0_0_36px_-4px_var(--color-cosmic-glow)] transition-opacity duration-140 ease-(--ease-out-soft)" />
-      <Tooltip label={p.username}>
-        <span className="absolute bottom-2 left-2 z-1 max-w-[calc(100%-16px)] truncate rounded-control bg-surface-0/80 px-2.5 py-1 text-caption font-medium text-ink">
-          {p.username}
-          {p.isLocal && ` ${t("voice.you")}`}
-        </span>
-      </Tooltip>
+      <div className="absolute bottom-2 left-2 z-1 flex max-w-[calc(100%-16px)] items-center gap-1.5">
+        <Tooltip label={p.username}>
+          <span className="min-w-0 truncate rounded-control bg-surface-0/80 px-2.5 py-1 text-caption font-medium text-ink">
+            {p.username}
+            {p.isLocal && ` ${t("voice.you")}`}
+          </span>
+        </Tooltip>
+        <VoiceIndicators p={p} className="rounded-control bg-danger-bg px-2 py-1" />
+      </div>
       {p.speaking && <span className="sr-only">{t("voice.speaking")}</span>}
     </li>
   );

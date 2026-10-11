@@ -153,6 +153,13 @@ describe("redesign R1 materials", () => {
   it("focus ring cosmic-300 against the lightest raise point >= 3:1", () => {
     expect(contrast(rgb(tokens["cosmic-300"]), lightest("raise"))).toBeGreaterThanOrEqual(3);
   });
+  it("the bottom panel card (raise): ink, ink-muted and the green status text >= 4.5:1 on its lightest point; its buttons (surface-1) read too", () => {
+    for (const fg of ["ink", "ink-muted", "moss-300"]) expect(contrast(rgb(tokens[fg]), lightest("raise")), fg).toBeGreaterThanOrEqual(4.5);
+    for (const fg of ["ink", "ink-muted"]) expect(contrast(rgb(tokens[fg]), rgb(tokens["surface-1"])), `${fg} on the panel buttons`).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(rgb(tokens["danger"]), rgb(tokens["danger-bg"])), "mic-off / headphones-off badge").toBeGreaterThanOrEqual(4.5);
+    expect(contrast(rgb(tokens["on-moss"]), rgb(tokens["danger"])), "hang up icon").toBeGreaterThanOrEqual(4.5);
+  });
+
   it("moss-300 links on the lightest raise point >= 4.5:1", () => {
     expect(contrast(rgb(tokens["moss-300"]), lightest("raise"))).toBeGreaterThanOrEqual(4.5);
   });

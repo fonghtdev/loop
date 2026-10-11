@@ -23,6 +23,7 @@ import { ConfirmBody } from "./Confirm";
 import { navRow } from "./navRow";
 import { MenuItem, RowMenu } from "./RowMenu";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
+import { VoiceIndicators } from "./VoiceIndicators";
 import { Avatar } from "./Avatar";
 import { QuickSwitchButton } from "./QuickSwitcher";
 import { ColumnHeader, LoadError, Skeleton } from "./States";
@@ -118,7 +119,7 @@ function ChannelItem({ channel, active }: { channel: Channel; active: boolean })
   const voiceChannel = channel.type === "VOICE";
   const unread = useUnreadCount(channelKey(channel.id)) > 0 && !active;
   const joined = useStore(voice.store, (s) => s.target?.kind === "channel" && s.target.id === channel.id && s.status !== "disconnected");
-  // a voice channel is opened AND joined by the click (a user gesture, which the OS prompts for mic need)
+  // a voice channel is joined by the click (a user gesture, which the OS prompts for mic need); opened only once joined
   const open = () => openChannel(channel);
   return (
     <button
@@ -137,11 +138,9 @@ function ChannelItem({ channel, active }: { channel: Channel; active: boolean })
   );
 }
 
-/** Who is in a voice channel, under its name: initials, name, a ring while speaking; the local user's mute state only. */
+/** Who is in a voice channel, under its name: initials, name, a ring while speaking; their mic / deafen marks. */
 function VoiceMembers({ channel }: { channel: Channel }) {
   const people = useVoiceParticipants(channel.id);
-  const micEnabled = useStore(voice.store, (s) => s.micEnabled);
-  const deafened = useStore(voice.store, (s) => s.deafened);
   if (people.length === 0) return null;
   return (
     <ul aria-label={t("channels.voiceMembers", { name: channel.name })} className="mt-0.5 mb-1 flex flex-col gap-0.5 pl-6">
@@ -152,18 +151,7 @@ function VoiceMembers({ channel }: { channel: Channel }) {
             <span className={`min-w-0 flex-1 truncate ${p.speaking ? "text-ink" : ""}`}>{p.username}</span>
           </Tooltip>
           {p.speaking && <span className="sr-only">{t("voice.speaking")}</span>}
-          {p.isLocal && !micEnabled && !deafened && (
-            <span className="shrink-0 text-danger">
-              <MicrophoneSlash aria-hidden="true" size={16} />
-              <span className="sr-only">{t("voice.youMuted")}</span>
-            </span>
-          )}
-          {p.isLocal && deafened && (
-            <span className="shrink-0 text-danger">
-              <SpeakerSlash aria-hidden="true" size={16} />
-              <span className="sr-only">{t("voice.youDeafened")}</span>
-            </span>
-          )}
+          <VoiceIndicators p={p} />
         </li>
       ))}
     </ul>

@@ -317,8 +317,9 @@ test.describe("first run and empty states", () => {
     const vp = voiceApp.page;
     watch(vp);
     await rail(vp).getByRole("button", { name: `Thoai ${run}` }).click();
-    await vp.getByRole("button", { name: "Kênh thoại phong-thoai" }).click(); // opening a voice channel joins it
-    await expect(vp.getByRole("region", { name: "Đang trong cuộc gọi" }).getByText("Đã kết nối", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await vp.getByRole("button", { name: "Kênh thoại phong-thoai" }).click(); // a voice channel is joined by the click
+    await expect(vp.getByRole("region", { name: "Đang trong cuộc gọi" }).getByText("Đã kết nối giọng nói", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await vp.getByRole("button", { name: "Mở phòng thoại" }).click(); // joining leaves the view where it was
     await vp.getByRole("button", { name: "Rời kênh thoại" }).click();
     await expect(vp.getByRole("region", { name: "Đang trong cuộc gọi" })).toBeHidden();
     await vp.reload(); // the place is restored: the room is open again, and LiveKit now says nobody is in it
@@ -355,6 +356,7 @@ test.describe("first run and empty states", () => {
     await page.waitForTimeout(500);
     await expect(checklist()).toHaveCount(0); // dismissed accounts never see it again
     // sign out and in as another account in the same profile: that account still has its list
+    await page.getByRole("button", { name: "Menu tài khoản" }).click();
     await page.getByRole("button", { name: "Đăng xuất" }).click();
     await page.getByLabel("Email").fill(`${B.user.username}@example.com`);
     await page.getByLabel("Mật khẩu", { exact: true }).fill(password);
@@ -410,8 +412,8 @@ test("the first message and the first voice join are remembered for the account"
   const saved = () => page.evaluate((id) => JSON.parse(localStorage.getItem(`loop.firstRun.${id}`) ?? "null"), S.user.id);
   expect(await saved()).toBeNull(); // nothing written until something happens
   await rail(page).getByRole("button", { name: `Ghi nho ${run}` }).click();
-  await page.getByRole("button", { name: "Kênh thoại thoai-ghi-nho" }).click(); // opening a voice channel joins it
-  await expect(page.getByRole("region", { name: "Đang trong cuộc gọi" }).getByText("Đã kết nối", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Kênh thoại thoai-ghi-nho" }).click(); // a voice channel is joined by the click
+  await expect(page.getByRole("region", { name: "Đang trong cuộc gọi" }).getByText("Đã kết nối giọng nói", { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect.poll(saved).toEqual({ events: ["voice"], dismissed: false });
   await page.getByRole("list", { name: "Danh sách kênh" }).getByRole("button", { name: "general", exact: true }).click();
   await page.getByRole("textbox", { name: /Nhắn vào/ }).fill("tin đầu tiên");

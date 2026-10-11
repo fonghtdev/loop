@@ -76,6 +76,10 @@ export function createLivekit({ url, apiUrl, apiKey, apiSecret }: Env["livekit"]
         room,
         canSubscribe: true,
         canPublishData: false,
+        // ponytail: cosmetic only. Clients publish their own deafen flag as participant metadata so others can draw the
+        // headphones-off icon; never use it for a decision (a client may lie about its own icon). Not part of
+        // `Rights`, so setRights below repeats it (an update replaces the whole permission).
+        canUpdateOwnMetadata: true,
         canPublish: rights.speak || rights.video,
         canPublishSources: sourcesOf(rights),
       });
@@ -89,6 +93,7 @@ export function createLivekit({ url, apiUrl, apiKey, apiSecret }: Env["livekit"]
           permission: {
             canSubscribe: true,
             canPublishData: false,
+            canUpdateMetadata: true, // the permission-side name of the token's canUpdateOwnMetadata
             canPublish: rights.speak || rights.video,
             canPublishSources: sourcesOf(rights),
           },

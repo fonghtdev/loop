@@ -519,6 +519,7 @@ test("the owner cannot leave: the 409 is explained", async () => {
 
 test("the socket upgraded to a websocket on the API origin; sign-out stops it", async () => {
   expect(wsUrls.some((u) => u.startsWith("ws://localhost:3000/socket.io/") && u.includes("transport=websocket"))).toBe(true);
+  await page.getByRole("button", { name: "Menu tài khoản" }).click();
   await page.getByRole("button", { name: "Đăng xuất" }).click();
   await expect(page.getByRole("heading", { name: "Chào mừng trở lại" })).toBeVisible();
   // B posts after A signed out: nothing may be processed (and the login screen shows no chat)

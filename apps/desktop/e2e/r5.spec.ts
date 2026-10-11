@@ -232,10 +232,14 @@ test("a DM, and a friend without a DM (the DM is created)", async () => {
   expect(dms.some((d) => d.user.id === C.user.id)).toBe(true);
 });
 
-test("a voice channel opens its room and joins, exactly as a click in the channel list does", async () => {
+test("a voice channel is joined without leaving the view, and opens its room once connected - exactly as a click in the channel list does", async () => {
   const inVoice = async () => {
+    await expect(bar().getByText("Đã kết nối giọng nói", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: /voz-r5/ })).toHaveCount(0); // joined, the view did not move
+    await expect(page.getByRole("complementary", { name: "Thành viên" })).toHaveCount(1);
+  };
+  const inRoom = async () => {
     await expect(page.getByRole("heading", { name: /voz-r5/ })).toBeVisible();
-    await expect(bar().getByText("Đã kết nối", { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("complementary", { name: "Thành viên" })).toHaveCount(0);
   };
   const leave = async () => {
@@ -244,11 +248,15 @@ test("a voice channel opens its room and joins, exactly as a click in the channe
   };
   await choose("voz-r5", "voz-r5");
   await inVoice();
+  await choose("voz-r5", "voz-r5"); // connected: the same choice opens the room
+  await inRoom();
   await leave();
   await page.getByRole("button", { name: "Trang chủ" }).click();
   await rail().getByRole("button", { name: g2.name }).click();
   await page.getByRole("button", { name: "Kênh thoại voz-r5", exact: true }).click();
   await inVoice();
+  await page.getByRole("button", { name: "Kênh thoại voz-r5", exact: true }).click();
+  await inRoom();
   await leave();
 });
 
@@ -311,11 +319,13 @@ test("recents: shown after navigating, kept across a relaunch, never shared betw
     await page.keyboard.press("Enter");
     await expect(rail()).toBeVisible();
   };
+  await page.getByRole("button", { name: "Menu tài khoản" }).click();
   await page.getByRole("button", { name: "Đăng xuất" }).click();
   await signIn(B);
   await openPalette();
   await expect(group("Gần đây")).toHaveCount(0);
   await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Menu tài khoản" }).click();
   await page.getByRole("button", { name: "Đăng xuất" }).click();
   await signIn(A);
   await openPalette();

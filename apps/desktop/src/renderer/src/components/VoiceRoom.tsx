@@ -71,7 +71,7 @@ export function VoiceRoom({ guildId, channelId }: { guildId: string; channelId: 
       <div className="flex min-h-0 flex-1 flex-col">
         {!here && (
           <div className="flex flex-col items-start gap-3 px-5 pt-4">
-            <Button type="button" disabled={!canConnect} onClick={() => void voice.joinChannel(channelId, name)}>
+            <Button type="button" disabled={!canConnect} onClick={() => void voice.joinChannel(channelId, name, guildId)}>
               <SpeakerHigh aria-hidden="true" />
               {t("voice.room.join")}
             </Button>

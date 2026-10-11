@@ -1,6 +1,6 @@
-import { SignOut } from "@phosphor-icons/react";
 import { useEffect, useLayoutEffect, useRef, useSyncExternalStore, type RefObject } from "react";
 import { useStore } from "zustand";
+import { AccountStrip } from "../components/AccountStrip";
 import { Banner } from "../components/Banner";
 import { Button } from "../components/Button";
 import { ChannelColumn } from "../components/ChannelColumn";
@@ -19,7 +19,6 @@ import { VoiceBar } from "../components/VoiceBar";
 import { VoiceRoom } from "../components/VoiceRoom";
 import { ColumnHeader, EmptyState } from "../components/States";
 import { ToastHost } from "../components/Toast";
-import { Tooltip } from "../components/Tooltip";
 import { t } from "../i18n/t";
 import { ApiError } from "../lib/auth-client";
 import { queryClient, realtime, revalidateGuild, session, unread, voice, voicePresence } from "../lib/app";
@@ -176,45 +175,22 @@ export function Shell() {
         )}
       </div>
       <div className={`grid min-h-0 flex-1 ${voiceRoomOpen ? "grid-cols-[72px_240px_minmax(0,1fr)]" : "grid-cols-[72px_240px_minmax(0,1fr)_240px]"}`}>
-        <ServerRail />
+        <div className="col-span-2 flex min-h-0 flex-col">
+          <div className="grid min-h-0 flex-1 grid-cols-[72px_240px]">
+            <ServerRail />
 
-        <nav aria-label={t("shell.channels")} className="grain flex min-h-0 min-w-0 flex-col border-r border-hair bg-surface-1 [--grain-under:var(--background-image-chan)]">
-          {guildId ? (
-            <ChannelColumn guildId={guildId} />
-          ) : (
-            <DmColumn />
-          )}
-          <VoiceBar />
-          <section aria-label={t("shell.account")} className="grain flex h-16 shrink-0 items-center gap-3 border-t border-hair bg-surface-0 px-3 shadow-[inset_0_1px_0_var(--color-highlight)]">
-            <Tooltip label={t("userSettings.open")}>
-              <button
-                type="button"
-                onClick={() => useNav.setState({ settings: "user" })}
-                aria-label={t("userSettings.open")}
-                aria-current={settings === "user" ? "page" : undefined}
-                className="flex min-w-0 flex-1 items-center gap-3 rounded-control py-1 text-left transition-colors duration-(--duration-fast) hover:bg-surface-4 active:scale-[.98]"
-              >
-                <span aria-hidden="true" className="relative grid size-9 shrink-0 place-items-center rounded-full bg-moss-900 font-display font-bold text-moss-200 ring-2 ring-presence-on/60 ring-offset-2 ring-offset-surface-0">
-                  {user?.username.charAt(0).toUpperCase()}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-ui font-semibold">{user?.username}</span>
-                  <span className="block truncate text-caption text-ink-muted">{user?.email}</span>
-                </span>
-              </button>
-            </Tooltip>
-            <Tooltip label={t("shell.logout")}>
-              <button
-                type="button"
-                onClick={() => void session.logout()}
-                aria-label={t("shell.logout")}
-                className="grid size-10 shrink-0 place-items-center rounded-control text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 hover:text-ink active:scale-[.98]"
-              >
-                <SignOut aria-hidden="true" />
-              </button>
-            </Tooltip>
-          </section>
-        </nav>
+            <nav aria-label={t("shell.channels")} className="grain flex min-h-0 min-w-0 flex-col border-r border-hair bg-surface-1 [--grain-under:var(--background-image-chan)]">
+              {guildId ? <ChannelColumn guildId={guildId} /> : <DmColumn />}
+            </nav>
+          </div>
+          {/* One solid card across the rail and the channel column; the two end above it, so nothing hides behind it. */}
+          <div className="shrink-0 border-t border-r border-hair bg-surface-0 p-2">
+            <div data-panel className="edge overflow-hidden rounded-card bg-raise shadow-e2">
+              <VoiceBar />
+              <AccountStrip />
+            </div>
+          </div>
+        </div>
 
         <main ref={main} className="grain flex min-h-0 min-w-0 flex-col bg-surface-2">
           {settings === "user" ? (

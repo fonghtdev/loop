@@ -19,10 +19,11 @@ export async function joinRoom(t: Token, { mic = true }: { mic?: boolean } = {})
   room.on(RoomEvent.TrackMuted, (pub) => mutedSids.add(pub.sid!));
   room.on(RoomEvent.TrackUnmuted, (pub) => mutedSids.delete(pub.sid!));
   await room.connect(t.url, t.token, { autoSubscribe: true, dynacast: false });
-  if (mic) {
+  const publishMic = async () => {
     const track = LocalAudioTrack.createAudioTrack("mic", new AudioSource(48000, 1));
     await room.localParticipant!.publishTrack(track, new TrackPublishOptions({ source: TrackSource.SOURCE_MICROPHONE }));
-  }
+  };
+  if (mic) await publishMic();
   /** What this peer sees of another participant: subscribed tracks by kind, and whether the audio is muted. */
   const sees = (identity: string) => {
     const p = room.remoteParticipants.get(identity);
@@ -36,7 +37,14 @@ export async function joinRoom(t: Token, { mic = true }: { mic?: boolean } = {})
       video: video.filter((x) => x.track && !mutedSids.has(x.sid!)).length, // switching the camera off mutes the track
     };
   };
-  return { room, sees, identities: () => [...room.remoteParticipants.keys()].sort(), leave: () => room.disconnect().catch(() => undefined) };
+  /** The peer silences its microphone (rtc-node cannot mute a track, so it unpublishes it) or brings it back; and publishes participant metadata (the deafen flag). */
+  const muteMic = async (on: boolean) => {
+    const pub = [...room.localParticipant!.trackPublications.values()].find((x) => x.source === TrackSource.SOURCE_MICROPHONE);
+    if (!on) return pub ? undefined : publishMic();
+    if (pub) await room.localParticipant!.unpublishTrack(pub.sid!);
+  };
+  const setMetadata = (m: string) => room.localParticipant!.updateMetadata(m);
+  return { room, sees, muteMic, setMetadata, identities: () => [...room.remoteParticipants.keys()].sort(), leave: () => room.disconnect().catch(() => undefined) };
 }
 
 export async function leaveAll() {

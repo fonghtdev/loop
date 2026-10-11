@@ -58,7 +58,7 @@ test("the chosen microphone is used when joining, and a new choice moves the liv
   await page.getByRole("button", { name: "Đóng cài đặt" }).click();
   await page.getByRole("navigation", { name: "Danh sách máy chủ" }).getByRole("button", { name: `Dev ${run}` }).click();
   await page.getByRole("button", { name: "Kênh thoại voz", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Đang trong cuộc gọi" }).getByText("Đã kết nối", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("region", { name: "Đang trong cuộc gọi" }).getByText("Đã kết nối giọng nói", { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect.poll(async () => (await gum()).some((c) => c.includes(m1))).toBe(true);
   await openSettings();
   await select("Micro").selectOption(m2);

@@ -54,7 +54,9 @@ test("the voice room hides the member column and gives it back on another channe
   await openServer();
   await channelButton("general").click();
   await expect(members()).toBeVisible();
-  await channelButton("Kênh thoại voz-r4").click();
+  await channelButton("Kênh thoại voz-r4").click(); // joins, the view stays on #general
+  await expect(members()).toBeVisible();
+  await channelButton("Kênh thoại voz-r4").click(); // connected: opens the room
   await expect(page.getByRole("heading", { name: "voz-r4" })).toBeVisible();
   await expect(members()).toHaveCount(0);
   const cols = await page.locator("main").evaluate((el) => getComputedStyle(el.parentElement!).gridTemplateColumns.split(" ").length);
@@ -62,6 +64,7 @@ test("the voice room hides the member column and gives it back on another channe
   await channelButton("general").click();
   await expect(members()).toBeVisible();
   expect(await page.locator("main").evaluate((el) => getComputedStyle(el.parentElement!).gridTemplateColumns.split(" ").length)).toBe(4);
+  await page.getByRole("region", { name: "Đang trong cuộc gọi" }).getByRole("button", { name: "Rời kênh thoại" }).click();
 });
 
 test("25 people: column count follows tileLayout, nothing overflows at 1280x800 and 960x600; a tile joining and leaving is animated", async () => {
@@ -75,7 +78,8 @@ test("25 people: column count follows tileLayout, nothing overflows at 1280x800 
     await join(u);
   }
   await channelButton("Kênh thoại voz-r4").click(); // joins: A is the 24th
-  await expect(page.getByRole("region", { name: "Đang trong cuộc gọi" }).getByText("Đã kết nối", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("region", { name: "Đang trong cuộc gọi" }).getByText("Đã kết nối giọng nói", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await channelButton("Kênh thoại voz-r4").click(); // connected: opens the room
   const tiles = page.getByRole("list", { name: "Người trong kênh thoại" });
   await expect(tiles.getByRole("listitem")).toHaveCount(24, { timeout: 20_000 });
   const late = await register("r4late");

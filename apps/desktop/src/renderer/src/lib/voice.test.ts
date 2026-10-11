@@ -305,3 +305,30 @@ describe("switchDevice (settings change while in a session)", () => {
     expect(s.state().status).toBe("connected");
   });
 });
+
+describe("what others show", () => {
+  const remote = (r: FakeRoom, identity: string, extra: object) => {
+    r.remoteParticipants.set(identity, { identity, name: identity, getTrackPublication: () => undefined, ...extra });
+    r.fire("participantConnected");
+  };
+  const of = (s: Awaited<ReturnType<typeof joined>>, id: string) => s.state().participants.find((p) => p.userId === id);
+
+  it("a remote mic that is absent or muted is off; an unmuted one is on; a person who may not speak shows nothing", async () => {
+    const s = await joined();
+    remote(s.room(), "none", {});
+    remote(s.room(), "muted", { getTrackPublication: (k: string) => (k === "microphone" ? { isMuted: true } : undefined) });
+    remote(s.room(), "live", { getTrackPublication: (k: string) => (k === "microphone" ? { isMuted: false } : undefined) });
+    remote(s.room(), "listener", { permissions: { canPublish: false, canPublishSources: [] } });
+    expect([of(s, "none")?.micOff, of(s, "muted")?.micOff, of(s, "live")?.micOff, of(s, "listener")?.micOff]).toEqual([true, true, false, false]);
+  });
+
+  it("deafened comes from their metadata, read defensively; our own deafen is published and cleared", async () => {
+    const s = await joined();
+    remote(s.room(), "deaf", { metadata: '{"deafened":true}' });
+    remote(s.room(), "junk", { metadata: "{nope" });
+    expect([of(s, "deaf")?.deafened, of(s, "junk")?.deafened]).toEqual([true, false]);
+    await s.voice.toggleDeafen();
+    await s.voice.toggleDeafen();
+    expect(s.room().metadata).toEqual(['{"deafened":true}', ""]);
+  });
+});
