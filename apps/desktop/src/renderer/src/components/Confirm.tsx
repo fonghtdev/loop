@@ -27,7 +27,7 @@ export function ConfirmBody({ body, submit, onDone, action }: { body: string; su
         <Button type="button" variant="ghost" onClick={onDone} autoFocus>
           {t("common.cancel")}
         </Button>
-        <Button type="button" loading={busy} onClick={() => void run()} className="bg-danger! text-on-moss hover:opacity-90">
+        <Button type="button" loading={busy} onClick={() => void run()} variant="danger">
           {submit}
         </Button>
       </DialogActions>

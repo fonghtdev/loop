@@ -349,7 +349,7 @@ function LeaveBody({ guildId, onDone }: { guildId: string; onDone: () => void })
         <Button type="button" variant="ghost" onClick={onDone} autoFocus>
           {t("common.cancel")}
         </Button>
-        <Button type="button" loading={busy} onClick={() => void leave()} className="bg-danger! text-on-moss hover:opacity-90">
+        <Button type="button" loading={busy} onClick={() => void leave()} variant="danger">
           {t("leave.submit")}
         </Button>
       </DialogActions>

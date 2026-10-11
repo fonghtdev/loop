@@ -44,7 +44,7 @@ export function DangerPanel({ ctx }: { ctx: SettingsCtx }) {
         </h2>
         <p className="text-sm text-ink-muted">{t("danger.deleteBody")}</p>
         <div>
-          <Button type="button" onClick={() => setDialog("delete")} className="bg-danger! text-on-moss hover:opacity-90">
+          <Button type="button" onClick={() => setDialog("delete")} variant="danger">
             {t("danger.delete")}
           </Button>
         </div>
@@ -78,7 +78,7 @@ function DeleteBody({ ctx, onDone }: { ctx: SettingsCtx; onDone: () => void }) {
         <Button type="button" variant="ghost" onClick={onDone}>
           {t("common.cancel")}
         </Button>
-        <Button type="submit" disabled={!ok} loading={del.isPending} className="bg-danger! text-on-moss hover:opacity-90">
+        <Button type="submit" disabled={!ok} loading={del.isPending} variant="danger">
           {t("danger.delete")}
         </Button>
       </DialogActions>

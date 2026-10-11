@@ -5,6 +5,7 @@ import type { Settings } from "../../../shared/settings";
 import type { UpdateStatus } from "../../../shared/update";
 import { t } from "../i18n/t";
 import type { MessageKey } from "../i18n/vi";
+import { appearance, MOTIONS, useAppearance, type Appearance } from "../lib/appearance";
 import { appSettings, devices, session, unlockDeviceLabels } from "../lib/app";
 import { DEVICE_KINDS, labelsAvailable, optionsFor, type DeviceKind } from "../lib/devices";
 import { useNav } from "../lib/nav";
@@ -61,6 +62,9 @@ export function UserSettings() {
             <Switch label={t("userSettings.closeToTray")} description={t("userSettings.closeToTrayHint")} checked={settings.closeToTray} onChange={save("closeToTray")} />
             <Switch label={t("userSettings.startAtLogin")} description={t("userSettings.startAtLoginHint")} checked={settings.startAtLogin} onChange={save("startAtLogin")} />
           </Group>
+          <Group id="performance" title="userSettings.performance">
+            <PerformanceSection />
+          </Group>
           <Group id="update" title="userSettings.update">
             <UpdateSection />
           </Group>
@@ -89,12 +93,42 @@ export function UserSettings() {
 
 function Group({ id, title, children }: { id: string; title: MessageKey; children: ReactNode }) {
   return (
-    <section aria-labelledby={`us-${id}`} className="rounded-panel border border-line bg-surface-1 p-2">
+    <section aria-labelledby={`us-${id}`} className="relative edge rounded-panel bg-raise p-2 shadow-e2">
       <h2 id={`us-${id}`} className="px-3 pt-2 pb-1 font-display text-sm font-bold tracking-wide text-ink-muted uppercase">
         {t(title)}
       </h2>
       {children}
     </section>
+  );
+}
+
+const MOTION_LABEL: Record<Appearance["motion"], MessageKey> = {
+  system: "userSettings.motionSystem",
+  reduced: "userSettings.motionReduced",
+  full: "userSettings.motionFull",
+};
+
+/** Per-device look: film grain on/off and how much the UI moves. Applied at once, stored in localStorage (lib/appearance). */
+function PerformanceSection() {
+  const a = useAppearance();
+  return (
+    <>
+      <Switch label={t("userSettings.grain")} description={t("userSettings.grainHint")} checked={a.grain === "on"} onChange={(on) => appearance.set({ grain: on ? "on" : "off" })} />
+      <fieldset className="px-3 py-2">
+        <legend className="text-[15px] font-medium">{t("userSettings.motion")}</legend>
+        <p className="mt-0.5 mb-2 text-[13px] leading-relaxed text-ink-muted">{t("userSettings.motionHint")}</p>
+        <div className="flex flex-wrap gap-2">
+          {MOTIONS.map((m) => (
+            <label key={m} className="relative">
+              <input type="radio" name="motion" value={m} checked={a.motion === m} onChange={() => appearance.set({ motion: m })} className="peer sr-only" />
+              <span className="grid h-10 cursor-pointer place-items-center rounded-control border border-line-strong px-4 text-sm font-medium text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 peer-checked:border-cosmic-300 peer-checked:bg-cosmic-wash peer-checked:text-ink peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-cosmic-300">
+                {t(MOTION_LABEL[m])}
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+    </>
   );
 }
 

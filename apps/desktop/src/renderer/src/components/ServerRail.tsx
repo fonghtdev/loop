@@ -31,7 +31,7 @@ export function ServerRail() {
   const homeUnread = useDmTotal();
 
   return (
-    <nav aria-label={t("shell.servers")} onKeyDown={arrowNav} className="flex min-h-0 flex-col items-center bg-surface-0">
+    <nav aria-label={t("shell.servers")} onKeyDown={arrowNav} className="grain flex min-h-0 flex-col items-center border-r border-hair bg-surface-0 [--grain-under:var(--background-image-rail)]">
       <div className="flex w-full flex-1 flex-col items-center gap-2 overflow-y-auto py-3">
         <RailItem label={t("shell.home")} active={current === null} onClick={goHome} unread={homeUnread}>
           <span className="grid size-12 place-items-center rounded-control bg-surface-3 text-moss-300">

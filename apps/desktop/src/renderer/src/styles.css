@@ -2,7 +2,7 @@
 @import "@fontsource/be-vietnam-pro/400.css";
 @import "@fontsource/be-vietnam-pro/500.css";
 @import "@fontsource/be-vietnam-pro/600.css";
-@import "@fontsource-variable/nunito/wght.css";
+@import "@fontsource-variable/plus-jakarta-sans/wght.css";
 
 /*
  * Loop design tokens (documented in CLAUDE.md). Every colour pair the UI uses is checked for WCAG AA by
@@ -10,7 +10,8 @@
  */
 @theme {
   --font-sans: "Be Vietnam Pro", system-ui, sans-serif;
-  --font-display: "Nunito Variable", "Be Vietnam Pro", system-ui, sans-serif;
+  /* headings and key numbers; also the tabular numerals (Be Vietnam Pro has none): the `numeric` utility */
+  --font-display: "Plus Jakarta Sans Variable", "Be Vietnam Pro", system-ui, sans-serif;
 
   /* cosmic surfaces (cool violet-grey), darkest (server rail) to lightest (hover); surface-2 is the base #23212C */
   --color-surface-0: #14131a;
@@ -18,12 +19,13 @@
   --color-surface-2: #23212c;
   --color-surface-3: #2d2b38;
   --color-surface-4: #383645;
+  --color-surface-5: #444255; /* hover on surface-4 */
   --color-line: #3d3a4b;
   --color-line-strong: #9490a8;
 
   --color-ink: #f2f0f7;
-  --color-ink-muted: #c3bfd0;
-  --color-ink-faint: #a29eb4;
+  --color-ink-muted: #c8c4d6;
+  --color-ink-faint: #a8a4ba;
 
   /* moss green accent: the only tokens to edit to change the accent */
   --color-moss-200: #d5e6b8;
@@ -33,9 +35,36 @@
   --color-moss-900: #263220;
   --color-on-moss: #151b0f;
 
-  --color-danger: #f4a0a8;
+  /* cosmic violet-teal: selection, focus ring + glow, active voice. Never on primary buttons (those stay moss) */
+  --color-cosmic-200: #d3d8fb;
+  --color-cosmic-300: #a9b6f6;
+  --color-cosmic-400: #8294ea;
+  --color-cosmic-teal: #62c4c7;
+  --color-cosmic-900: #262a4f;
+  --color-cosmic-glow: rgb(143 160 244 / 0.38);
+  --color-cosmic-glow-soft: rgb(143 160 244 / 0.18); /* the 7 px focus halo */
+  --color-cosmic-wash: rgb(143 160 244 / 0.1); /* selected row */
+  --color-glow: rgb(180 208 140 / 0.3); /* moss glow: primary button, "new messages" pill */
+
+  /* presence dots (a text label always accompanies them) */
+  --color-presence-on: #a6c97a;
+  --color-presence-idle: #ecc884;
+  --color-presence-dnd: #f08a98;
+
+  /* hairlines and light: one light source, top-left */
+  --color-hair: rgb(255 255 255 / 0.06);
+  --color-hair-strong: rgb(255 255 255 / 0.1);
+  --color-highlight: rgb(255 255 255 / 0.06); /* inset 0 1px 0 on a lit top edge */
+  --color-lowlight: rgb(10 6 32 / 0.34); /* inset bottom edge, violet-black */
+
+  /* aurora behind the auth card (static radial-gradients, never filter: blur) */
+  --color-aurora-violet: #6a55d8;
+  --color-aurora-teal: #2a8c92;
+  --color-aurora-blue: #3b5fc7;
+
+  --color-danger: #f5a3ae;
   --color-danger-bg: #3b1f2a;
-  --color-warning: #e8c77e;
+  --color-warning: #ecc884;
   --color-warning-bg: #352d1f;
 
   /* avatar backgrounds (initials in ink), picked per id by avatarColor() in lib/text.ts */
@@ -46,17 +75,74 @@
   --color-avatar-5: #75601f;
   --color-avatar-6: #4f6b2f;
 
+  /*
+   * Radii are concentric: the inner radius = the outer radius minus the padding between them
+   * (a 16 px card with 4 px padding holds a 12 px control; a 20 px panel with 8 px holds a 12 px row).
+   */
+  --radius-xs: 6px; /* kbd chips, tiny tags */
+  --radius-sm: 8px;
   --radius-control: 12px; /* buttons, inputs, rail icons */
-  --radius-panel: 18px; /* cards, banners */
+  --radius-card: 16px; /* raised cards, composer */
+  --radius-panel: 20px; /* panels, dialogs content, banners */
+  --radius-glass: 28px; /* auth card and other big glass */
 
-  --shadow-raised: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 16px 40px -16px rgb(6 5 12 / 0.7);
+  /* gradients, lit from the top-left; use as `bg-rail`, `bg-chan`, ... */
+  --background-image-rail: radial-gradient(420px 360px at 0 0, rgb(150 140 255 / 0.07), transparent 70%), linear-gradient(180deg, #181720, #13121a);
+  --background-image-chan: radial-gradient(520px 380px at 0 0, rgb(150 140 255 / 0.06), transparent 70%), linear-gradient(180deg, #1f1e28, #1b1a23 280px);
+  --background-image-head: linear-gradient(180deg, #2a2833, #25232e);
+  --background-image-raise: linear-gradient(160deg, #363341 0%, #2d2b38 55%, #2a2835 100%);
+  --background-image-moss: linear-gradient(180deg, #cde3a8 0%, #a9c67e 52%, #92b366 100%);
+  --background-image-cosmic: linear-gradient(135deg, #b4a8fb, #62c4c7);
 
-  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  /* elevation: violet-black, offset to the bottom-right, lit edge on top */
+  --shadow-e1: inset 0 1px 0 var(--color-highlight), inset 0 -1px 0 var(--color-lowlight), 1px 2px 3px rgb(12 8 36 / 0.42);
+  --shadow-e2: inset 0 1px 0 var(--color-highlight), inset 1px 0 0 rgb(255 255 255 / 0.025), inset 0 -1px 0 var(--color-lowlight), 3px 8px 18px -8px rgb(12 8 40 / 0.66);
+  --shadow-e3: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 1px 0 0 rgb(255 255 255 / 0.035), inset 0 -1px 0 var(--color-lowlight), 5px 14px 32px -12px rgb(12 8 44 / 0.74);
+  --shadow-e4: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 1px 0 0 rgb(255 255 255 / 0.04), 8px 28px 72px -22px rgb(10 6 44 / 0.85);
+  --shadow-moss: inset 0 1px 0 rgb(255 255 255 / 0.58), inset 0 -1px 0 rgb(48 70 20 / 0.28), 2px 10px 22px -8px rgb(126 159 87 / 0.58);
+  --shadow-cosmic: 0 0 0 1px rgb(143 160 244 / 0.35), 0 0 22px -4px var(--color-cosmic-glow);
+
+  /* type scale: 10 steps, line-heights on a 4 px grid (`text-micro` ... `text-display`) */
+  --text-micro: 11px;
+  --text-micro--line-height: 16px;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-small: 13px;
+  --text-small--line-height: 20px;
+  --text-ui: 14px;
+  --text-ui--line-height: 20px;
+  --text-chat: 15px;
+  --text-chat--line-height: 24px;
+  --text-title: 17px;
+  --text-title--line-height: 24px;
+  --text-heading3: 20px;
+  --text-heading3--line-height: 28px;
+  --text-heading2: 24px;
+  --text-heading2--line-height: 32px;
+  --text-heading1: 32px;
+  --text-heading1--line-height: 40px;
+  --text-display: 44px;
+  --text-display--line-height: 48px;
+
+  /* motion tokens (the JS side is lib/motion.ts): UI 120-260 ms, springs only for things with mass */
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1); /* outExpo */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-in-quad: cubic-bezier(0.11, 0, 0.5, 0);
+  --ease-spring: linear(0, 0.38 8%, 0.82 17%, 1.05 28%, 1.08 34%, 1.02 48%, 0.995 62%, 1); /* bounce ~.2 */
   --duration-fast: 120ms;
   --duration-base: 200ms;
+  --duration-slow: 260ms;
+  --duration-pop: 300ms; /* dialog / popover open (spring) */
 
   --animate-draw: draw 900ms var(--ease-out-soft) both;
   --animate-rise: rise 400ms var(--ease-out-soft) both;
+  --animate-tick: tick var(--duration-slow) var(--ease-out-quart) both; /* a counter changing value */
+  @keyframes tick {
+    from {
+      opacity: 0;
+      transform: translateY(60%);
+    }
+  }
   @keyframes draw {
     from {
       stroke-dashoffset: 1;
@@ -74,8 +160,8 @@
 }
 
 /*
- * Glass and its ambient backdrop. Glass is ONLY for the auth card, dialog panels and popover menus (CLAUDE.md lists
- * where it may and may not go); theme.test.ts composites these values over the worst-case backdrop, so retune there.
+ * Glass and its ambient backdrop. Glass is ONLY for the auth card, dialog panels, popover menus and tooltips (CLAUDE.md
+ * lists where it may and may not go); theme.test.ts composites these values over the worst-case backdrop, so retune there.
  */
 :root {
   --glass-tint: #17161e;
@@ -84,10 +170,8 @@
   --glass-edge: 13%; /* white hairline */
   --glass-blur: 16px;
   --glass-saturate: 1.4;
-  /* ambient glows behind the auth card; the test takes each full-strength colour as the worst backdrop */
-  --glow-violet: #6a58d8;
-  --glow-teal: #2f8fa0;
-  --glow-blue: #4560d0;
+  /* film grain: monochrome fractal noise, 2% (raster once, no filter at runtime), SOLID big surfaces only */
+  --grain-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.02'/%3E%3C/svg%3E");
 }
 
 /* ponytail: CSS-only glass; native vibrancy/Mica/acrylic is the upgrade path if a true OS material is ever wanted. */
@@ -113,9 +197,102 @@
 @utility ambient {
   background-color: var(--color-surface-2);
   background-image:
-    radial-gradient(55% 60% at 12% 8%, color-mix(in srgb, var(--glow-violet) 60%, transparent), transparent 70%),
-    radial-gradient(50% 55% at 92% 20%, color-mix(in srgb, var(--glow-teal) 50%, transparent), transparent 70%),
-    radial-gradient(60% 60% at 60% 105%, color-mix(in srgb, var(--glow-blue) 55%, transparent), transparent 70%);
+    radial-gradient(55% 60% at 12% 8%, color-mix(in srgb, var(--color-aurora-violet) 60%, transparent), transparent 70%),
+    radial-gradient(50% 55% at 92% 20%, color-mix(in srgb, var(--color-aurora-teal) 50%, transparent), transparent 70%),
+    radial-gradient(60% 60% at 60% 105%, color-mix(in srgb, var(--color-aurora-blue) 55%, transparent), transparent 70%);
+}
+
+/*
+ * edge / edge-strong: a 1 px gradient border, brightest at the lit top-left corner, drawn once as a masked pseudo-element
+ * (no overlay in the DOM, no blur). The element must be positioned (`relative edge`) and keeps its own border-radius.
+ * edge-strong is for glass and the voice dock. Use on cards, composer, tiles, buttons; never on the huge app columns.
+ */
+@utility edge {
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    pointer-events: none;
+    z-index: 2;
+    background: linear-gradient(135deg, rgb(255 255 255 / 0.28) 0%, rgb(190 180 255 / 0.12) 26%, rgb(255 255 255 / 0.035) 55%, rgb(255 255 255 / 0.075) 100%);
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  }
+}
+@utility edge-strong {
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    pointer-events: none;
+    z-index: 2;
+    background: linear-gradient(135deg, rgb(255 255 255 / 0.42) 0%, rgb(190 180 255 / 0.18) 30%, rgb(255 255 255 / 0.05) 60%, rgb(255 255 255 / 0.11) 100%);
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  }
+}
+
+/*
+ * grain: film grain as the TOP background layer of a SOLID surface (rail, columns, main area, settings), over its own
+ * colour or over a gradient given as `[--grain-under:var(--background-image-chan)]`. A background-image, not an overlay
+ * element: raster once, no filter at runtime, never on glass, never two grain layers stacked. Off via html[data-grain="off"].
+ */
+@utility grain {
+  background-image: var(--grain-img), var(--grain-under, none);
+}
+html[data-grain="off"] .grain {
+  background-image: var(--grain-under, none);
+}
+
+/* One shared loading shimmer (transform only); every skeleton uses it. */
+@utility skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--color-surface-3);
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.06), transparent);
+    translate: -100% 0;
+    animation: shimmer 1.4s linear infinite;
+  }
+}
+@keyframes shimmer {
+  to {
+    translate: 100% 0;
+  }
+}
+
+/* Aligned numerals (times, counters, badges): Be Vietnam Pro has no tabular figures, Plus Jakarta Sans does. */
+@utility numeric {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The speaking ring of an avatar: an orbit arc (cosmic gradient) whose strength follows the CSS variable --lv (0..1,
+ * set from the audio level at most every ~150 ms); the transition does the smoothing, no per-frame JS.
+ */
+@utility speaking-ring {
+  position: relative;
+  &::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: inherit;
+    padding: 2px;
+    pointer-events: none;
+    background: conic-gradient(from -60deg, var(--color-cosmic-300), var(--color-cosmic-teal) 55%, transparent 72%);
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    opacity: var(--lv, 0);
+    scale: calc(0.94 + var(--lv, 0) * 0.06);
+    transition:
+      opacity var(--duration-fast) var(--ease-out-soft),
+      scale var(--duration-fast) var(--ease-out-soft);
+  }
 }
 
 @layer base {
@@ -131,16 +308,69 @@
     -webkit-font-smoothing: antialiased;
     user-select: none; /* app chrome; text fields and content opt back in */
   }
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
   input,
   textarea {
     user-select: text;
   }
+  ::selection {
+    background: var(--color-cosmic-glow);
+    color: #fff;
+  }
   dialog::backdrop {
     background: rgb(10 9 16 / 0.72);
+    opacity: 0;
+    transition:
+      opacity var(--duration-fast) ease-in,
+      display var(--duration-fast) allow-discrete,
+      overlay var(--duration-fast) allow-discrete;
   }
+  dialog[open]::backdrop {
+    opacity: 1;
+    transition-duration: var(--duration-base);
+    @starting-style {
+      opacity: 0;
+    }
+  }
+  /* Dialogs and popovers: a springy scale/fade in (380 ms for the dialog, 300 for a menu), a quick 140 ms out. */
+  dialog,
+  [popover] {
+    opacity: 0;
+    scale: 0.96;
+    translate: 0 8px;
+    transition:
+      opacity 140ms var(--ease-in-quad),
+      scale 140ms var(--ease-in-quad),
+      translate 140ms var(--ease-in-quad),
+      display 140ms allow-discrete,
+      overlay 140ms allow-discrete;
+  }
+  dialog[open],
+  [popover]:popover-open {
+    opacity: 1;
+    scale: 1;
+    translate: 0 0;
+    transition-duration: var(--duration-pop);
+    transition-timing-function: var(--ease-spring);
+    @starting-style {
+      opacity: 0;
+      scale: 0.95;
+      translate: 0 12px;
+    }
+  }
+  /* A focus ring distinct from hover: cosmic outline, offset, soft halo. Rows and fields draw their own (see components). */
   :focus-visible {
-    outline: 2px solid var(--color-moss-300);
+    outline: 2px solid var(--color-cosmic-300);
     outline-offset: 2px;
+    box-shadow: 0 0 0 7px var(--color-cosmic-glow-soft);
   }
   button:not(:disabled),
   [role="button"] {
@@ -148,12 +378,20 @@
   }
 }
 
+/* Reduced motion: the OS setting (unless the user chose "Đầy đủ" in the app) or the in-app "Giảm" choice. */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  html:not([data-motion="full"]) *,
+  html:not([data-motion="full"]) *::before,
+  html:not([data-motion="full"]) *::after {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
   }
+}
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
 }

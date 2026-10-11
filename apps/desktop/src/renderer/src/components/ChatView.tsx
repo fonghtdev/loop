@@ -232,7 +232,7 @@ function MessageList({ convKey, logLabel, start, state, canManage }: { convKey: 
         <button
           type="button"
           onClick={jumpDown}
-          className="absolute bottom-3 left-1/2 flex h-10 -translate-x-1/2 animate-rise items-center gap-2 rounded-full bg-moss-400 px-4 text-sm font-semibold text-on-moss shadow-raised hover:bg-moss-300"
+          className="absolute bottom-3 left-1/2 flex h-10 -translate-x-1/2 animate-rise items-center gap-2 rounded-full bg-moss-400 px-4 text-sm font-semibold text-on-moss shadow-e3 hover:bg-moss-300"
         >
           <ArrowDown aria-hidden="true" />
           {t("chat.newMessages", { count: String(unseen) })}
@@ -362,7 +362,7 @@ const MessageRow = memo(function MessageRow({ message, grouped, day, convKey, mi
           <div
             role="toolbar"
             aria-label={t("chat.actions")}
-            className="absolute -top-3 right-4 flex rounded-control border border-line bg-surface-2 p-0.5 opacity-0 shadow-raised group-hover:opacity-100 group-focus-within:opacity-100"
+            className="absolute -top-3 right-4 flex rounded-control border border-line bg-surface-2 p-0.5 opacity-0 shadow-e3 group-hover:opacity-100 group-focus-within:opacity-100"
           >
             {message.content && (
               <ActionButton label={copied ? t("common.copied") : t("chat.copy")} onClick={() => void copy(message.content)}>
@@ -507,7 +507,7 @@ function DeleteBody({ message, convKey, onDone }: { message: Message; convKey: C
         <Button type="button" variant="ghost" onClick={onDone} autoFocus>
           {t("common.cancel")}
         </Button>
-        <Button type="button" loading={busy} onClick={() => void remove()} className="bg-danger! text-on-moss hover:opacity-90">
+        <Button type="button" loading={busy} onClick={() => void remove()} variant="danger">
           {t("chat.deleteSubmit")}
         </Button>
       </DialogActions>

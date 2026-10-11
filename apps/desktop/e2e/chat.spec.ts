@@ -340,6 +340,11 @@ test("performance with 1100 loaded messages", async () => {
   }
   // scroll sweep: frame times while scrolling through all 1100 rows
   const frames = await sweepFrames();
+  // the same sweep with the film grain off (html[data-grain="off"]), to price the grain
+  await page.evaluate(() => (document.documentElement.dataset.grain = "off"));
+  const framesNoGrain = await sweepFrames();
+  await page.evaluate(() => (document.documentElement.dataset.grain = "on"));
+  console.log(`scroll frames grain OFF: ${JSON.stringify({ count: framesNoGrain.length, p50: percentile(framesNoGrain, 0.5).toFixed(1), p95: percentile(framesNoGrain, 0.95).toFixed(1), max: percentile(framesNoGrain, 1).toFixed(1) })}`);
   // a live message with 1100 rows mounted: time from the event to the DOM (React commit), measured in the page
   await scroller().evaluate((el) => (el.scrollTop = el.scrollHeight));
   const waitLive = page.evaluate(

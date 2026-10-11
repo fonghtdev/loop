@@ -9,7 +9,7 @@ export function MenuItem({ icon, label, danger = false, onClick }: { icon: React
       type="button"
       data-nav-item
       onClick={onClick}
-      className={`flex h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 text-left text-sm font-medium hover:bg-surface-4 ${danger ? "text-danger" : "text-ink"}`}
+      className={`flex h-10 w-full items-center gap-2.5 rounded-sm px-2.5 text-left text-sm font-medium hover:bg-white/8 focus-visible:bg-cosmic-wash focus-visible:outline-offset-[-2px] focus-visible:shadow-none ${danger ? "text-danger" : "text-ink"}`}
     >
       {icon}
       {label}
@@ -47,7 +47,7 @@ export function RowMenu({ id, label, className = "", children }: { id: string; l
           e.stopPropagation();
           arrowNav(e);
         }}
-        className="m-0 w-56 glass rounded-control p-1.5 text-ink [inset:auto] [position-try-fallbacks:flip-block] [right:anchor(right)] [top:calc(anchor(bottom)+4px)]"
+        className="m-0 w-56 glass rounded-card p-1.5 text-ink [inset:auto] [position-try-fallbacks:flip-block] [right:anchor(right)] [top:calc(anchor(bottom)+4px)]"
       >
         {children(() => menu.current?.hidePopover())}
       </div>

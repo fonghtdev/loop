@@ -4,8 +4,10 @@ import { capped } from "../lib/unread";
 /** A count bubble ("9+" capped). The number is decorative; the screen reader gets the full sentence, once, never live. */
 export function Badge({ count, className = "" }: { count: number; className?: string }) {
   return (
-    <span className={`pointer-events-none grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-danger px-1.5 text-xs leading-none font-bold text-on-moss ${className}`}>
-      <span aria-hidden="true">{capped(count)}</span>
+    <span className={`pointer-events-none grid h-5 min-w-5 shrink-0 place-items-center overflow-hidden rounded-full bg-danger px-1.5 text-xs leading-none font-bold text-on-moss shadow-e1 ${className}`}>
+      <span key={count} aria-hidden="true" className="numeric animate-tick">
+        {capped(count)}
+      </span>
       <span className="sr-only">{t("unread.count", { count: String(count) })}</span>
     </span>
   );

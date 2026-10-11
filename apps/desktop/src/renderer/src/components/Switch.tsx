@@ -15,7 +15,7 @@ export function Switch({ label, description, checked, onChange, disabled }: { la
       aria-describedby={description ? `${id}-d` : undefined}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className="flex min-h-14 w-full items-center gap-4 rounded-control px-3 py-2 text-left transition-colors duration-(--duration-fast) hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-70"
+      className="flex min-h-14 w-full items-center gap-4 rounded-control px-3 py-2 text-left transition-colors focus-visible:outline-offset-[-2px] focus-visible:shadow-none duration-(--duration-fast) hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-70"
     >
       <span className="min-w-0 flex-1">
         <span id={`${id}-l`} className="block text-[15px] font-medium">
@@ -27,9 +27,9 @@ export function Switch({ label, description, checked, onChange, disabled }: { la
           </span>
         )}
       </span>
-      <span aria-hidden="true" className={`relative h-6 w-11 shrink-0 rounded-full border transition-colors duration-(--duration-fast) ${checked ? "border-moss-400 bg-moss-400" : "border-line-strong bg-surface-4"}`}>
+      <span aria-hidden="true" className={`relative h-6 w-11 shrink-0 rounded-full border transition-colors duration-(--duration-fast) ${checked ? "border-moss-400 bg-moss-400 shadow-[0_0_10px_-2px_var(--color-glow)]" : "border-line-strong bg-surface-4"}`}>
         <span
-          className={`absolute top-1/2 size-4 -translate-y-1/2 rounded-full transition-[left] duration-(--duration-fast) ${checked ? "left-[calc(100%-1.25rem)] bg-on-moss" : "left-1 bg-ink-muted"}`}
+          className={`absolute top-1/2 size-4 -translate-y-1/2 rounded-full transition-[left] duration-(--duration-base) ease-(--ease-spring) ${checked ? "left-[calc(100%-1.25rem)] bg-on-moss" : "left-1 bg-ink-muted"}`}
         />
       </span>
     </button>

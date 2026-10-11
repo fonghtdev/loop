@@ -30,6 +30,18 @@ const glassOver = (backdrop: Rgb): Rgb => composite([255, 255, 255], glass.sheen
 const dim = css.match(/dialog::backdrop\s*{\s*background:\s*rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)/)!;
 const dimmed = (under: Rgb) => composite([+dim[1], +dim[2], +dim[3]], +dim[4], under);
 
+// Gradients straight from `--background-image-*`: every hex stop, and the radial light (rgb(.. / a)) added on top of the
+// lightest stop, which is the worst case for text sitting anywhere on the surface.
+const stops = (name: string) => {
+  const value = css.match(new RegExp(`--background-image-${name}:\\s*([^;]+);`))![1];
+  const hexes = [...value.matchAll(/#[0-9a-f]{6}/gi)].map((m) => m[0]);
+  const light = value.match(/rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)/);
+  const lit = (hex: string) => (light ? composite([+light[1], +light[2], +light[3]], +light[4], rgb(hex)) : rgb(hex));
+  return hexes.map(lit);
+};
+const surfaceGradients = ["rail", "chan", "head", "raise"];
+const lightest = (name: string) => stops(name).sort((a, b) => luminance(b) - luminance(a))[0];
+
 // [foreground, background] pairs the UI actually uses.
 const text: [string, string][] = [
   ...["surface-0", "surface-1", "surface-2", "surface-3", "surface-4"].map((bg): [string, string] => ["ink", bg]),
@@ -66,6 +78,19 @@ const text: [string, string][] = [
   ["ink-muted", "surface-3"], // role chips on member rows
   ["moss-300", "surface-2"], // "Đã lưu" and permitted lines in the preview
   ["danger", "surface-4"], // Nguy hiểm tab selected
+  // redesign R1: the lighter surface-5 (hover on surface-4) and the disabled primary button
+  ["ink", "surface-5"],
+  ["ink-muted", "surface-5"],
+  ["ink-faint", "surface-4"], // disabled button label, hint text on a hovered row
+  ["cosmic-200", "cosmic-900"], // "Đề xuất mới" tag, search match
+  ["cosmic-300", "cosmic-900"],
+  ["cosmic-200", "surface-1"],
+  ["cosmic-300", "surface-1"], // selected channel row text
+  ["cosmic-300", "surface-2"],
+  ["cosmic-300", "surface-3"],
+  ["presence-on", "surface-1"], // presence has a text label too, but the dot colour is held to AA anyway
+  ["presence-idle", "surface-1"],
+  ["presence-dnd", "surface-1"],
 ];
 // Non-text UI (WCAG 1.4.11, 3:1): input boundaries, the focus ring, the primary button's shape.
 const ui: [string, string][] = [
@@ -94,17 +119,63 @@ const ui: [string, string][] = [
   ["ink-muted", "surface-4"],
   ["on-moss", "moss-400"],
   ["danger", "danger-bg"], // border of the selected "Từ chối" (also above)
+  // redesign R1: focus ring (cosmic-300, 2 px outline) against every surface it can sit on, 3:1
+  ...["surface-0", "surface-1", "surface-2", "surface-3", "surface-4", "surface-5"].map((bg): [string, string] => ["cosmic-300", bg]),
+  // presence dots on every surface an avatar sits on
+  ...["presence-on", "presence-idle", "presence-dnd"].flatMap((dot) => ["surface-0", "surface-1", "surface-2", "surface-3", "surface-4", "surface-5"].map((bg): [string, string] => [dot, bg])),
 ];
 
-// Worst-case backdrops behind glass, from the same tokens: each ambient glow at full strength (auth card); the dialog
+// Worst-case backdrops behind glass, from the same tokens: each aurora colour at full strength (auth card); the dialog
 // dim over the lightest content, ink text (dialog panel); ink itself (popover menu, floating over the app).
-const glows = ["violet", "teal", "blue"].map((g) => [`glow-${g}`, rgb(rootVar(`glow-${g}`))] as const);
+const glows = ["violet", "teal", "blue"].map((g) => [`aurora-${g}`, rgb(tokens[`aurora-${g}`])] as const);
 const behindAuth = glows.map(([n, c]) => [`auth card over ${n}`, c] as const);
 const behindDialog = [["dialog over dimmed ink text", dimmed(rgb(tokens.ink))]] as const;
 const behindPopover = [["popover over ink text", rgb(tokens.ink)]] as const;
 const textOnGlass = ["ink", "ink-muted", "ink-faint", "danger", "moss-300"];
 // The drop overlay (surface-2 at 90%) over the lightest thing that could be behind it: ink text.
 const overlay = composite(rgb(tokens["surface-2"]), 0.9, rgb(tokens.ink));
+describe("redesign R1 materials", () => {
+  // every shipped gradient endpoint, with its radial light on top: the three text colours at 4.5:1
+  for (const g of surfaceGradients)
+    for (const tk of ["ink", "ink-muted", "ink-faint"])
+      it(`text ${tk} on the lightest point of bg-${g} >= 4.5:1`, () => {
+        expect(contrast(rgb(tokens[tk]), lightest(g))).toBeGreaterThanOrEqual(4.5);
+      });
+  it("the mock's reference number: ink-faint on the lightest raise point is 5.09", () => {
+    expect(contrast(rgb(tokens["ink-faint"]), lightest("raise"))).toBeCloseTo(5.09, 1);
+  });
+  it("moss button: on-moss on every stop of the gradient >= 4.5:1 and the button against surface-2 >= 3:1", () => {
+    for (const stop of stops("moss")) {
+      expect(contrast(rgb(tokens["on-moss"]), stop)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(stop, rgb(tokens["surface-2"]))).toBeGreaterThanOrEqual(3);
+    }
+  });
+  it("focus ring cosmic-300 against the lightest raise point >= 3:1", () => {
+    expect(contrast(rgb(tokens["cosmic-300"]), lightest("raise"))).toBeGreaterThanOrEqual(3);
+  });
+  it("moss-300 links on the lightest raise point >= 4.5:1", () => {
+    expect(contrast(rgb(tokens["moss-300"]), lightest("raise"))).toBeGreaterThanOrEqual(4.5);
+  });
+  it("the type scale keeps line-heights on a 4 px grid", () => {
+    const pairs = [...css.matchAll(/--text-[\w]+--line-height:\s*(\d+)px/g)].map((m) => +m[1]);
+    expect(pairs).toHaveLength(10);
+    for (const lh of pairs) expect(lh % 4).toBe(0);
+  });
+  it("radii are the documented scale", () => {
+    const r = Object.fromEntries([...css.matchAll(/--radius-([\w]+):\s*(\d+)px/g)].map((m) => [m[1], +m[2]]));
+    expect(r).toEqual({ xs: 6, sm: 8, control: 12, card: 16, panel: 20, glass: 28 });
+  });
+  it("the grain is a background-image on solid surfaces (no overlay), 2% by default, and has an off switch", () => {
+    expect(css).toMatch(/@utility grain\s*{\s*background-image: var\(--grain-img\), var\(--grain-under, none\);/);
+    expect(css).toMatch(/html\[data-grain="off"\] \.grain\s*{\s*background-image: var\(--grain-under, none\)/);
+    expect(css).toMatch(/opacity='\.02'/);
+  });
+  it("the reduced-motion preference reaches CSS for both the in-app choice and the OS media query", () => {
+    expect(css).toMatch(/html\[data-motion="reduced"\] \*/);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*{\s*html:not\(\[data-motion="full"\]\)/);
+  });
+});
+
 describe("design tokens meet WCAG AA", () => {
   it("drop-zone text (moss-300) on its overlay over the worst-case backdrop >= 4.5:1", () => {
     expect(contrast(tokens["moss-300"], overlay)).toBeGreaterThanOrEqual(4.5);

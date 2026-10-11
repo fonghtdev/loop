@@ -22,7 +22,7 @@ export function TextField({ label, hint, error, type = "text", ref, ...rest }: P
           type={isPassword && reveal ? "text" : type}
           aria-invalid={error ? true : undefined}
           aria-describedby={`${id}-hint ${id}-error`}
-          className={`h-11 w-full rounded-control border bg-surface-3 px-3.5 text-[15px] text-ink transition-colors duration-(--duration-fast) placeholder:text-ink-faint hover:bg-surface-4 focus-visible:outline-offset-1 ${isPassword ? "pr-12" : ""} ${error ? "border-danger" : "border-line-strong"}`}
+          className={`h-11 w-full rounded-control border bg-surface-3 px-3.5 text-[15px] text-ink transition-colors duration-(--duration-fast) placeholder:text-ink-faint hover:bg-surface-4 ${isPassword ? "pr-12" : ""} ${error ? "border-danger" : "border-line-strong focus-visible:border-cosmic-300"}`}
         />
         {isPassword && (
           <button

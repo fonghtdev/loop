@@ -120,14 +120,14 @@ export function Shell() {
       <div className="grid min-h-0 flex-1 grid-cols-[72px_240px_minmax(0,1fr)_240px]">
         <ServerRail />
 
-        <nav aria-label={t("shell.channels")} className="flex min-h-0 min-w-0 flex-col bg-surface-1">
+        <nav aria-label={t("shell.channels")} className="grain flex min-h-0 min-w-0 flex-col border-r border-hair bg-surface-1 [--grain-under:var(--background-image-chan)]">
           {guildId ? (
             <ChannelColumn guildId={guildId} />
           ) : (
             <DmColumn />
           )}
           <VoiceBar />
-          <section aria-label={t("shell.account")} className="flex h-16 shrink-0 items-center gap-3 bg-surface-0 px-3">
+          <section aria-label={t("shell.account")} className="grain flex h-16 shrink-0 items-center gap-3 border-t border-hair bg-surface-0 px-3 shadow-[inset_0_1px_0_var(--color-highlight)]">
             <button
               type="button"
               onClick={() => useNav.setState({ settings: "user" })}
@@ -156,7 +156,7 @@ export function Shell() {
           </section>
         </nav>
 
-        <main className="flex min-h-0 min-w-0 flex-col bg-surface-2">
+        <main className="grain flex min-h-0 min-w-0 flex-col bg-surface-2">
           {settings === "user" ? (
             <UserSettings />
           ) : guildId && settings ? (
@@ -177,7 +177,7 @@ export function Shell() {
           )}
         </main>
 
-        <aside aria-label={t("shell.members")} className="flex min-h-0 min-w-0 flex-col bg-surface-1">
+        <aside aria-label={t("shell.members")} className="grain flex min-h-0 min-w-0 flex-col border-l border-hair bg-surface-1">
           {guildId ? (
             <MemberList guildId={guildId} />
           ) : (
