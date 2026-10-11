@@ -305,8 +305,17 @@ test("drop overlay: appears on a file dragenter, goes on dragleave and on drop; 
   await expect(overlay).toBeHidden();
   await fire("dragenter", true);
   await expect(overlay).toBeVisible();
+  // The dropped 1-byte "png" is really uploaded by the app and the server rightly rejects it at `complete` (400).
+  // Wait for that expected rejection and take its console error out of the collector, so that it cannot land late in
+  // another test of this file that asserts "no console errors".
+  const known = consoleErrors.length;
+  const rejected = page.waitForResponse((r) => /\/attachments\/[^/]+\/complete$/.test(r.url()) && r.status() === 400, { timeout: 15_000 });
   await fire("drop", true);
   await expect(overlay).toBeHidden();
+  await rejected;
+  await expect.poll(() => consoleErrors.length, { timeout: 5_000 }).toBeGreaterThan(known);
+  const fresh = consoleErrors.splice(known);
+  consoleErrors.push(...fresh.filter((e) => !/status of 400/.test(e)));
   await page.getByRole("button", { name: "Bỏ tệp tha.png" }).click();
 });
 
