@@ -88,7 +88,9 @@ describe("searchGroups", () => {
     expect(rows).toHaveLength(50);
     expect(rows[0].item.kind).toBe("server");
   });
-  it("filters 2000 items in well under 10 ms (cold: includes normalizing their names)", () => {
+  // A wall-clock bound is only a guard against pathological slowness (e.g. a quadratic matcher): CI machines are slow and
+  // noisy, so the bounds are generous. Typical cost on a laptop is a few ms for 2000 items.
+  it("filters 2000 items without blowing up (cold: includes normalizing their names)", () => {
     const words = ["chung", "Chúng ta", "đạt", "Đà Nẵng", "general", "voice-room", "Nguyễn Văn"];
     const items = Array.from({ length: 2000 }, (_, i) => item(i % 3 ? "channel" : "dm", `${words[i % words.length]} ${i}`, i % 2 ? "Máy chủ lớn" : undefined));
     const t0 = performance.now();
@@ -96,7 +98,7 @@ describe("searchGroups", () => {
     const cold = performance.now() - t0;
     const t1 = performance.now();
     searchGroups(items, "dat");
-    expect(cold).toBeLessThan(40);
-    expect(performance.now() - t1).toBeLessThan(10);
+    expect(cold).toBeLessThan(1000);
+    expect(performance.now() - t1).toBeLessThan(500);
   });
 });
