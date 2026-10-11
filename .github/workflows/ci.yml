@@ -50,7 +50,8 @@ jobs:
             -v "$GITHUB_WORKSPACE/docker/livekit.yaml:/etc/livekit.yaml:ro" livekit/livekit-server:v1.9.0 --config /etc/livekit.yaml
           timeout 60 sh -c 'until curl -sf http://localhost:7880; do sleep 1; done'
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
+      # build first: it generates the Prisma client and the shared dist that lint typechecks against
       - run: pnpm build
+      - run: pnpm lint
       - run: pnpm --filter @loop/server db:deploy
       - run: pnpm test
