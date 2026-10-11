@@ -142,7 +142,18 @@
   --animate-drift-a: drift-a 48s ease-in-out infinite alternate; /* aurora, auth screen only */
   --animate-drift-b: drift-b 56s ease-in-out infinite alternate;
   --animate-drift-c: drift-a 64s ease-in-out infinite alternate-reverse;
+  --animate-ripple: ripple 2.4s var(--ease-out-soft) infinite; /* rings out of the caller's avatar */
   --animate-tick: tick var(--duration-slow) var(--ease-out-quart) both; /* a counter changing value */
+  @keyframes ripple {
+    from {
+      opacity: 0.55;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.9);
+    }
+  }
   @keyframes tick {
     from {
       opacity: 0;
@@ -433,6 +444,16 @@ html[data-grain="off"] .grain {
       opacity: 0;
       scale: 0.95;
       translate: 0 12px;
+    }
+  }
+  /* The image viewer only fades: its picture does the moving (FLIP), and it is measured while the dialog opens. */
+  dialog[data-viewer],
+  dialog[data-viewer][open] {
+    scale: 1;
+    translate: 0 0;
+    @starting-style {
+      scale: 1;
+      translate: 0 0;
     }
   }
   /* A focus ring distinct from hover: cosmic outline, offset, soft halo. Rows and fields draw their own (see components). */

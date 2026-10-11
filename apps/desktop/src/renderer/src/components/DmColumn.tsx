@@ -8,6 +8,7 @@ import { dmKey } from "../lib/conversation";
 import { useDms, useIsOnline } from "../lib/queries";
 import { useUnreadMark } from "../lib/unread-hooks";
 import { Badge, UnreadDot } from "./Badge";
+import { navRow } from "./navRow";
 import { PresenceAvatar } from "./Avatar";
 import { FriendsArt } from "./Illustrations";
 import { ColumnHeader, EmptyState, LoadError, Skeleton } from "./States";
@@ -29,7 +30,7 @@ export function DmColumn() {
               data-nav-item
               aria-current={dmId === null ? "page" : undefined}
               onClick={() => useNav.setState({ dmId: null })}
-              className={`flex h-10 w-full items-center gap-2.5 rounded-control px-2.5 text-left text-[15px] transition-colors duration-(--duration-fast) ${dmId === null ? "bg-surface-4 font-semibold text-ink" : "text-ink-muted hover:bg-surface-3 hover:text-ink"}`}
+              className={`h-10 w-full ${navRow(dmId === null)}`}
             >
               <UsersThree aria-hidden="true" className="shrink-0" />
               <span className="min-w-0 flex-1 truncate">{t("home.friends")}</span>
@@ -71,7 +72,7 @@ function DmRow({ dm, active, online }: { dm: Dm; active: boolean; online: boolea
       data-unread={unread ? "true" : undefined}
       aria-current={active ? "page" : undefined}
       onClick={() => useNav.setState({ dmId: dm.id })}
-      className={`flex h-12 w-full items-center gap-2.5 rounded-control px-2 text-left text-[15px] transition-colors duration-(--duration-fast) active:scale-[.98] ${active ? "bg-[linear-gradient(90deg,var(--color-cosmic-wash),rgb(255_255_255/.05)_60%)] font-semibold text-ink" : unread ? "font-bold text-ink hover:bg-white/[.045]" : "text-ink-muted hover:bg-white/[.045] hover:text-ink"}`}
+      className={`h-12 w-full ${navRow(active, unread, "gap-2.5 px-2")}`}
     >
       <PresenceAvatar id={dm.user.id} name={dm.user.username} online={online} className="size-8 rounded-full text-xs" />
       <Tooltip label={dm.user.username}>

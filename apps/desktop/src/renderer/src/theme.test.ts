@@ -132,8 +132,8 @@ const behindAuth = glows.map(([n, c]) => [`auth card over ${n}`, c] as const);
 const behindDialog = [["dialog over dimmed ink text", dimmed(rgb(tokens.ink))]] as const;
 const behindPopover = [["popover over ink text", rgb(tokens.ink)]] as const;
 const textOnGlass = ["ink", "ink-muted", "ink-faint", "danger", "moss-300"];
-// The drop overlay (surface-2 at 90%) over the lightest thing that could be behind it: ink text.
-const overlay = composite(rgb(tokens["surface-2"]), 0.9, rgb(tokens.ink));
+// The drop overlay (surface-2 at 92%) over the lightest thing that could be behind it: ink text.
+const overlay = composite(rgb(tokens["surface-2"]), 0.92, rgb(tokens.ink));
 describe("redesign R1 materials", () => {
   // every shipped gradient endpoint, with its radial light on top: the three text colours at 4.5:1
   for (const g of surfaceGradients)
@@ -248,10 +248,48 @@ describe("redesign R3 chat surfaces", () => {
   });
 });
 
-describe("design tokens meet WCAG AA", () => {
-  it("drop-zone text (moss-300) on its overlay over the worst-case backdrop >= 4.5:1", () => {
-    expect(contrast(tokens["moss-300"], overlay)).toBeGreaterThanOrEqual(4.5);
+describe("redesign R4 voice, calls, friends, settings, viewer", () => {
+  const white = (alpha: number, under: Rgb) => composite([255, 255, 255], alpha, under);
+  const surface2 = rgb(tokens["surface-2"]);
+  const worstGlass = glassOver(rgb(tokens.ink)); // glass over the lightest content behind it (toast, popover)
+
+  it("the drop overlay: cosmic-200 title and the cosmic-300 dashed border on the overlay over the worst-case backdrop", () => {
+    expect(contrast(tokens["cosmic-200"], overlay)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(tokens["cosmic-300"], overlay)).toBeGreaterThanOrEqual(3);
   });
+  it("friends / settings tabs and rows: ink, ink-muted and the ink-faint count on the hovered tab (4.5% lift) >= 4.5:1", () => {
+    const hover = white(0.045, surface2);
+    for (const tk of ["ink", "ink-muted", "ink-faint"]) expect(contrast(rgb(tokens[tk]), hover), tk).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(rgb(tokens["ink-muted"]), white(0.04, surface2))).toBeGreaterThanOrEqual(4.5); // a hovered friend row's subtitle
+  });
+  it("toast: ink text and the moss-300 / danger icons on the worst-case glass (>= 4.5 text, >= 3 icons)", () => {
+    expect(contrast(rgb(tokens.ink), worstGlass)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(rgb(tokens["ink-muted"]), worstGlass)).toBeGreaterThanOrEqual(4.5); // close button
+    for (const tk of ["moss-300", "danger"]) expect(contrast(rgb(tokens[tk]), worstGlass), tk).toBeGreaterThanOrEqual(3);
+  });
+  it("segmented control: unselected ink-muted on its inset track (surface-1), selected labels on their thumbs", () => {
+    expect(contrast(tokens["ink-muted"], tokens["surface-1"])).toBeGreaterThanOrEqual(4.5);
+    for (const [fg, bg] of [["ink", "surface-4"], ["moss-200", "moss-900"], ["danger", "danger-bg"]]) expect(contrast(tokens[fg], tokens[bg]), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+  });
+  it("the danger section: danger title, ink-muted body on danger-bg at 40% over the settings surface", () => {
+    const bg = composite(rgb(tokens["danger-bg"]), 0.4, surface2);
+    expect(contrast(rgb(tokens.danger), bg)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(rgb(tokens["ink-muted"]), bg)).toBeGreaterThanOrEqual(4.5);
+  });
+  it("the participant name chip (surface-0 at 80%) keeps ink >= 4.5:1 even over a pure white video frame", () => {
+    expect(contrast(rgb(tokens.ink), composite(rgb(tokens["surface-0"]), 0.8, [255, 255, 255]))).toBeGreaterThanOrEqual(4.5);
+  });
+  it("the speaking ring / ripple (cosmic-300) on the tile surface and the call dialog's glass >= 3:1", () => {
+    expect(contrast(rgb(tokens["cosmic-300"]), lightest("raise"))).toBeGreaterThanOrEqual(3);
+    expect(contrast(rgb(tokens["cosmic-300"]), worstGlass)).toBeGreaterThanOrEqual(3);
+  });
+  it("the answer / decline buttons: on-moss on every stop of the moss gradient and on danger >= 4.5:1", () => {
+    for (const stop of stops("moss")) expect(contrast(rgb(tokens["on-moss"]), stop)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(tokens["on-moss"], tokens.danger)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("design tokens meet WCAG AA", () => {
   it("parses the tokens", () => {
     expect(Object.keys(tokens).length).toBeGreaterThan(15);
   });

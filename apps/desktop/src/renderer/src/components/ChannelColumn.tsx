@@ -19,6 +19,7 @@ import { useVoiceParticipants } from "../lib/voice-hooks";
 import { channelNameError, normalizeChannelName } from "../lib/validation";
 import { Button } from "./Button";
 import { ConfirmBody } from "./Confirm";
+import { navRow } from "./navRow";
 import { MenuItem, RowMenu } from "./RowMenu";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
 import { Avatar } from "./Avatar";
@@ -128,11 +129,7 @@ function ChannelItem({ channel, active }: { channel: Channel; active: boolean })
       aria-current={active ? "page" : undefined}
       aria-label={voiceChannel ? t("channels.voiceLabel", { name: channel.name }) : undefined}
       onClick={open}
-      className={`relative flex h-10 min-w-0 flex-1 items-center gap-2 rounded-control px-2.5 text-left text-[15px] transition-colors duration-(--duration-fast) after:absolute after:inset-y-2.5 after:left-0 after:w-0.5 after:rounded-full after:bg-[linear-gradient(180deg,var(--color-cosmic-200),var(--color-cosmic-400))] after:transition-[opacity,scale] after:duration-(--duration-slow) after:ease-(--ease-out-soft) active:scale-[.98] ${
-        active
-          ? "bg-[linear-gradient(90deg,var(--color-cosmic-wash),rgb(255_255_255/.05)_60%)] font-semibold text-ink shadow-[inset_0_1px_0_var(--color-highlight)] after:opacity-100"
-          : `after:scale-y-30 after:opacity-0 hover:bg-white/[.045] ${unread ? "font-bold text-ink" : "text-ink-muted hover:text-ink"}`
-      }`}
+      className={`h-10 flex-1 ${navRow(active, unread)}`}
     >
       {voiceChannel ? <SpeakerHigh aria-hidden="true" className={`shrink-0 ${joined ? "text-moss-300" : ""}`} /> : <Hash aria-hidden="true" className="shrink-0" />}
       <span className="min-w-0 flex-1 truncate">{channel.name}</span>

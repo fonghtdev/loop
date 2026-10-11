@@ -17,6 +17,7 @@ import { UserSettings } from "../components/UserSettings";
 import { VoiceBar } from "../components/VoiceBar";
 import { VoiceRoom } from "../components/VoiceRoom";
 import { ColumnHeader, EmptyState } from "../components/States";
+import { ToastHost } from "../components/Toast";
 import { Tooltip } from "../components/Tooltip";
 import { t } from "../i18n/t";
 import { ApiError } from "../lib/auth-client";
@@ -87,6 +88,8 @@ export function Shell() {
   const voiceChannelIds = channels?.filter((c) => c.type === "VOICE").map((c) => c.id);
   const notice = useStore(voice.store, (s) => s.notice);
   const isVoiceChannel = !!channels?.some((c) => c.id === channelId && c.type === "VOICE");
+  // the voice room gives the member column's width to its tiles; every other place keeps the 4 columns
+  const voiceRoomOpen = isVoiceChannel && !!guildId && !settings;
 
   // The voice channels of the open server are watched for who is in them (see realtime.setWatched); the key keeps
   // the effect from re-running on every refetch of the same list.
@@ -160,7 +163,7 @@ export function Shell() {
           </Banner>
         )}
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-[72px_240px_minmax(0,1fr)_240px]">
+      <div className={`grid min-h-0 flex-1 ${voiceRoomOpen ? "grid-cols-[72px_240px_minmax(0,1fr)]" : "grid-cols-[72px_240px_minmax(0,1fr)_240px]"}`}>
         <ServerRail />
 
         <nav aria-label={t("shell.channels")} className="grain flex min-h-0 min-w-0 flex-col border-r border-hair bg-surface-1 [--grain-under:var(--background-image-chan)]">
@@ -222,21 +225,24 @@ export function Shell() {
           )}
         </main>
 
-        <aside aria-label={t("shell.members")} className="grain flex min-h-0 min-w-0 flex-col border-l border-hair bg-surface-1">
-          {guildId ? (
-            <MemberList guildId={guildId} />
-          ) : (
-            <>
-              <ColumnHeader>{t("shell.members")}</ColumnHeader>
-              <div className="flex-1 overflow-y-auto p-4">
-                <EmptyState art={<PeopleArt />} title={t("shell.membersEmptyTitle")} body={t("shell.membersEmpty")} />
-              </div>
-            </>
-          )}
-        </aside>
+        {!voiceRoomOpen && (
+          <aside aria-label={t("shell.members")} className="grain flex min-h-0 min-w-0 flex-col border-l border-hair bg-surface-1">
+            {guildId ? (
+              <MemberList guildId={guildId} />
+            ) : (
+              <>
+                <ColumnHeader>{t("shell.members")}</ColumnHeader>
+                <div className="flex-1 overflow-y-auto p-4">
+                  <EmptyState art={<PeopleArt />} title={t("shell.membersEmptyTitle")} body={t("shell.membersEmpty")} />
+                </div>
+              </>
+            )}
+          </aside>
+        )}
       </div>
       <ImageViewer />
       <IncomingCall />
+      <ToastHost />
     </div>
   );
 }

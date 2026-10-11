@@ -19,7 +19,7 @@ import { Avatar } from "./Avatar";
 import { Button } from "./Button";
 import { Composer, submitKey } from "./Composer";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
-import { ChatArt, OrbitArt } from "./Illustrations";
+import { ChatArt, OrbitArt, TicketArt } from "./Illustrations";
 import { MessageAttachments } from "./MessageAttachments";
 import { Spinner } from "./Spinner";
 import { ColumnHeader, EmptyState, LoadError, Skeleton } from "./States";
@@ -132,11 +132,14 @@ export function Conversation({ convKey, header, logLabel, start, canManage, comp
       )}
       <Composer key={convKey} convKey={convKey} files={files} label={composer.label} placeholder={composer.placeholder} ready={composer.ready && !state.unavailable} closedReason={composer.closedReason} />
       {dragging && (
-        <div aria-hidden="true" className="pointer-events-none absolute inset-2 z-10 grid place-items-center rounded-panel border-2 border-dashed border-moss-300 bg-surface-2/90">
-          <p className="flex items-center gap-2 font-display text-lg font-bold text-moss-300">
-            <UploadSimple />
-            {composer.closedReason ? composer.closedReason : t("attachment.drop")}
-          </p>
+        <div aria-hidden="true" className="pointer-events-none absolute inset-2 z-10 grid animate-fade place-items-center rounded-panel border-2 border-dashed border-cosmic-300 bg-surface-2/92">
+          <div className="flex max-w-[360px] flex-col items-center gap-2 text-center">
+            <TicketArt className="h-[150px] w-[240px]" />
+            <p className="flex items-center gap-2 font-display text-heading3 font-extrabold tracking-[-0.02em] text-cosmic-200">
+              <UploadSimple />
+              {composer.closedReason ? composer.closedReason : t("attachment.drop")}
+            </p>
+          </div>
         </div>
       )}
     </div>

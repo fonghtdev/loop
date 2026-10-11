@@ -410,7 +410,7 @@ export const vi = {
   "friends.announceRequest": "{name} gửi cho bạn lời mời kết bạn",
 
   "attachment.pick": "Đính kèm tệp",
-  "attachment.drop": "Thả tệp vào đây để đính kèm",
+  "attachment.drop": "Thả tệp vào đây để gửi",
   "attachment.tray": "Tệp đính kèm sẽ gửi",
   "attachment.preparing": "Đang chuẩn bị…",
   "attachment.uploading": "Đang tải lên {percent}%",
@@ -492,6 +492,8 @@ export const vi = {
   "call.incomingVoice": "{name} đang gọi bạn",
   "call.incomingVideo": "{name} gọi video cho bạn",
   "call.incomingBusy": "Trả lời sẽ rời khỏi kênh thoại hoặc cuộc gọi hiện tại của bạn.",
+  "call.kindVoice": "Cuộc gọi thoại",
+  "call.kindVideo": "Cuộc gọi video",
   "call.accept": "Trả lời",
   "call.decline": "Từ chối",
   "call.declined": "{name} đã từ chối cuộc gọi.",
@@ -501,6 +503,8 @@ export const vi = {
   "call.errors.gone": "Không tìm thấy cuộc trò chuyện này.",
 
   "viewer.title": "Xem ảnh",
+  "viewer.zoomIn": "Phóng to",
+  "viewer.zoomOut": "Thu nhỏ",
 } as const;
 
 export type MessageKey = keyof typeof vi;

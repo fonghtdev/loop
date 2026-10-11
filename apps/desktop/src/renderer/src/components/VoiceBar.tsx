@@ -44,7 +44,12 @@ export function VoiceBar() {
   return (
     <section aria-label={t("voice.bar.label")} className="relative edge m-2 flex shrink-0 flex-col gap-2 rounded-card bg-raise p-3 shadow-e2">
       <div className="min-w-0">
-        <p aria-live="polite" className={`truncate text-small font-semibold ${ready ? "text-moss-300" : "text-ink-muted"}`}>
+        <p aria-live="polite" className={`flex items-center gap-2 truncate text-small font-semibold ${ready ? "text-moss-300" : "text-ink-muted"}`}>
+          {ringing && (
+            <span aria-hidden="true" className="relative size-2 shrink-0 rounded-full bg-cosmic-300">
+              <span data-ripple className="absolute inset-0 animate-ripple rounded-full border border-cosmic-300" />
+            </span>
+          )}
           {status}
         </p>
         <Tooltip label={where}>

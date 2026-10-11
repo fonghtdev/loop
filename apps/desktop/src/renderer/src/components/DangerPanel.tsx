@@ -1,4 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
+import { Warning } from "@phosphor-icons/react";
 import { useState } from "react";
 import { t } from "../i18n/t";
 import { nameMatches, type SettingsCtx } from "../lib/admin";
@@ -19,8 +20,8 @@ export function DangerPanel({ ctx }: { ctx: SettingsCtx }) {
   const close = () => setDialog(null);
   return (
     <div className="flex max-w-2xl flex-col gap-4">
-      <section aria-labelledby="transfer-title" className="flex flex-col gap-3 rounded-panel border border-line p-4">
-        <h2 id="transfer-title" className="font-display text-base font-bold">
+      <section aria-labelledby="transfer-title" className="relative edge flex flex-col gap-3 rounded-panel bg-raise p-5 shadow-e2">
+        <h2 id="transfer-title" className="font-display text-title font-bold">
           {t("danger.transfer")}
         </h2>
         <p className="text-sm text-ink-muted">{t("danger.transferBody")}</p>
@@ -38,8 +39,9 @@ export function DangerPanel({ ctx }: { ctx: SettingsCtx }) {
           </Button>
         </div>
       </section>
-      <section aria-labelledby="delete-title" className="flex flex-col gap-3 rounded-panel border border-danger p-4">
-        <h2 id="delete-title" className="font-display text-base font-bold text-danger">
+      <section aria-labelledby="delete-title" className="relative flex flex-col gap-3 rounded-panel border border-danger/50 bg-danger-bg/40 p-5 shadow-e2">
+        <h2 id="delete-title" className="flex items-center gap-2 font-display text-title font-bold text-danger">
+          <Warning aria-hidden="true" weight="fill" />
           {t("danger.delete")}
         </h2>
         <p className="text-sm text-ink-muted">{t("danger.deleteBody")}</p>

@@ -9,14 +9,17 @@ import { admin } from "../lib/app";
 import { errorMessage } from "../lib/errors";
 import { useNav } from "../lib/nav";
 import type { Channel, Role } from "../lib/permissions";
+import { toast } from "../lib/toast";
 import { Banner } from "./Banner";
 import { Button } from "./Button";
+import { Segmented, type SegmentOption } from "./Segmented";
 
-const TRI: [Tri, MessageKey, string][] = [
-  ["allow", "overwrites.allow", "peer-checked:bg-moss-900 peer-checked:text-moss-200 peer-checked:border-moss-300"],
-  ["inherit", "overwrites.inherit", "peer-checked:bg-surface-4 peer-checked:text-ink peer-checked:border-line-strong"],
-  ["deny", "overwrites.deny", "peer-checked:bg-danger-bg peer-checked:text-danger peer-checked:border-danger"],
+const TRI: SegmentOption<Tri>[] = [
+  { value: "allow", label: "", thumb: "bg-moss-900", on: "peer-checked:text-moss-200" },
+  { value: "inherit", label: "", thumb: "bg-surface-4", on: "peer-checked:text-ink" },
+  { value: "deny", label: "", thumb: "bg-danger-bg", on: "peer-checked:text-danger" },
 ];
+const TRI_LABEL: Record<Tri, MessageKey> = { allow: "overwrites.allow", inherit: "overwrites.inherit", deny: "overwrites.deny" };
 
 export function Select({ label, value, onChange, children }: { label: string; value: string; onChange: (v: string) => void; children: ReactNode }) {
   const id = useId();
@@ -25,7 +28,7 @@ export function Select({ label, value, onChange, children }: { label: string; va
       <label htmlFor={id} className="text-sm font-medium">
         {label}
       </label>
-      <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className="h-11 w-full min-w-0 truncate rounded-control border border-line-strong bg-surface-3 px-3 text-[15px] text-ink">
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className="h-11 w-full min-w-0 truncate rounded-control border border-line-strong bg-surface-3 px-3 text-chat text-ink">
         {children}
       </select>
     </div>
@@ -74,7 +77,6 @@ export function OverwritesPanel({ ctx }: { ctx: SettingsCtx }) {
 function OverwriteEditor({ ctx, channel, role }: { ctx: SettingsCtx; channel: Channel; role: Role }) {
   const existing = channel.overwrites.find((o) => o.roleId === role.id) ?? { allow: 0, deny: 0 };
   const [draft, setDraft] = useState({ allow: existing.allow, deny: existing.deny });
-  const [saved, setSaved] = useState(false);
   const held = grantableBits(callerChannelBits(ctx, channel), CHANNEL_PERMISSIONS);
   const changed = draft.allow !== existing.allow || draft.deny !== existing.deny;
   const empty = draft.allow === 0 && draft.deny === 0;
@@ -82,11 +84,11 @@ function OverwriteEditor({ ctx, channel, role }: { ctx: SettingsCtx; channel: Ch
 
   const save = useMutation({
     mutationFn: () => (empty ? admin.clearOverwrite(ctx.guildId, channel.id, role.id) : admin.setOverwrite(ctx.guildId, channel.id, role.id, draft)),
-    onSuccess: () => setSaved(true),
+    onSuccess: () => toast.push(t("overwrites.saved")),
   });
   const edit = (next: typeof draft) => {
-    setSaved(false);
     save.reset();
+    toast.dismiss(); // "saved" is no longer true of what is on screen
     setDraft(next);
   };
 
@@ -98,42 +100,36 @@ function OverwriteEditor({ ctx, channel, role }: { ctx: SettingsCtx; channel: Ch
       }}
       className="flex flex-col gap-3"
     >
-      <ul className="flex flex-col gap-2">
+      <ul className="relative edge flex flex-col rounded-panel bg-raise p-2 shadow-e2">
         {CHANNEL_BITS.map((item) => {
           const bit = Permission[item.name];
           const locked = !(held & bit);
           return (
-            <li key={item.name} className="rounded-control border border-line p-3" title={locked ? t("overwrites.notHeld") : undefined}>
-              <p id={`ow-${item.name}`} className="text-[15px] font-medium">
-                {t(item.label)}
-              </p>
-              <p className="mb-2 text-[13px] text-ink-muted">{t(item.desc)}</p>
-              <div role="radiogroup" aria-labelledby={`ow-${item.name}`} className="flex flex-wrap gap-1.5">
-                {TRI.map(([value, label, on]) => (
-                  <label key={value} className={`relative ${locked ? "opacity-60" : "cursor-pointer"}`}>
-                    <input
-                      type="radio"
-                      name={`ow-${item.name}`}
-                      value={value}
-                      checked={triOf(draft, bit) === value}
-                      disabled={locked}
-                      onChange={() => edit(setTri(draft, bit, value))}
-                      className="peer sr-only"
-                    />
-                    <span className={`flex h-10 min-w-24 items-center justify-center rounded-control border border-line px-3 text-sm text-ink-muted peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-moss-300 ${on}`}>
-                      {t(label)}
-                    </span>
-                  </label>
-                ))}
+            <li key={item.name} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-control px-3 py-2.5">
+              <div className="min-w-0 flex-1 basis-56">
+                <p id={`ow-${item.name}`} className="text-chat font-medium">
+                  {t(item.label)}
+                </p>
+                <p className="text-small text-ink-muted">{t(item.desc)}</p>
+                {locked && <p className="text-small text-ink-muted">{t("overwrites.notHeld")}</p>}
               </div>
+              <Segmented
+                radiogroup
+                labelledBy={`ow-${item.name}`}
+                name={`ow-${item.name}`}
+                value={triOf(draft, bit)}
+                disabled={locked}
+                onChange={(v) => edit(setTri(draft, bit, v))}
+                options={TRI.map((o) => ({ ...o, label: t(TRI_LABEL[o.value]) }))}
+              />
             </li>
           );
         })}
       </ul>
 
-      <section aria-label={t("overwrites.preview")} className="rounded-control border border-line p-3">
+      <section aria-label={t("overwrites.preview")} className="relative edge rounded-panel bg-raise p-4 shadow-e2">
         <p className="text-sm font-medium">{t("overwrites.preview")}</p>
-        <p className="mb-2 text-[13px] text-ink-muted [overflow-wrap:anywhere]">{t("overwrites.previewBody", { role: role.name })}</p>
+        <p className="mb-2 text-small text-ink-muted [overflow-wrap:anywhere]">{t("overwrites.previewBody", { role: role.name })}</p>
         <ul className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
           {CHANNEL_BITS.map((item) => {
             const yes = hasPermission(preview, Permission[item.name]);
@@ -150,7 +146,6 @@ function OverwriteEditor({ ctx, channel, role }: { ctx: SettingsCtx; channel: Ch
 
       <div aria-live="polite" className="empty:hidden">
         {save.isError && <Banner tone="danger">{errorMessage(save.error)}</Banner>}
-        {saved && !save.isError && <p className="text-sm font-medium text-moss-300">{t("overwrites.saved")}</p>}
       </div>
       <div className="flex flex-wrap gap-2">
         <Button type="submit" loading={save.isPending} disabled={!changed}>

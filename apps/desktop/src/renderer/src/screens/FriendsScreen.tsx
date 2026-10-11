@@ -1,5 +1,5 @@
-import { ChatCircle, DotsThree, Prohibit, UserMinus, UsersThree } from "@phosphor-icons/react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { ChatCircle, Prohibit, UserMinus, UsersThree } from "@phosphor-icons/react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref, type RefObject } from "react";
 import { PresenceAvatar } from "../components/Avatar";
 import { Banner } from "../components/Banner";
 import { Checklist } from "../components/Checklist";
@@ -7,18 +7,21 @@ import { Button } from "../components/Button";
 import { ConfirmBody } from "../components/Confirm";
 import { Dialog } from "../components/Dialog";
 import { OrbitArt, PeopleArt, TicketArt } from "../components/Illustrations";
+import { MenuItem, RowMenu } from "../components/RowMenu";
 import { ColumnHeader, EmptyState, LoadError, Skeleton } from "../components/States";
 import { TextField } from "../components/TextField";
+import { Tooltip } from "../components/Tooltip";
 import { Welcome } from "../components/Welcome";
 import { t } from "../i18n/t";
 import type { MessageKey } from "../i18n/vi";
 import { errorMessage } from "../lib/errors";
 import { isFirstRun } from "../lib/firstrun";
 import { useFirstRun } from "../lib/firstrun-hooks";
-import { arrowNav } from "../lib/focus";
 import { useBlocks, useFriends, useIsOnline } from "../lib/queries";
 import { acceptRequest, blockUser, dismissRequest, openDm, sendFriendRequest, unblockUser, unfriend } from "../lib/social-actions";
 import { sortFriends, type Friend, type PublicUser } from "../lib/social";
+import { nextTab } from "../lib/tabs";
+import { useTabIndicator } from "../lib/tabs-hooks";
 import { usernameError } from "../lib/validation";
 
 type Tab = "all" | "pending" | "blocked";
@@ -31,16 +34,19 @@ export function FriendsScreen() {
   const blocks = useBlocks();
   const [tab, setTab] = useState<Tab>("all");
   const tabs = useRef<Record<Tab, HTMLButtonElement | null>>({ all: null, pending: null, blocked: null });
+  const tabList = useRef<HTMLDivElement>(null);
+  const indicator = useRef<HTMLSpanElement>(null);
   const counts: Record<Tab, number | null> = {
     all: friends.data?.friends.length ?? null,
     pending: friends.data ? friends.data.incoming.length + friends.data.outgoing.length : null,
     blocked: blocks.data?.length ?? null,
   };
 
+  useTabIndicator(tabList, indicator, tab, Object.values(counts).join());
+
   // The tab pattern: arrows (and Home/End) move between tabs and select them; only the selected tab is in the Tab order.
   const onTabKey = (e: KeyboardEvent) => {
-    const i = TABS.indexOf(tab);
-    const next = e.key === "ArrowRight" ? (i + 1) % TABS.length : e.key === "ArrowLeft" ? (i + TABS.length - 1) % TABS.length : e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : -1;
+    const next = nextTab(TABS.length, TABS.indexOf(tab), e.key);
     if (next === -1) return;
     e.preventDefault();
     setTab(TABS[next]);
@@ -71,7 +77,7 @@ export function FriendsScreen() {
           {firstRun && isFirstRun(firstRun.counts) && <Welcome onAddFriend={() => addInput.current?.focus()} />}
           <Checklist />
           <AddFriendForm inputRef={addInput} />
-          <div role="tablist" aria-label={t("friends.tabs")} onKeyDown={onTabKey} className="flex gap-1 border-b border-line">
+          <div ref={tabList} role="tablist" aria-label={t("friends.tabs")} onKeyDown={onTabKey} className="relative flex gap-1 border-b border-hair">
             {TABS.map((id) => (
               <button
                 key={id}
@@ -83,12 +89,24 @@ export function FriendsScreen() {
                 aria-controls="friends-panel"
                 tabIndex={tab === id ? 0 : -1}
                 onClick={() => setTab(id)}
-                className={`-mb-px h-10 rounded-t-control border-b-2 px-4 text-sm font-semibold whitespace-nowrap transition-colors duration-(--duration-fast) ${tab === id ? "border-moss-300 text-ink" : "border-transparent text-ink-muted hover:bg-surface-3 hover:text-ink"}`}
+                className={`h-12 rounded-t-control px-4 text-ui font-semibold whitespace-nowrap transition-colors duration-(--duration-fast) ${tab === id ? "text-ink" : "text-ink-muted hover:bg-white/[.045] hover:text-ink"}`}
               >
                 {t(TAB_LABELS[id])}
-                {counts[id] !== null && ` (${counts[id]})`}
+                {counts[id] !== null && (
+                  <>
+                    {" "}
+                    <span className="numeric font-medium text-ink-faint">({counts[id]})</span>
+                  </>
+                )}
               </button>
             ))}
+            <span
+              ref={indicator}
+              aria-hidden="true"
+              data-tab-indicator
+              style={{ transform: "translateX(0) scaleX(0)" }}
+              className="pointer-events-none absolute bottom-[-1px] left-0 h-0.5 w-[100px] origin-left rounded-t-xs bg-cosmic shadow-[0_0_12px_var(--color-cosmic-glow)]"
+            />
           </div>
           <div role="tabpanel" id="friends-panel" aria-labelledby={`friends-tab-${tab}`}>
             {tab === "all" && <FriendList />}
@@ -133,7 +151,7 @@ function AddFriendForm({ inputRef }: { inputRef: Ref<HTMLInputElement> }) {
   }
 
   return (
-    <form onSubmit={submit} noValidate aria-label={t("friends.addTitle")} className="flex flex-col gap-2">
+    <form onSubmit={submit} noValidate aria-label={t("friends.addTitle")} className="relative edge flex flex-col gap-2 rounded-card bg-raise p-4 shadow-e2">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <TextField
@@ -157,7 +175,7 @@ function AddFriendForm({ inputRef }: { inputRef: Ref<HTMLInputElement> }) {
           {t("friends.addSubmit")}
         </Button>
       </div>
-      <p role="status" className="text-[13px] font-medium text-moss-300 empty:hidden">
+      <p role="status" className="text-small font-medium text-moss-300 empty:hidden">
         {done}
       </p>
     </form>
@@ -190,13 +208,13 @@ function ListState({ query, empty }: { query: { isPending: boolean; isError: boo
 
 function Row({ user, online, subtitle, children }: { user: PublicUser; online?: boolean; subtitle?: string; children: ReactNode }) {
   return (
-    <li className="flex min-h-14 items-center gap-3 rounded-control px-3 py-1 hover:bg-surface-3">
+    <li className="relative flex min-h-16 items-center gap-3 rounded-card px-3 py-2 transition-colors duration-(--duration-fast) hover:bg-white/[.04] not-first:before:absolute not-first:before:top-0 not-first:before:right-3 not-first:before:left-16 not-first:before:h-px not-first:before:bg-hair hover:before:opacity-0 [&:hover+li]:before:opacity-0">
       <PresenceAvatar id={user.id} name={user.username} online={!!online} ring={2} className="size-10 rounded-full text-sm" />
       <span className="min-w-0 flex-1">
-        <span title={user.username} className="block truncate text-[15px] font-semibold text-ink select-text">
-          {user.username}
-        </span>
-        {subtitle && <span className="block truncate text-xs text-ink-muted">{subtitle}</span>}
+        <Tooltip label={user.username}>
+          <span className="block truncate text-chat font-semibold text-ink select-text">{user.username}</span>
+        </Tooltip>
+        {subtitle && <span className="block truncate text-caption text-ink-muted">{subtitle}</span>}
       </span>
       <div className="flex shrink-0 items-center gap-1">{children}</div>
     </li>
@@ -220,7 +238,7 @@ function FriendList() {
       )}
       <ListState query={friends} empty={sorted.length === 0 && <EmptyState art={<PeopleArt />} title={t("friends.noneTitle")} body={t("friends.noneBody")} />} />
       {friends.data && sorted.length > 0 && (
-        <ul aria-label={t("friends.list")} className="flex flex-col gap-0.5">
+        <ul aria-label={t("friends.list")} className="flex flex-col">
           {sorted.map((f) => (
             <Row key={f.id} user={f} online={isOnline(f)} subtitle={isOnline(f) ? t("presence.online") : t("presence.offline")}>
               <IconButton label={t("friends.message", { name: f.username })} onClick={() => void action.run(f.id, () => openDm(f.id))}>
@@ -241,51 +259,34 @@ function FriendList() {
   );
 }
 
-function IconButton({ label, onClick, children, ...rest }: { label: string; onClick?: () => void; children: ReactNode } & { popoverTarget?: string; style?: CSSProperties }) {
+function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" aria-label={label} title={label} onClick={onClick} {...rest} className="grid size-10 place-items-center rounded-control text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 hover:text-ink">
-      {children}
-    </button>
+    <Tooltip label={label}>
+      <button type="button" aria-label={label} onClick={onClick} className="relative edge grid size-10 place-items-center rounded-control bg-surface-1 text-ink-muted shadow-e1 transition-colors duration-(--duration-fast) hover:bg-surface-3 hover:text-ink active:scale-[.98]">
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 
-/** Per-friend actions in a native popover anchored to its button (light dismiss, Esc; arrows move between items). */
+/** Per-friend actions in the shared glass popover menu. */
 function FriendMenu({ friend, onMessage, onPick }: { friend: Friend; onMessage: () => void; onPick: (kind: "unfriend" | "block") => void }) {
-  const menu = useRef<HTMLDivElement>(null);
-  const id = `friend-menu-${friend.id}`;
-  const anchor = `--${id}`;
-  const pick = (fn: () => void) => () => {
-    menu.current?.hidePopover();
-    fn();
-  };
   return (
-    <>
-      <IconButton label={t("friends.options", { name: friend.username })} popoverTarget={id} style={{ anchorName: anchor } as CSSProperties}>
-        <DotsThree aria-hidden="true" weight="bold" />
-      </IconButton>
-      <div
-        ref={menu}
-        id={id}
-        popover="auto"
-        style={{ positionAnchor: anchor } as CSSProperties}
-        onToggle={(e) => (e as unknown as ToggleEvent).newState === "open" && menu.current?.querySelector<HTMLElement>("[data-nav-item]")?.focus()}
-        onKeyDown={arrowNav}
-        className="m-0 w-56 glass rounded-control p-1.5 text-ink [inset:auto] [top:calc(anchor(bottom)+6px)] [right:anchor(right)]"
-      >
-        <MenuItem icon={<ChatCircle aria-hidden="true" />} label={t("friends.messageShort")} onClick={pick(onMessage)} />
-        <MenuItem icon={<UserMinus aria-hidden="true" />} label={t("friends.unfriend")} danger onClick={pick(() => onPick("unfriend"))} />
-        <MenuItem icon={<Prohibit aria-hidden="true" />} label={t("friends.block")} danger onClick={pick(() => onPick("block"))} />
-      </div>
-    </>
-  );
-}
-
-function MenuItem({ icon, label, danger = false, onClick }: { icon: ReactNode; label: string; danger?: boolean; onClick: () => void }) {
-  return (
-    <button type="button" data-nav-item onClick={onClick} className={`flex h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 text-left text-sm font-medium hover:bg-surface-4 ${danger ? "text-danger" : "text-ink"}`}>
-      {icon}
-      {label}
-    </button>
+    <RowMenu id={`friend-${friend.id}`} label={t("friends.options", { name: friend.username })}>
+      {(close) => {
+        const pick = (fn: () => void) => () => {
+          close();
+          fn();
+        };
+        return (
+          <>
+            <MenuItem icon={<ChatCircle aria-hidden="true" />} label={t("friends.messageShort")} onClick={pick(onMessage)} />
+            <MenuItem icon={<UserMinus aria-hidden="true" />} label={t("friends.unfriend")} danger onClick={pick(() => onPick("unfriend"))} />
+            <MenuItem icon={<Prohibit aria-hidden="true" />} label={t("friends.block")} danger onClick={pick(() => onPick("block"))} />
+          </>
+        );
+      }}
+    </RowMenu>
   );
 }
 
@@ -333,8 +334,8 @@ function PendingList() {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="mb-4">
-      <h2 className="mb-1 px-3 text-xs font-semibold text-ink-muted">{title}</h2>
-      <ul className="flex flex-col gap-0.5">
+      <h2 className="mb-1 px-3 text-micro font-bold tracking-[.08em] text-ink-faint uppercase">{title}</h2>
+      <ul className="flex flex-col">
         {children}
       </ul>
     </section>
@@ -353,7 +354,7 @@ function BlockedList() {
       )}
       <ListState query={blocks} empty={blocks.data?.length === 0 && <EmptyState art={<OrbitArt />} title={t("friends.noBlockedTitle")} body={t("friends.noBlockedBody")} />} />
       {!!blocks.data?.length && (
-        <ul aria-label={t("friends.blockedList")} className="flex flex-col gap-0.5">
+        <ul aria-label={t("friends.blockedList")} className="flex flex-col">
           {blocks.data.map((u) => (
             <Row key={u.id} user={u}>
               <Button variant="ghost" loading={action.busy === u.id} onClick={() => void action.run(u.id, () => unblockUser(u.id))} className="px-3 text-sm">

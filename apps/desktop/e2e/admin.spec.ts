@@ -44,7 +44,7 @@ const openSettings = async (g: Guild, tab: string) => {
 };
 const closeSettings = () => page.getByRole("button", { name: "Đóng cài đặt" }).click();
 const panel = () => page.locator("#settings-panel");
-const perm = (label: string) => page.getByRole("checkbox", { name: new RegExp(`^${label}`) });
+const perm = (label: string) => page.getByRole("switch", { name: new RegExp(`^${label}`) });
 const memberRow = (s: Session) => panel().getByRole("listitem").filter({ has: page.getByText(s.user.username, { exact: true }) }).first();
 const rowMenu = async (s: Session, item: string) => {
   await memberRow(s).getByRole("button", { name: `Thao tác với ${s.user.username}` }).click();
@@ -116,7 +116,7 @@ test("owner: create a role with MANAGE_MESSAGES, assign it, B can delete another
   await openSettings(S1, "Vai trò");
   await page.getByRole("button", { name: "Tạo vai trò" }).click();
   await page.getByLabel("Tên vai trò").fill(roleName);
-  await perm("Quản lý tin nhắn").check();
+  await perm("Quản lý tin nhắn").click();
   await page.getByRole("button", { name: "Tạo vai trò" }).last().click();
   await expect(page.getByRole("list", { name: "Danh sách vai trò" }).getByText(roleName)).toBeVisible();
   const mod = (await rolesOf(A, S1)).find((r) => r.name === roleName)!;
@@ -135,7 +135,7 @@ test("owner: create a role with MANAGE_MESSAGES, assign it, B can delete another
 
   await page.getByRole("tab", { name: "Vai trò" }).click();
   await page.getByRole("list", { name: "Danh sách vai trò" }).getByText(roleName).click();
-  await perm("Quản lý kênh").check();
+  await perm("Quản lý kênh").click();
   await page.getByRole("button", { name: "Lưu thay đổi" }).click();
   await expect(page.getByText("Đã lưu.")).toBeVisible();
   expect(patches).toEqual([{ permissions: Permission.MANAGE_MESSAGES | Permission.MANAGE_CHANNELS }]); // no name, nothing unchanged
@@ -238,8 +238,8 @@ test("non-owner with MANAGE_ROLES: read-only above its top, ungrantable bits dis
   await expect(perm("Đuổi thành viên")).toBeDisabled(); // not held
   await expect(perm("Quản trị viên")).toBeDisabled();
   await expect(perm("Quản lý kênh")).toBeDisabled();
-  await perm("Đuổi thành viên").evaluate((el: HTMLInputElement) => (el.disabled = false)); // force it past the UI
-  await perm("Đuổi thành viên").check();
+  // force it past the UI: React drops mouse events on a disabled button, so call the switch's own handler
+  await perm("Đuổi thành viên").evaluate((el) => (el as unknown as Record<string, { onClick: () => void }>)[Object.keys(el).find((k) => k.startsWith("__reactProps$"))!].onClick());
   await page.getByRole("button", { name: "Lưu thay đổi" }).click();
   await expect(page.getByRole("alert").or(page.locator("[aria-live=polite]").getByText("Bạn không thể cấp hoặc gỡ quyền mà chính bạn không có."))).toBeVisible();
   expect((await rolesOf(B, S5)).find((r) => r.id === S5below.id)!.permissions).toBe(Permission.MANAGE_MESSAGES);
@@ -308,7 +308,7 @@ test("layout with 40 roles and 60 members: no horizontal overflow at 1280x800 an
     await page.getByRole("tab", { name: "Thành viên" }).click();
     await expect(page.getByRole("list", { name: "Thành viên của máy chủ" }).locator(":scope > li")).toHaveCount(61);
     await expectNoHorizontalOverflow([panel(), page.locator("main")]);
-    await expectEllipsis(panel().locator("li[title]").filter({ hasText: "RRRR" }).first());
+    await expectEllipsis(panel().locator("li span.truncate").filter({ hasText: "RRRR" }).first());
     expect(await panel().evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
 
     await page.getByRole("tab", { name: "Quyền theo kênh" }).click();

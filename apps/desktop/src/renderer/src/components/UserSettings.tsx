@@ -10,18 +10,19 @@ import { density, DENSITIES, useDensity, type Density } from "../lib/density";
 import { appSettings, devices, session, unlockDeviceLabels } from "../lib/app";
 import { DEVICE_KINDS, labelsAvailable, optionsFor, type DeviceKind } from "../lib/devices";
 import { useNav } from "../lib/nav";
+import { toast } from "../lib/toast";
 import { Button } from "./Button";
+import { Segmented } from "./Segmented";
 import { Switch } from "./Switch";
 import { Tooltip } from "./Tooltip";
 
 /**
  * The user's own settings (main area, solid, nav place `settings: "user"`). Notification and system switches are
- * saved in the main process at once; each change round-trips and is confirmed in a polite live region.
+ * saved in the main process at once; each change round-trips and is confirmed by a toast (a polite live region).
  */
 export function UserSettings() {
   const user = session.useSession((s) => s.user);
   const settings = useStore(appSettings.store, (s) => s.settings);
-  const [status, setStatus] = useState<"saved" | "failed" | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const close = () => useNav.setState({ settings: null });
 
@@ -33,15 +34,15 @@ export function UserSettings() {
   const save = (key: keyof Settings) => async (value: boolean) => {
     try {
       await appSettings.save({ [key]: value });
-      setStatus("saved");
+      toast.push(t("userSettings.saved"));
     } catch {
-      setStatus("failed");
+      toast.push(t("userSettings.saveFailed"), "error");
     }
   };
 
   return (
     <section aria-labelledby="user-settings-title" onKeyDown={(e) => e.key === "Escape" && close()} className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4 font-display text-[15px] font-bold">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-hair bg-head px-4 font-display text-[15px] font-bold shadow-[inset_0_1px_0_var(--color-highlight)]">
         <Gear aria-hidden="true" className="shrink-0 text-ink-muted" />
         <h1 id="user-settings-title" ref={heading} tabIndex={-1} className="min-w-0 flex-1 truncate outline-none">
           {t("userSettings.title")}
@@ -54,10 +55,6 @@ export function UserSettings() {
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto flex max-w-2xl flex-col gap-4">
-          <p role="status" aria-live="polite" className={`min-h-5 text-sm ${status === "failed" ? "text-danger" : "text-moss-300"}`}>
-            {status === "saved" && t("userSettings.saved")}
-            {status === "failed" && t("userSettings.saveFailed")}
-          </p>
           <Group id="notifications" title="userSettings.notifications">
             <Switch label={t("userSettings.notify")} description={t("userSettings.notifyHint")} checked={settings.notifications} onChange={save("notifications")} />
             <Switch label={t("userSettings.preview")} description={t("userSettings.previewHint")} checked={settings.preview} onChange={save("preview")} disabled={!settings.notifications} />
@@ -124,16 +121,7 @@ function LooksSection() {
     <fieldset className="px-3 py-2">
       <legend className="text-[15px] font-medium">{t("userSettings.density")}</legend>
       <p className="mt-0.5 mb-2 text-[13px] leading-relaxed text-ink-muted">{t("userSettings.densityHint")}</p>
-      <div className="flex flex-wrap gap-2">
-        {DENSITIES.map((d) => (
-          <label key={d} className="relative">
-            <input type="radio" name="density" value={d} checked={current === d} onChange={() => density.set(d)} className="peer sr-only" />
-            <span className="grid h-10 cursor-pointer place-items-center rounded-control border border-line-strong px-4 text-sm font-medium text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 peer-checked:border-cosmic-300 peer-checked:bg-cosmic-wash peer-checked:text-ink peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-cosmic-300">
-              {t(DENSITY_LABEL[d])}
-            </span>
-          </label>
-        ))}
-      </div>
+      <Segmented name="density" value={current} onChange={(d) => density.set(d)} options={DENSITIES.map((d) => ({ value: d, label: t(DENSITY_LABEL[d]) }))} />
     </fieldset>
   );
 }
@@ -147,16 +135,7 @@ function PerformanceSection() {
       <fieldset className="px-3 py-2">
         <legend className="text-[15px] font-medium">{t("userSettings.motion")}</legend>
         <p className="mt-0.5 mb-2 text-[13px] leading-relaxed text-ink-muted">{t("userSettings.motionHint")}</p>
-        <div className="flex flex-wrap gap-2">
-          {MOTIONS.map((m) => (
-            <label key={m} className="relative">
-              <input type="radio" name="motion" value={m} checked={a.motion === m} onChange={() => appearance.set({ motion: m })} className="peer sr-only" />
-              <span className="grid h-10 cursor-pointer place-items-center rounded-control border border-line-strong px-4 text-sm font-medium text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 peer-checked:border-cosmic-300 peer-checked:bg-cosmic-wash peer-checked:text-ink peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-cosmic-300">
-                {t(MOTION_LABEL[m])}
-              </span>
-            </label>
-          ))}
-        </div>
+        <Segmented name="motion" value={a.motion} onChange={(m) => appearance.set({ motion: m })} options={MOTIONS.map((m) => ({ value: m, label: t(MOTION_LABEL[m]) }))} />
       </fieldset>
     </>
   );

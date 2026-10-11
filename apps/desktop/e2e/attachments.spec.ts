@@ -209,15 +209,15 @@ test("drag and drop: overlay while dragging, files join the tray; a drop elsewhe
       [type, Array.from(png), withFile] as const,
     );
   expect(await drag("dragenter", main.locator("> div").first(), true)).toBe(true);
-  await expect(page.getByText("Thả tệp vào đây để đính kèm")).toBeVisible();
+  await expect(page.getByText("Thả tệp vào đây để gửi")).toBeVisible();
   expect(await drag("drop", main.locator("> div").first(), true)).toBe(true);
-  await expect(page.getByText("Thả tệp vào đây để đính kèm")).toBeHidden();
+  await expect(page.getByText("Thả tệp vào đây để gửi")).toBeHidden();
   await expect(trayItem("tha.png")).toBeVisible();
   await tray().getByRole("button", { name: "Bỏ tệp tha.png" }).click();
 
   // a text drag shows no overlay; a file dropped on the rail (outside the conversation) is swallowed, not opened
   expect(await drag("dragenter", main.locator("> div").first(), false)).toBe(false);
-  await expect(page.getByText("Thả tệp vào đây để đính kèm")).toBeHidden();
+  await expect(page.getByText("Thả tệp vào đây để gửi")).toBeHidden();
   const href = await page.evaluate(() => location.href);
   expect(await drag("drop", page.getByRole("navigation", { name: "Danh sách máy chủ" }), true)).toBe(true); // the window guard prevented the default
   expect(await page.evaluate(() => location.href)).toBe(href);

@@ -33,10 +33,12 @@ export function createVoicePresence() {
   };
 }
 
+const NONE: Participant[] = []; // one shared empty list, so "nobody" is the same value every time
+
 /**
  * The people to show for a voice channel: while we are connected to it the live room is the truth, otherwise
  * the pushed / fetched list.
  */
 export function participantsFor(channelId: string, lists: Record<string, Seat[]>, live: { channelId: string; participants: Participant[] } | null): Participant[] {
-  return live?.channelId === channelId ? live.participants : (lists[channelId] ?? []);
+  return live?.channelId === channelId ? live.participants : (lists[channelId] ?? NONE);
 }

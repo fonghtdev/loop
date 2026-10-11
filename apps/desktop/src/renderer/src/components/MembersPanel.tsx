@@ -12,6 +12,7 @@ import { Dialog, DialogActions, DialogError } from "./Dialog";
 import { Button } from "./Button";
 import { errorMessage } from "../lib/errors";
 import { MenuItem, RowMenu } from "./RowMenu";
+import { Tooltip } from "./Tooltip";
 
 const CHIPS = 3;
 
@@ -28,32 +29,36 @@ export function MembersPanel({ ctx }: { ctx: SettingsCtx }) {
   return (
     <div className="flex max-w-2xl flex-col gap-3">
       <p className="text-sm text-ink-muted">{t("settingsMembers.intro", { count: String(ctx.members.length) })}</p>
-      <ul aria-label={t("settingsMembers.list")} className="flex flex-col gap-1">
+      <ul aria-label={t("settingsMembers.list")} className="relative edge flex flex-col gap-0.5 rounded-panel bg-raise p-2 shadow-e2">
         {ctx.members.map((m) => {
           const chips = byPosition.filter((r) => m.roleIds.includes(r.id));
           return (
-            <li key={m.userId} className="flex min-h-14 items-center gap-3 rounded-control border border-line px-3 py-1.5">
+            <li key={m.userId} className="flex min-h-14 items-center gap-3 rounded-control px-3 py-1.5 transition-colors duration-(--duration-fast) hover:bg-white/[.045]">
               <Avatar id={m.userId} name={m.username} className="size-8 rounded-full text-xs" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  <span className="min-w-0 truncate text-sm font-medium select-text" title={m.username}>
-                    {m.username}
-                  </span>
+                  <Tooltip label={m.username}>
+                    <span className="min-w-0 truncate text-ui font-medium select-text">{m.username}</span>
+                  </Tooltip>
                   {m.userId === ownerId && (
-                    <span title={t("members.owner")} className="shrink-0 text-warning">
-                      <Crown aria-hidden="true" weight="fill" size={16} />
-                      <span className="sr-only">{t("members.owner")}</span>
-                    </span>
+                    <Tooltip label={t("members.owner")}>
+                      <span className="shrink-0 text-warning">
+                        <Crown aria-hidden="true" weight="fill" size={16} />
+                        <span className="sr-only">{t("members.owner")}</span>
+                      </span>
+                    </Tooltip>
                   )}
                 </div>
                 {chips.length > 0 && (
                   <ul aria-label={t("settingsMembers.roles")} className="mt-1 flex flex-wrap gap-1">
                     {chips.slice(0, CHIPS).map((r) => (
-                      <li key={r.id} title={r.name} className="max-w-28 truncate rounded-control bg-surface-3 px-2 py-0.5 text-xs text-ink-muted">
-                        {r.name}
+                      <li key={r.id} className="max-w-28 rounded-control bg-surface-3 px-2 py-0.5 text-caption text-ink-muted">
+                        <Tooltip label={r.name}>
+                          <span className="block truncate">{r.name}</span>
+                        </Tooltip>
                       </li>
                     ))}
-                    {chips.length > CHIPS && <li className="rounded-control bg-surface-3 px-2 py-0.5 text-xs text-ink-muted">+{chips.length - CHIPS}</li>}
+                    {chips.length > CHIPS && <li className="rounded-control bg-surface-3 px-2 py-0.5 text-caption text-ink-muted">+{chips.length - CHIPS}</li>}
                   </ul>
                 )}
               </div>
@@ -119,7 +124,7 @@ function AssignBody({ ctx, member, onDone }: { ctx: SettingsCtx; member: Member;
           const locked = !canHandOutRole(standing, r, channels);
           return (
             <li key={r.id}>
-              <label title={locked ? t("settingsMembers.roleLocked") : undefined} className={`flex min-h-10 items-center gap-3 rounded-control px-2 ${locked ? "opacity-70" : "cursor-pointer hover:bg-surface-4"}`}>
+              <label className={`flex min-h-10 items-center gap-3 rounded-control px-2 ${locked ? "opacity-70" : "cursor-pointer hover:bg-surface-4"}`}>
                 <input
                   type="checkbox"
                   checked={member.roleIds.includes(r.id)}
@@ -127,9 +132,8 @@ function AssignBody({ ctx, member, onDone }: { ctx: SettingsCtx; member: Member;
                   onChange={(e) => toggle.mutate({ roleId: r.id, on: e.target.checked })}
                   className="size-5 shrink-0 accent-moss-400"
                 />
-                <span className="min-w-0 truncate" title={r.name}>
-                  {r.name}
-                </span>
+                <span className="min-w-0 flex-1 truncate">{r.name}</span>
+                {locked && <span className="shrink-0 text-caption text-ink-muted">{t("settingsMembers.roleLocked")}</span>}
               </label>
             </li>
           );

@@ -6,11 +6,13 @@ import { guardSettings, settingsSections, type SettingsCtx, type SettingsTab } f
 import { errorMessage } from "../lib/errors";
 import { useNav } from "../lib/nav";
 import { useGuild, useMembers, usePermissions, useRoles } from "../lib/queries";
+import { useTabIndicator } from "../lib/tabs-hooks";
 import { DangerPanel } from "./DangerPanel";
 import { MembersPanel } from "./MembersPanel";
 import { OverwritesPanel } from "./OverwritesPanel";
 import { RolesPanel } from "./RolesPanel";
 import { LoadError, Skeleton } from "./States";
+import { Tooltip } from "./Tooltip";
 
 const TAB_LABELS: Record<SettingsTab, MessageKey> = {
   roles: "settings.tab.roles",
@@ -32,6 +34,9 @@ export function ServerSettings({ guildId }: { guildId: string }) {
   const sections = settingsSections(perms.bits, perms.standing?.isOwner ?? false);
   const tab = perms.ready ? guardSettings(requested, sections) : requested;
   const heading = useRef<HTMLHeadingElement>(null);
+  const tabList = useRef<HTMLDivElement>(null);
+  const indicator = useRef<HTMLSpanElement>(null);
+  useTabIndicator(tabList, indicator, tab ?? "", sections.join());
 
   useEffect(() => {
     if (perms.ready && tab !== requested) useNav.setState({ settings: tab });
@@ -64,23 +69,19 @@ export function ServerSettings({ guildId }: { guildId: string }) {
 
   return (
     <section aria-labelledby="settings-title" className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4 font-display text-[15px] font-bold">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-hair bg-head px-4 font-display text-[15px] font-bold shadow-[inset_0_1px_0_var(--color-highlight)]">
         <Gear aria-hidden="true" className="shrink-0 text-ink-muted" />
         <h1 id="settings-title" ref={heading} tabIndex={-1} className="min-w-0 flex-1 truncate outline-none">
           {t("settings.title", { name: guild.data?.guild.name ?? "" })}
         </h1>
-        <button
-          type="button"
-          onClick={() => useNav.setState({ settings: null })}
-          aria-label={t("settings.close")}
-          title={t("settings.close")}
-          className="grid size-10 shrink-0 place-items-center rounded-control text-ink-muted hover:bg-surface-4 hover:text-ink"
-        >
-          <X aria-hidden="true" />
-        </button>
+        <Tooltip label={t("settings.close")}>
+          <button type="button" onClick={() => useNav.setState({ settings: null })} aria-label={t("settings.close")} className="grid size-10 shrink-0 place-items-center rounded-control text-ink-muted hover:bg-surface-4 hover:text-ink active:scale-[.98]">
+            <X aria-hidden="true" />
+          </button>
+        </Tooltip>
       </header>
       {tab && (
-        <div role="tablist" aria-label={t("settings.tabs")} onKeyDown={move} className="flex shrink-0 flex-wrap gap-1 border-b border-line px-3 py-1.5">
+        <div ref={tabList} role="tablist" aria-label={t("settings.tabs")} onKeyDown={move} className="relative flex shrink-0 gap-1 overflow-x-auto border-b border-hair px-4 [scrollbar-width:none]">
           {sections.map((s) => (
             <button
               key={s}
@@ -91,11 +92,18 @@ export function ServerSettings({ guildId }: { guildId: string }) {
               aria-controls="settings-panel"
               tabIndex={s === tab ? 0 : -1}
               onClick={() => useNav.setState({ settings: s })}
-              className={`h-10 rounded-control px-3 text-sm font-medium ${s === tab ? "bg-surface-4 text-ink" : "text-ink-muted hover:bg-surface-3 hover:text-ink"} ${s === "danger" ? "text-danger!" : ""}`}
+              className={`h-12 rounded-t-control px-4 text-ui font-semibold whitespace-nowrap transition-colors duration-(--duration-fast) ${s === tab ? "text-ink" : "text-ink-muted hover:bg-white/[.045] hover:text-ink"} ${s === "danger" ? "text-danger!" : ""}`}
             >
               {t(TAB_LABELS[s])}
             </button>
           ))}
+          <span
+            ref={indicator}
+            aria-hidden="true"
+            data-tab-indicator
+            style={{ transform: "translateX(0) scaleX(0)" }}
+            className="pointer-events-none absolute bottom-[-1px] left-0 h-0.5 w-[100px] origin-left rounded-t-xs bg-cosmic shadow-[0_0_12px_var(--color-cosmic-glow)]"
+          />
         </div>
       )}
       <div id="settings-panel" role="tabpanel" aria-labelledby={tab ? `settings-tab-${tab}` : undefined} className="min-h-0 flex-1 overflow-y-auto p-4">

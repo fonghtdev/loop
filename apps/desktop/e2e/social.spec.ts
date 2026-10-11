@@ -330,6 +330,6 @@ test("Home survives 60 friends and 40 DMs at 1280x800 and 960x600 (no horizontal
     expect(await dmList().evaluate((el) => el.parentElement!.scrollHeight > el.parentElement!.clientHeight)).toBe(true);
   }
   await expectEllipsis(dmList().getByRole("button", { name: new RegExp(longTag) }).locator("span.truncate"));
-  await expectEllipsis(friendRows().filter({ hasText: longTag }).locator("span[title]").first());
+  await expectEllipsis(friendRows().filter({ hasText: longTag }).locator("span.truncate").first());
   await resize(app, 1280, 800);
 });

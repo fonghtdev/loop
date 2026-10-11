@@ -2,6 +2,7 @@ import { Eye, EyeSlash } from "@phosphor-icons/react";
 import { useId, useState, type InputHTMLAttributes, type Ref } from "react";
 import { t } from "../i18n/t";
 import { Collapse } from "./Collapse";
+import { Tooltip } from "./Tooltip";
 
 type Props = InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: string; hintOpen?: boolean; error?: string; ref?: Ref<HTMLInputElement> };
 
@@ -27,16 +28,17 @@ export function TextField({ label, hint, hintOpen = true, error, type = "text", 
           className={`h-11 w-full rounded-control border bg-surface-3 px-3.5 text-[15px] text-ink transition-colors duration-(--duration-fast) placeholder:text-ink-faint hover:bg-surface-4 ${isPassword ? "pr-12" : ""} ${error ? "border-danger" : "border-line-strong focus-visible:border-cosmic-300"}`}
         />
         {isPassword && (
-          <button
-            type="button"
-            onClick={() => setReveal((r) => !r)}
-            aria-label={reveal ? t("auth.hidePassword") : t("auth.showPassword")}
-            aria-pressed={reveal}
-            title={reveal ? t("auth.hidePassword") : t("auth.showPassword")}
-            className="absolute top-0.5 right-0.5 grid size-10 place-items-center rounded-[10px] text-ink-muted transition-colors hover:bg-surface-4 hover:text-ink"
-          >
-            {reveal ? <EyeSlash aria-hidden="true" /> : <Eye aria-hidden="true" />}
-          </button>
+          <Tooltip label={reveal ? t("auth.hidePassword") : t("auth.showPassword")}>
+            <button
+              type="button"
+              onClick={() => setReveal((r) => !r)}
+              aria-label={reveal ? t("auth.hidePassword") : t("auth.showPassword")}
+              aria-pressed={reveal}
+              className="absolute top-0.5 right-0.5 grid size-10 place-items-center rounded-[10px] text-ink-muted transition-colors hover:bg-surface-4 hover:text-ink"
+            >
+              {reveal ? <EyeSlash aria-hidden="true" /> : <Eye aria-hidden="true" />}
+            </button>
+          </Tooltip>
         )}
       </div>
       {hint && (
