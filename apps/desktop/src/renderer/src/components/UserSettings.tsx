@@ -6,11 +6,13 @@ import type { UpdateStatus } from "../../../shared/update";
 import { t } from "../i18n/t";
 import type { MessageKey } from "../i18n/vi";
 import { appearance, MOTIONS, useAppearance, type Appearance } from "../lib/appearance";
+import { density, DENSITIES, useDensity, type Density } from "../lib/density";
 import { appSettings, devices, session, unlockDeviceLabels } from "../lib/app";
 import { DEVICE_KINDS, labelsAvailable, optionsFor, type DeviceKind } from "../lib/devices";
 import { useNav } from "../lib/nav";
 import { Button } from "./Button";
 import { Switch } from "./Switch";
+import { Tooltip } from "./Tooltip";
 
 /**
  * The user's own settings (main area, solid, nav place `settings: "user"`). Notification and system switches are
@@ -44,9 +46,11 @@ export function UserSettings() {
         <h1 id="user-settings-title" ref={heading} tabIndex={-1} className="min-w-0 flex-1 truncate outline-none">
           {t("userSettings.title")}
         </h1>
-        <button type="button" onClick={close} aria-label={t("settings.close")} title={t("settings.close")} className="grid size-10 shrink-0 place-items-center rounded-control text-ink-muted hover:bg-surface-4 hover:text-ink">
-          <X aria-hidden="true" />
-        </button>
+        <Tooltip label={t("settings.close")} kbd="Esc">
+          <button type="button" onClick={close} aria-label={t("settings.close")} className="grid size-10 shrink-0 place-items-center rounded-control text-ink-muted hover:bg-surface-4 hover:text-ink active:scale-[.98]">
+            <X aria-hidden="true" />
+          </button>
+        </Tooltip>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto flex max-w-2xl flex-col gap-4">
@@ -61,6 +65,9 @@ export function UserSettings() {
           <Group id="system" title="userSettings.system">
             <Switch label={t("userSettings.closeToTray")} description={t("userSettings.closeToTrayHint")} checked={settings.closeToTray} onChange={save("closeToTray")} />
             <Switch label={t("userSettings.startAtLogin")} description={t("userSettings.startAtLoginHint")} checked={settings.startAtLogin} onChange={save("startAtLogin")} />
+          </Group>
+          <Group id="looks" title="userSettings.looks">
+            <LooksSection />
           </Group>
           <Group id="performance" title="userSettings.performance">
             <PerformanceSection />
@@ -107,6 +114,29 @@ const MOTION_LABEL: Record<Appearance["motion"], MessageKey> = {
   reduced: "userSettings.motionReduced",
   full: "userSettings.motionFull",
 };
+
+const DENSITY_LABEL: Record<Density, MessageKey> = { comfy: "userSettings.densityComfy", compact: "userSettings.densityCompact" };
+
+/** Per-ACCOUNT look: how tight the message list is. Applied at once, stored under the account's id (lib/density). */
+function LooksSection() {
+  const current = useDensity();
+  return (
+    <fieldset className="px-3 py-2">
+      <legend className="text-[15px] font-medium">{t("userSettings.density")}</legend>
+      <p className="mt-0.5 mb-2 text-[13px] leading-relaxed text-ink-muted">{t("userSettings.densityHint")}</p>
+      <div className="flex flex-wrap gap-2">
+        {DENSITIES.map((d) => (
+          <label key={d} className="relative">
+            <input type="radio" name="density" value={d} checked={current === d} onChange={() => density.set(d)} className="peer sr-only" />
+            <span className="grid h-10 cursor-pointer place-items-center rounded-control border border-line-strong px-4 text-sm font-medium text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 peer-checked:border-cosmic-300 peer-checked:bg-cosmic-wash peer-checked:text-ink peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-cosmic-300">
+              {t(DENSITY_LABEL[d])}
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
 
 /** Per-device look: film grain on/off and how much the UI moves. Applied at once, stored in localStorage (lib/appearance). */
 function PerformanceSection() {

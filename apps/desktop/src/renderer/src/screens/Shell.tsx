@@ -1,5 +1,5 @@
 import { SignOut } from "@phosphor-icons/react";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useSyncExternalStore, type RefObject } from "react";
 import { useStore } from "zustand";
 import { Banner } from "../components/Banner";
 import { Button } from "../components/Button";
@@ -17,10 +17,14 @@ import { UserSettings } from "../components/UserSettings";
 import { VoiceBar } from "../components/VoiceBar";
 import { VoiceRoom } from "../components/VoiceRoom";
 import { ColumnHeader, EmptyState } from "../components/States";
+import { Tooltip } from "../components/Tooltip";
 import { t } from "../i18n/t";
 import { ApiError } from "../lib/auth-client";
 import { realtime, revalidateGuild, session, unread, voice, voicePresence } from "../lib/app";
+import { density } from "../lib/density";
+import { move, reducedNow } from "../lib/motion";
 import { goHome, readLastPlace, useNav } from "../lib/nav";
+import { stageShift, type StagePlace } from "../lib/stage";
 import { blockFileNavigation } from "../lib/drop";
 import { useDms, useGuild, useGuilds } from "../lib/queries";
 import { FriendsScreen } from "./FriendsScreen";
@@ -36,6 +40,34 @@ const subscribeOnline = (cb: () => void) => {
 const useOnline = () => useSyncExternalStore(subscribeOnline, () => navigator.onLine);
 
 /**
+ * One 200 ms fade + slight slide of the MAIN area when the place changes (server, channel, DM, settings): the container
+ * only, never the rows inside, skipped under reduced motion, transform/opacity only, so focus and the pinned-to-bottom
+ * scroll are not touched. Takes the raw place, so the first channel a server resolves does not start a second one.
+ */
+function useStageTransition(target: RefObject<HTMLElement | null>, place: StagePlace, guildOrder: string[] | undefined) {
+  const prev = useRef(place);
+  const order = useRef(guildOrder);
+  order.current = guildOrder;
+  useLayoutEffect(() => {
+    const shift = stageShift(prev.current, place, order.current ?? []);
+    prev.current = place;
+    const el = target.current;
+    if (!shift || !el || reducedNow()) return;
+    move(el, {
+      opacity: [0.2, 1],
+      x: [shift.x, 0],
+      y: [shift.y, 0],
+      duration: 200,
+      ease: "outQuart",
+      onComplete: () => {
+        el.style.removeProperty("opacity");
+        el.style.removeProperty("transform");
+      },
+    });
+  }, [place.guildId, place.channelId, place.dmId, place.settings]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/**
  * The signed-in frame: server rail | channel column (+ user panel) | main | members, with a notice row on top.
  * Column widths are fixed so nothing jumps; only the main column flexes (min window 960px wide).
  */
@@ -47,6 +79,10 @@ export function Shell() {
   const dmId = useNav((s) => s.dmId);
   const settings = useNav((s) => s.settings);
   const channelId = useValidPlace();
+  const rawChannelId = useNav((s) => s.channelId);
+  const main = useRef<HTMLElement>(null);
+  const guildIds = useGuilds().data?.map((g) => g.id);
+  useStageTransition(main, { guildId, channelId: rawChannelId, dmId, settings: settings === "user" ? "user" : settings ? "server" : null }, guildIds);
   const channels = useGuild(guildId).data?.channels;
   const voiceChannelIds = channels?.filter((c) => c.type === "VOICE").map((c) => c.id);
   const notice = useStore(voice.store, (s) => s.notice);
@@ -75,6 +111,12 @@ export function Shell() {
   useEffect(() => {
     if (user) useNav.setState(readLastPlace(user.id));
   }, [user?.id]); // only when the account changes, not on every user object
+
+  // The message density is the account's own: it follows the user in, and nothing of it stays after sign-out.
+  useLayoutEffect(() => {
+    density.load(user?.id ?? null);
+    return () => density.load(null);
+  }, [user?.id]);
 
   // A dropped file must never navigate the window to it (the conversation's own drop zone handles real drops).
   useEffect(() => blockFileNavigation(window), []);
@@ -129,35 +171,37 @@ export function Shell() {
           )}
           <VoiceBar />
           <section aria-label={t("shell.account")} className="grain flex h-16 shrink-0 items-center gap-3 border-t border-hair bg-surface-0 px-3 shadow-[inset_0_1px_0_var(--color-highlight)]">
-            <button
-              type="button"
-              onClick={() => useNav.setState({ settings: "user" })}
-              aria-label={t("userSettings.open")}
-              title={t("userSettings.open")}
-              aria-current={settings === "user" ? "page" : undefined}
-              className="flex min-w-0 flex-1 items-center gap-3 rounded-control py-1 text-left transition-colors duration-(--duration-fast) hover:bg-surface-4"
-            >
-              <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-moss-900 font-display font-bold text-moss-200">
-                {user?.username.charAt(0).toUpperCase()}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-semibold">{user?.username}</span>
-                <span className="block truncate text-xs text-ink-muted">{user?.email}</span>
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => void session.logout()}
-              aria-label={t("shell.logout")}
-              title={t("shell.logout")}
-              className="grid size-10 shrink-0 place-items-center rounded-control text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 hover:text-ink"
-            >
-              <SignOut aria-hidden="true" />
-            </button>
+            <Tooltip label={t("userSettings.open")}>
+              <button
+                type="button"
+                onClick={() => useNav.setState({ settings: "user" })}
+                aria-label={t("userSettings.open")}
+                aria-current={settings === "user" ? "page" : undefined}
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-control py-1 text-left transition-colors duration-(--duration-fast) hover:bg-surface-4 active:scale-[.98]"
+              >
+                <span aria-hidden="true" className="relative grid size-9 shrink-0 place-items-center rounded-full bg-moss-900 font-display font-bold text-moss-200 ring-2 ring-presence-on/60 ring-offset-2 ring-offset-surface-0">
+                  {user?.username.charAt(0).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-ui font-semibold">{user?.username}</span>
+                  <span className="block truncate text-caption text-ink-muted">{user?.email}</span>
+                </span>
+              </button>
+            </Tooltip>
+            <Tooltip label={t("shell.logout")}>
+              <button
+                type="button"
+                onClick={() => void session.logout()}
+                aria-label={t("shell.logout")}
+                className="grid size-10 shrink-0 place-items-center rounded-control text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 hover:text-ink active:scale-[.98]"
+              >
+                <SignOut aria-hidden="true" />
+              </button>
+            </Tooltip>
           </section>
         </nav>
 
-        <main className="grain flex min-h-0 min-w-0 flex-col bg-surface-2">
+        <main ref={main} className="grain flex min-h-0 min-w-0 flex-col bg-surface-2">
           {settings === "user" ? (
             <UserSettings />
           ) : guildId && settings ? (

@@ -9,6 +9,7 @@ import type { ConvKey } from "../lib/conversation";
 import { nameForPasted, pastedFiles } from "../lib/drop";
 import { COUNTER_FROM, isSubmitKey, MAX_MESSAGE_LENGTH } from "../lib/text";
 import { AttachmentTray } from "./AttachmentTray";
+import { Tooltip } from "./Tooltip";
 
 /** Native key event fields for `isSubmitKey` (React's synthetic event hides isComposing/keyCode on nativeEvent). */
 export const submitKey = (e: KeyboardEvent) =>
@@ -61,17 +62,22 @@ export function Composer({ convKey, label, placeholder, files, ready, closedReas
         </div>
       )}
       <AttachmentTray items={files.items} onRetry={files.queue.retry} onRemove={files.queue.remove} />
-      <div className={`flex items-end gap-1 rounded-panel border bg-surface-3 py-1.5 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-moss-300 pr-1.5 pl-1.5 ${over ? "border-danger" : "border-line-strong"}`}>
-        <button
-          type="button"
-          onClick={() => picker.current?.click()}
-          disabled={disabled}
-          aria-label={t("attachment.pick")}
-          title={t("attachment.pick")}
-          className="grid size-10 shrink-0 place-items-center rounded-control text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 hover:text-ink disabled:cursor-not-allowed disabled:text-ink-faint disabled:hover:bg-transparent"
-        >
-          <Paperclip aria-hidden="true" />
-        </button>
+      <div
+        className={`relative edge flex items-end gap-1 rounded-card bg-surface-3 p-1.5 shadow-e2 transition-shadow duration-(--duration-base) focus-within:shadow-[var(--shadow-e2),0_0_0_3px_var(--color-cosmic-glow-soft)] focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-cosmic-300 ${over ? "ring-1 ring-danger" : ""}`}
+      >
+        <Tooltip label={t("attachment.pick")}>
+          <span className="inline-flex">
+            <button
+              type="button"
+              onClick={() => picker.current?.click()}
+              disabled={disabled}
+              aria-label={t("attachment.pick")}
+              className="grid size-10 shrink-0 place-items-center rounded-control text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 hover:text-ink active:scale-[.98] disabled:cursor-not-allowed disabled:text-ink-faint disabled:hover:bg-transparent"
+            >
+              <Paperclip aria-hidden="true" />
+            </button>
+          </span>
+        </Tooltip>
         <input
           ref={picker}
           type="file"
@@ -101,18 +107,21 @@ export function Composer({ convKey, label, placeholder, files, ready, closedReas
           }}
           className="max-h-[40vh] min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[15px] leading-6 text-ink [field-sizing:content] placeholder:text-ink-faint focus-visible:outline-none disabled:cursor-not-allowed"
         />
-        <button
-          type="button"
-          onClick={send}
-          disabled={!canSend}
-          aria-label={t("composer.send")}
-          title={t("composer.send")}
-          className="grid size-10 shrink-0 place-items-center rounded-control text-moss-300 transition-colors duration-(--duration-fast) hover:bg-surface-4 disabled:cursor-not-allowed disabled:text-ink-faint disabled:hover:bg-transparent"
-        >
-          <PaperPlaneRight aria-hidden="true" weight="fill" />
-        </button>
+        <Tooltip label={t("composer.send")} kbd="Enter">
+          <span className="inline-flex">
+            <button
+              type="button"
+              onClick={send}
+              disabled={!canSend}
+              aria-label={t("composer.send")}
+              className="grid size-10 shrink-0 place-items-center rounded-control bg-moss text-on-moss shadow-moss transition-[filter,scale] duration-(--duration-fast) hover:brightness-105 active:scale-[.98] disabled:cursor-not-allowed disabled:bg-surface-4 disabled:bg-none disabled:text-ink-faint disabled:shadow-none disabled:hover:brightness-100"
+            >
+              <PaperPlaneRight aria-hidden="true" weight="fill" />
+            </button>
+          </span>
+        </Tooltip>
       </div>
-      <p id={counterId} aria-live="polite" className={`mt-1 h-4 px-2 text-right text-xs ${over ? "font-semibold text-danger" : "text-ink-faint"}`}>
+      <p id={counterId} aria-live="polite" className={`numeric mt-1 h-4 px-2 text-right text-caption ${over ? "font-semibold text-danger" : "text-ink-faint"}`}>
         {length >= COUNTER_FROM ? (over ? t("composer.over", { count: String(length - MAX_MESSAGE_LENGTH) }) : t("composer.remaining", { count: String(MAX_MESSAGE_LENGTH - length) })) : ""}
       </p>
     </div>

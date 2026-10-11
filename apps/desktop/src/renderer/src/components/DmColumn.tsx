@@ -11,6 +11,7 @@ import { Badge, UnreadDot } from "./Badge";
 import { PresenceAvatar } from "./Avatar";
 import { FriendsArt } from "./Illustrations";
 import { ColumnHeader, EmptyState, LoadError, Skeleton } from "./States";
+import { Tooltip } from "./Tooltip";
 
 /** Home's channel column: the Friends entry, then the DMs (newest activity first) with an online dot. */
 export function DmColumn() {
@@ -70,12 +71,12 @@ function DmRow({ dm, active, online }: { dm: Dm; active: boolean; online: boolea
       data-unread={unread ? "true" : undefined}
       aria-current={active ? "page" : undefined}
       onClick={() => useNav.setState({ dmId: dm.id })}
-      className={`flex h-12 w-full items-center gap-2.5 rounded-control px-2 text-left text-[15px] transition-colors duration-(--duration-fast) ${active ? "bg-surface-4 font-semibold text-ink" : unread ? "font-bold text-ink hover:bg-surface-3" : "text-ink-muted hover:bg-surface-3 hover:text-ink"}`}
+      className={`flex h-12 w-full items-center gap-2.5 rounded-control px-2 text-left text-[15px] transition-colors duration-(--duration-fast) active:scale-[.98] ${active ? "bg-[linear-gradient(90deg,var(--color-cosmic-wash),rgb(255_255_255/.05)_60%)] font-semibold text-ink" : unread ? "font-bold text-ink hover:bg-white/[.045]" : "text-ink-muted hover:bg-white/[.045] hover:text-ink"}`}
     >
       <PresenceAvatar id={dm.user.id} name={dm.user.username} online={online} className="size-8 rounded-full text-xs" />
-      <span title={dm.user.username} className="min-w-0 flex-1 truncate">
-        {dm.user.username}
-      </span>
+      <Tooltip label={dm.user.username}>
+        <span className="min-w-0 flex-1 truncate">{dm.user.username}</span>
+      </Tooltip>
       {count > 0 && <Badge count={count} />}
       {dot && <UnreadDot />}
     </button>

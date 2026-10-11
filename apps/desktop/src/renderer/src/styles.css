@@ -138,6 +138,7 @@
   --animate-fade: fade var(--duration-base) var(--ease-out-soft) both; /* splash content */
   --animate-shake: shake 320ms var(--ease-out-quart) both; /* a field that just got an error */
   --animate-err: err var(--duration-slow) var(--ease-out-soft) both; /* the error line sliding in */
+  --animate-pop: pop var(--duration-slow) var(--ease-out-soft) both; /* "N tin nhắn mới" pill */
   --animate-drift-a: drift-a 48s ease-in-out infinite alternate; /* aurora, auth screen only */
   --animate-drift-b: drift-b 56s ease-in-out infinite alternate;
   --animate-drift-c: drift-a 64s ease-in-out infinite alternate-reverse;
@@ -146,6 +147,12 @@
     from {
       opacity: 0;
       transform: translateY(60%);
+    }
+  }
+  @keyframes pop {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.96);
     }
   }
   @keyframes fade {
@@ -204,6 +211,25 @@
   --glass-saturate: 1.4;
   /* film grain: monochrome fractal noise, 2% (raster once, no filter at runtime), SOLID big surfaces only */
   --grain-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.02'/%3E%3C/svg%3E");
+}
+
+/*
+ * Message density, per account (lib/density.ts puts data-density on <html>): row sizes only, never the DOM structure.
+ * --m-av avatar, --m-gs gap above a new author's block, --m-py row padding, --m-fs / --m-lh message text.
+ */
+:root {
+  --m-av: 40px;
+  --m-gs: 16px;
+  --m-py: 2px;
+  --m-fs: 15px;
+  --m-lh: 24px;
+}
+html[data-density="compact"] {
+  --m-av: 32px;
+  --m-gs: 8px;
+  --m-py: 0px;
+  --m-fs: 14px;
+  --m-lh: 20px;
 }
 
 /* ponytail: CSS-only glass; native vibrancy/Mica/acrylic is the upgrade path if a true OS material is ever wanted. */

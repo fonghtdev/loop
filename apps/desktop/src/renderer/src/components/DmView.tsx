@@ -10,6 +10,7 @@ import { isActive } from "../lib/voice-hooks";
 import { PresenceAvatar } from "./Avatar";
 import { Conversation } from "./ChatView";
 import { ColumnHeader, Skeleton } from "./States";
+import { Tooltip } from "./Tooltip";
 
 /** Why writing is closed in a DM, in words (null = open). History stays readable in every case. */
 const closedReason = (state: DmComposerState, name: string) =>
@@ -45,23 +46,23 @@ export function DmView({ dmId }: { dmId: string }) {
       header={
         <>
           <PresenceAvatar id={dm.user.id} name={name} online={online} ring={2} className="size-8 rounded-full text-xs" />
-          <h1 title={name} className="min-w-0 truncate">
-            {name}
-          </h1>
+          <h1 className="min-w-0 truncate">{name}</h1>
           <span className="shrink-0 text-xs font-normal text-ink-muted">{online ? t("presence.online") : t("presence.offline")}</span>
           <span className="ml-auto flex shrink-0 gap-1">
             {[false, true].map((video) => (
-              <button
-                key={String(video)}
-                type="button"
-                aria-label={video ? t("call.video") : t("call.voice")}
-                title={state !== "ok" ? t("call.unavailable") : inCall ? t("call.inCall") : video ? t("call.video") : t("call.voice")}
-                disabled={state !== "ok" || inCall}
-                onClick={() => void calls.start(dmId, name, video)}
-                className="grid size-10 place-items-center rounded-control text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
-              >
-                {video ? <VideoCamera aria-hidden="true" /> : <Phone aria-hidden="true" />}
-              </button>
+              <Tooltip key={String(video)} label={state !== "ok" ? t("call.unavailable") : inCall ? t("call.inCall") : video ? t("call.video") : t("call.voice")}>
+                <span className="inline-flex">
+                  <button
+                    type="button"
+                    aria-label={video ? t("call.video") : t("call.voice")}
+                    disabled={state !== "ok" || inCall}
+                    onClick={() => void calls.start(dmId, name, video)}
+                    className="grid size-10 place-items-center rounded-control text-ink-muted transition-colors duration-(--duration-fast) hover:bg-surface-4 hover:text-ink active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+                  >
+                    {video ? <VideoCamera aria-hidden="true" /> : <Phone aria-hidden="true" />}
+                  </button>
+                </span>
+              </Tooltip>
             ))}
           </span>
         </>

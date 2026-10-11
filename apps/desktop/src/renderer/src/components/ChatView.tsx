@@ -1,15 +1,17 @@
 import { Permission } from "@loop/shared";
-import { ArrowDown, ArrowClockwise, Copy, Hash, PencilSimple, Trash, UploadSimple, WarningCircle } from "@phosphor-icons/react";
+import { ArrowDown, ArrowClockwise, Check, Copy, Hash, PencilSimple, Trash, UploadSimple, WarningCircle } from "@phosphor-icons/react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
 import { chat, realtime, session, unread } from "../lib/app";
 import { EMPTY_CONV, type ConvChat, type Message, type Pending } from "../lib/chat";
+import { shouldAnimateArrival } from "../lib/arrival";
 import { useCopy } from "../lib/clipboard";
 import { useComposerFiles } from "../lib/composer-files";
 import { channelKey, type ConvKey } from "../lib/conversation";
 import { hasFiles } from "../lib/drop";
 import { errorMessage } from "../lib/errors";
+import { move, reducedNow } from "../lib/motion";
 import { useGuild, usePermissions } from "../lib/queries";
 import { linkify } from "../lib/text";
 import { buildTimeline, fullTimestamp, timeOfDay } from "../lib/timeline";
@@ -21,9 +23,29 @@ import { ChatArt, OrbitArt } from "./Illustrations";
 import { MessageAttachments } from "./MessageAttachments";
 import { Spinner } from "./Spinner";
 import { ColumnHeader, EmptyState, LoadError, Skeleton } from "./States";
+import { Tooltip } from "./Tooltip";
 
 const NEAR_BOTTOM_PX = 80;
 const LOAD_OLDER_PX = 400;
+
+/** The one row (or two) that just arrived live slides and fades in; nothing else in the list ever animates. */
+function arrive(list: HTMLElement, ids: string[]) {
+  for (const id of ids) {
+    const row = list.querySelector<HTMLElement>(`[data-mid="${CSS.escape(id)}"]`);
+    if (!row) continue;
+    row.dataset.arrived = "live";
+    move(row, {
+      opacity: [0, 1],
+      y: [10, 0],
+      duration: 220,
+      ease: "outQuart",
+      onComplete: () => {
+        row.style.removeProperty("opacity");
+        row.style.removeProperty("transform");
+      },
+    });
+  }
+}
 
 /** The open text channel of a server. */
 export function ChatView({ guildId, channelId }: { guildId: string; channelId: string }) {
@@ -131,6 +153,8 @@ function MessageList({ convKey, logLabel, start, state, canManage }: { convKey: 
   const [unseen, setUnseen] = useState(0);
   const [announce, setAnnounce] = useState("");
   const [toDelete, setToDelete] = useState<Message | null>(null);
+  const latest = useRef(state);
+  latest.current = state;
 
   // Keep the view where the reader expects it after every change of the list (before paint, so nothing jumps).
   useLayoutEffect(() => {
@@ -146,6 +170,10 @@ function MessageList({ convKey, logLabel, start, state, canManage }: { convKey: 
       const lastIndex = prev.last ? messages.findIndex((m) => m.id === prev.last) : -1;
       const added = lastIndex === -1 ? [] : messages.slice(lastIndex + 1).filter((m) => m.author.id !== myId);
       const ownSend = pending.length > prev.pending;
+      const inView = pinned.current || ownSend;
+      const now = latest.current;
+      const arrivals = added.filter((m) => now.live.includes(m.id)).map((m) => m.id);
+      if (arrivals.length && shouldAnimateArrival({ live: true, nearViewport: inView, settled: now.status === "ready" && !now.loadingOlder, reducedMotion: reducedNow() })) arrive(el, arrivals.slice(-2));
       if (pinned.current || ownSend || prev.last === "") {
         el.scrollTop = el.scrollHeight;
         pinned.current = true;
@@ -233,10 +261,10 @@ function MessageList({ convKey, logLabel, start, state, canManage }: { convKey: 
         <button
           type="button"
           onClick={jumpDown}
-          className="absolute bottom-3 left-1/2 flex h-10 -translate-x-1/2 animate-rise items-center gap-2 rounded-full bg-moss-400 px-4 text-sm font-semibold text-on-moss shadow-e3 hover:bg-moss-300"
+          className="absolute bottom-3 left-1/2 flex h-10 -translate-x-1/2 animate-pop items-center gap-2 rounded-full bg-moss-900 pr-4 pl-3 text-small font-semibold text-moss-200 shadow-[inset_0_0_0_1px_rgb(180_208_140/.38),var(--shadow-e3),0_0_24px_-6px_var(--color-glow)] hover:brightness-125 active:scale-[.98]"
         >
           <ArrowDown aria-hidden="true" />
-          {t("chat.newMessages", { count: String(unseen) })}
+          <span className="numeric">{t("chat.newMessages", { count: String(unseen) })}</span>
         </button>
       )}
       <Dialog open={toDelete !== null} onClose={() => setToDelete(null)} title={t("chat.deleteTitle")}>
@@ -277,7 +305,7 @@ function HistoryEdge({ state, convKey, start }: { state: ConvChat; convKey: Conv
 
 function MessageText({ content }: { content: string }) {
   return (
-    <p className="text-[15px] leading-relaxed whitespace-pre-wrap text-ink [overflow-wrap:anywhere] select-text">
+    <p className="max-w-[68ch] text-(length:--m-fs) leading-(--m-lh) whitespace-pre-wrap text-ink [overflow-wrap:anywhere] select-text">
       {linkify(content).map((part, i) =>
         part.href ? (
           <a
@@ -309,39 +337,41 @@ type RowProps = {
   onDelete: (m: Message) => void;
 };
 
-/** One message (memoized: with 1000+ loaded, only changed rows re-render). */
+/** One message (memoized: with 1000+ loaded, only changed rows re-render). Sizes come from the density variables (--m-*). */
 const MessageRow = memo(function MessageRow({ message, grouped, day, convKey, mine, canDelete, onDelete }: RowProps) {
   const [editing, setEditing] = useState(false);
   const { copied, copy } = useCopy();
   return (
     <>
       {day && (
-        <div role="separator" aria-label={day} className="mx-4 my-3 flex items-center gap-3 text-xs font-semibold text-ink-faint">
-          <span className="h-px flex-1 bg-line" />
+        // sticky: the day stays under the header while its messages scroll (CSS only, no scroll listener)
+        <div role="separator" aria-label={day} className="sticky top-0 z-10 flex items-center gap-3 bg-[linear-gradient(var(--color-surface-2)_66%,transparent)] px-4 pt-4 pb-2.5 text-caption font-semibold text-ink-faint">
+          <span className="h-px flex-1 bg-hair-strong" />
           {day}
-          <span className="h-px flex-1 bg-line" />
+          <span className="h-px flex-1 bg-hair-strong" />
         </div>
       )}
       <article
+        data-mid={message.id}
         aria-label={t("chat.messageFrom", { name: message.author.username, time: fullTimestamp(message.createdAt) })}
         // same bottom padding grouped or not: when an older page makes this row "grouped", only space ABOVE its
         // text disappears, which the prepend compensation (scrollHeight delta) cancels exactly
-        className={`group relative flex gap-3 px-4 hover:bg-surface-3/40 focus-within:bg-surface-3/40 ${grouped ? "py-0.5" : "mt-2 pt-1 pb-0.5"}`}
+        className={`group relative grid grid-cols-[var(--m-av)_minmax(0,1fr)] gap-x-3 px-4 pt-(--m-py) pb-(--m-py) hover:bg-[linear-gradient(90deg,rgb(255_255_255/.03),rgb(255_255_255/.012))] focus-within:bg-[linear-gradient(90deg,rgb(255_255_255/.03),rgb(255_255_255/.012))] ${grouped ? "" : "mt-(--m-gs)"}`}
       >
-        <div className="w-10 shrink-0">
+        <div>
           {grouped ? (
-            <time dateTime={message.createdAt} title={fullTimestamp(message.createdAt)} className="block pt-1 text-right text-[11px] text-ink-faint opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+            <time dateTime={message.createdAt} title={fullTimestamp(message.createdAt)} className="numeric block text-right text-micro leading-(--m-lh) text-ink-faint opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
               {timeOfDay(message.createdAt)}
             </time>
           ) : (
-            <Avatar id={message.author.id} name={message.author.username} />
+            <Avatar id={message.author.id} name={message.author.username} className="size-(--m-av) rounded-full text-[calc(var(--m-av)*.35)]" />
           )}
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0">
           {!grouped && (
-            <p className="flex min-w-0 items-baseline gap-2">
-              <span className="min-w-0 truncate font-semibold text-ink">{message.author.username}</span>
-              <time dateTime={message.createdAt} title={fullTimestamp(message.createdAt)} className="shrink-0 text-xs text-ink-faint">
+            <p className="flex min-w-0 items-baseline gap-2 leading-5">
+              <span className="min-w-0 truncate font-semibold tracking-[-0.005em] text-ink">{message.author.username}</span>
+              <time dateTime={message.createdAt} title={fullTimestamp(message.createdAt)} className="numeric shrink-0 text-caption text-ink-faint">
                 {timeOfDay(message.createdAt)}
               </time>
             </p>
@@ -353,7 +383,7 @@ const MessageRow = memo(function MessageRow({ message, grouped, day, convKey, mi
               {message.content && <MessageText content={message.content} />}
               <MessageAttachments attachments={message.attachments} />
               {message.editedAt && (
-                <span title={fullTimestamp(message.editedAt)} className="text-xs text-ink-faint">
+                <span title={fullTimestamp(message.editedAt)} className="text-caption text-ink-faint">
                   {t("chat.edited")}
                 </span>
               )}
@@ -364,16 +394,16 @@ const MessageRow = memo(function MessageRow({ message, grouped, day, convKey, mi
           <div
             role="toolbar"
             aria-label={t("chat.actions")}
-            className="absolute -top-3 right-4 flex rounded-control border border-line bg-surface-2 p-0.5 opacity-0 shadow-e3 group-hover:opacity-100 group-focus-within:opacity-100"
+            className="absolute -top-6 right-4 z-20 flex gap-0.5 rounded-card bg-raise p-1 opacity-0 shadow-e2 transition-opacity duration-(--duration-fast) group-focus-within:opacity-100 group-hover:opacity-100"
           >
-            {message.content && (
-              <ActionButton label={copied ? t("common.copied") : t("chat.copy")} onClick={() => void copy(message.content)}>
-                <Copy aria-hidden="true" />
-              </ActionButton>
-            )}
             {mine && (
               <ActionButton label={t("chat.edit")} onClick={() => setEditing(true)}>
                 <PencilSimple aria-hidden="true" />
+              </ActionButton>
+            )}
+            {message.content && (
+              <ActionButton label={copied ? t("common.copied") : t("chat.copy")} onClick={() => void copy(message.content)}>
+                {copied ? <Check aria-hidden="true" className="text-moss-300" /> : <Copy aria-hidden="true" />}
               </ActionButton>
             )}
             {canDelete && (
@@ -381,6 +411,9 @@ const MessageRow = memo(function MessageRow({ message, grouped, day, convKey, mi
                 <Trash aria-hidden="true" />
               </ActionButton>
             )}
+            <span aria-live="polite" className="sr-only">
+              {copied ? t("common.copied") : ""}
+            </span>
           </div>
         )}
       </article>
@@ -388,17 +421,19 @@ const MessageRow = memo(function MessageRow({ message, grouped, day, convKey, mi
   );
 });
 
+/** A toolbar button: 40x40 hit area, its name is the aria-label and the tooltip repeats it. */
 function ActionButton({ label, danger = false, onClick, children }: { label: string; danger?: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className={`grid size-10 place-items-center rounded-[10px] hover:bg-surface-4 ${danger ? "text-danger" : "text-ink-muted hover:text-ink"}`}
-    >
-      {children}
-    </button>
+    <Tooltip label={label}>
+      <button
+        type="button"
+        aria-label={label}
+        onClick={onClick}
+        className={`grid size-10 place-items-center rounded-control transition-colors duration-(--duration-fast) active:scale-[.98] ${danger ? "text-danger hover:bg-danger-bg" : "text-ink-muted hover:bg-white/[.07] hover:text-ink"}`}
+      >
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -454,17 +489,17 @@ function EditBox({ message, convKey, onDone }: { message: Message; convKey: Conv
 function PendingRow({ pending, convKey, username, userId }: { pending: Pending; convKey: ConvKey; username: string; userId: string }) {
   const failed = pending.status === "failed";
   return (
-    <article aria-label={t(failed ? "chat.failed" : "chat.sending")} className="mt-2 flex gap-3 px-4 py-1">
-      <Avatar id={userId} name={username} className="size-10 rounded-full text-sm opacity-70" />
-      <div className="min-w-0 flex-1">
-        <p className="flex items-baseline gap-2">
+    <article aria-label={t(failed ? "chat.failed" : "chat.sending")} className="mt-(--m-gs) grid grid-cols-[var(--m-av)_minmax(0,1fr)] gap-x-3 px-4 py-(--m-py)">
+      <Avatar id={userId} name={username} className="size-(--m-av) rounded-full text-[calc(var(--m-av)*.35)] opacity-55" />
+      <div className="min-w-0">
+        <p className="flex items-baseline gap-2 leading-5">
           <span className="truncate font-semibold text-ink">{username}</span>
-          <span className={`flex shrink-0 items-center gap-1 text-xs ${failed ? "font-semibold text-danger" : "text-ink-faint"}`}>
+          <span className={`flex shrink-0 items-center gap-1 text-caption ${failed ? "font-semibold text-danger" : "text-ink-faint"}`}>
             {failed ? <WarningCircle aria-hidden="true" size={14} /> : <Spinner className="size-3" />}
             {t(failed ? "chat.failed" : "chat.sending")}
           </span>
         </p>
-        <div className={failed ? "" : "opacity-70"}>
+        <div className={`transition-opacity duration-(--duration-base) ${failed ? "" : "opacity-55"}`}>
           {pending.content && <MessageText content={pending.content} />}
           <MessageAttachments attachments={pending.attachments.map((a) => ({ ...a, url: a.previewUrl }))} preview />
         </div>

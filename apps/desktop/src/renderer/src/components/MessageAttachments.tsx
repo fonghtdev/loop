@@ -7,6 +7,7 @@ import { session } from "../lib/app";
 import { fileKind, formatSize, type FileKind } from "../lib/attachment-rules";
 import { imageStep, initialImage } from "../lib/image-state";
 import { openViewer } from "../lib/viewer";
+import { Tooltip } from "./Tooltip";
 
 /** What a message shows for one file: the server's attachment, or the optimistic one (a local blob preview). */
 export type Shown = { id: string; filename: string; contentType: string; size: number; url: string | null };
@@ -67,7 +68,7 @@ function InlineImage({ attachment: a, preview }: { attachment: Shown; preview: b
 
   return (
     <figure className="m-0 w-80 max-w-full">
-      <div className={`relative h-60 overflow-hidden rounded-control bg-surface-3 ${img.phase === "loading" || img.phase === "refreshing" ? "animate-pulse" : ""}`}>
+      <div className={`relative h-60 overflow-hidden rounded-card bg-surface-3 shadow-e2 ${img.phase === "loading" || img.phase === "refreshing" ? "skeleton" : ""}`}>
         {img.phase === "failed" ? (
           <div className="flex size-full flex-col items-center justify-center gap-2 p-3 text-center text-sm text-ink-muted">
             <ImageBroken aria-hidden="true" size={28} />
@@ -103,7 +104,7 @@ function InlineImage({ attachment: a, preview }: { attachment: Shown; preview: b
           </button>
         )}
       </div>
-      <figcaption title={a.filename} className="mt-1 truncate text-xs text-ink-faint select-text">
+      <figcaption title={a.filename} className="mt-1 truncate text-caption text-ink-faint select-text">
         {a.filename}
       </figcaption>
     </figure>
@@ -120,25 +121,27 @@ async function openFile(a: Shown) {
 function FileCard({ attachment: a, preview }: { attachment: Shown; preview: boolean }) {
   const body = (
     <>
-      <span className="grid size-10 shrink-0 place-items-center rounded-control bg-surface-2 text-moss-300">
+      <span className="grid size-10 shrink-0 place-items-center rounded-control bg-moss-900 text-moss-300 shadow-[inset_0_1px_0_rgb(255_255_255/.08)]">
         <FileGlyph contentType={a.contentType} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold text-ink">{a.filename}</span>
-        <span className="block truncate text-xs text-ink-muted">
+        <span className="block truncate text-ui font-semibold text-ink">{a.filename}</span>
+        <span className="numeric block truncate text-caption text-ink-muted">
           {kindLabel(a.contentType)}, {formatSize(a.size)}
         </span>
       </span>
     </>
   );
-  const cls = "flex h-16 w-72 max-w-full items-center gap-3 rounded-control border border-line bg-surface-3 px-3 text-left";
+  const cls = "relative edge flex h-16 w-72 max-w-full items-center gap-3 rounded-card bg-raise px-3 text-left shadow-e1";
   return preview ? (
-    <div title={a.filename} className={`${cls} opacity-70`}>
+    <div className={`${cls} opacity-70`}>
       {body}
     </div>
   ) : (
-    <button type="button" title={a.filename} aria-label={t("attachment.download", { name: a.filename })} onClick={() => void openFile(a)} className={`${cls} hover:bg-surface-4`}>
-      {body}
-    </button>
+    <Tooltip label={a.filename}>
+      <button type="button" aria-label={t("attachment.download", { name: a.filename })} onClick={() => void openFile(a)} className={`${cls} transition-[background-color,scale] duration-(--duration-fast) hover:bg-surface-4 active:scale-[.98]`}>
+        {body}
+      </button>
+    </Tooltip>
   );
 }

@@ -25,6 +25,7 @@ import { Avatar } from "./Avatar";
 import { ColumnHeader, LoadError, Skeleton } from "./States";
 import { Spinner } from "./Spinner";
 import { TextField } from "./TextField";
+import { Tooltip } from "./Tooltip";
 
 type DialogName = "invite" | "channel" | "leave" | null;
 
@@ -127,8 +128,10 @@ function ChannelItem({ channel, active }: { channel: Channel; active: boolean })
       aria-current={active ? "page" : undefined}
       aria-label={voiceChannel ? t("channels.voiceLabel", { name: channel.name }) : undefined}
       onClick={open}
-      className={`flex h-10 min-w-0 flex-1 items-center gap-2 rounded-control px-2.5 text-left text-[15px] transition-colors duration-(--duration-fast) ${
-        active ? "bg-surface-4 font-semibold text-ink" : unread ? "font-bold text-ink hover:bg-surface-3" : "text-ink-muted hover:bg-surface-3 hover:text-ink"
+      className={`relative flex h-10 min-w-0 flex-1 items-center gap-2 rounded-control px-2.5 text-left text-[15px] transition-colors duration-(--duration-fast) after:absolute after:inset-y-2.5 after:left-0 after:w-0.5 after:rounded-full after:bg-[linear-gradient(180deg,var(--color-cosmic-200),var(--color-cosmic-400))] after:transition-[opacity,scale] after:duration-(--duration-slow) after:ease-(--ease-out-soft) active:scale-[.98] ${
+        active
+          ? "bg-[linear-gradient(90deg,var(--color-cosmic-wash),rgb(255_255_255/.05)_60%)] font-semibold text-ink shadow-[inset_0_1px_0_var(--color-highlight)] after:opacity-100"
+          : `after:scale-y-30 after:opacity-0 hover:bg-white/[.045] ${unread ? "font-bold text-ink" : "text-ink-muted hover:text-ink"}`
       }`}
     >
       {voiceChannel ? <SpeakerHigh aria-hidden="true" className={`shrink-0 ${joined ? "text-moss-300" : ""}`} /> : <Hash aria-hidden="true" className="shrink-0" />}
@@ -147,22 +150,20 @@ function VoiceMembers({ channel }: { channel: Channel }) {
   return (
     <ul aria-label={t("channels.voiceMembers", { name: channel.name })} className="mt-0.5 mb-1 flex flex-col gap-0.5 pl-6">
       {people.map((p) => (
-        <li key={p.userId} data-user={p.userId} data-speaking={p.speaking ? "true" : undefined} className="flex h-8 items-center gap-2 px-1.5 text-sm text-ink-muted">
-          <span className={`rounded-full ring-2 transition-shadow duration-(--duration-fast) ${p.speaking ? "ring-moss-300" : "ring-transparent"}`}>
-            <Avatar id={p.userId} name={p.username} className="size-6 rounded-full text-[10px]" />
-          </span>
-          <span title={p.username} className={`min-w-0 flex-1 truncate ${p.speaking ? "text-ink" : ""}`}>
-            {p.username}
-          </span>
+        <li key={p.userId} data-user={p.userId} data-speaking={p.speaking ? "true" : undefined} className="flex h-10 items-center gap-2 rounded-sm px-1.5 text-small text-ink-muted hover:bg-white/[.04] hover:text-ink">
+          <Avatar id={p.userId} name={p.username} speaking={!!p.speaking} className="mx-1 size-6 rounded-full text-[10px]" />
+          <Tooltip label={p.username}>
+            <span className={`min-w-0 flex-1 truncate ${p.speaking ? "text-ink" : ""}`}>{p.username}</span>
+          </Tooltip>
           {p.speaking && <span className="sr-only">{t("voice.speaking")}</span>}
           {p.isLocal && !micEnabled && !deafened && (
-            <span title={t("voice.youMuted")} className="shrink-0 text-danger">
+            <span className="shrink-0 text-danger">
               <MicrophoneSlash aria-hidden="true" size={16} />
               <span className="sr-only">{t("voice.youMuted")}</span>
             </span>
           )}
           {p.isLocal && deafened && (
-            <span title={t("voice.youDeafened")} className="shrink-0 text-danger">
+            <span className="shrink-0 text-danger">
               <SpeakerSlash aria-hidden="true" size={16} />
               <span className="sr-only">{t("voice.youDeafened")}</span>
             </span>

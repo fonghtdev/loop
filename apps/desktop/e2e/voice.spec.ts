@@ -156,7 +156,7 @@ test("join: A is listed, the bar appears, B hears A's microphone and A hears B; 
   await mic().click();
   await expect(mic()).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => b.sees(A.user.id).audioMuted).toBe(true);
-  await expect(seatsUnder("voz-chinh").getByTitle("Bạn đã tắt micro")).toBeVisible();
+  await expect(seatsUnder("voz-chinh").getByText("Bạn đã tắt micro")).toHaveCount(1);
   await mic().click();
   await expect.poll(() => b.sees(A.user.id).audioMuted).toBe(false);
 
@@ -199,7 +199,8 @@ test("no SPEAK: the mic control is disabled with a reason, B never receives audi
   await channelButton("voz-im-lang").click();
   await connected();
   await expect(mic()).toBeDisabled();
-  await expect(mic()).toHaveAttribute("title", "Bạn không có quyền nói trong kênh này");
+  await mic().locator("..").hover(); // the reason is the tooltip of the (disabled) button's wrapper
+  await expect(page.getByRole("tooltip")).toHaveText("Bạn không có quyền nói trong kênh này", { timeout: 2000 });
   await expect(camera()).toBeEnabled(); // VIDEO is separate
   await expect.poll(() => b.sees(A.user.id).present).toBe(true); // A is visible to others once its media is up
   await page.waitForTimeout(2500);

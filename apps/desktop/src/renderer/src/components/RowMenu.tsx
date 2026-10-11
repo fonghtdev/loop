@@ -1,6 +1,7 @@
 import { DotsThree } from "@phosphor-icons/react";
 import { useRef, type CSSProperties, type ReactNode } from "react";
 import { arrowNav } from "../lib/focus";
+import { Tooltip } from "./Tooltip";
 
 /** One item of a popover menu. */
 export function MenuItem({ icon, label, danger = false, onClick }: { icon: ReactNode; label: string; danger?: boolean; onClick: () => void }) {
@@ -27,16 +28,17 @@ export function RowMenu({ id, label, className = "", children }: { id: string; l
   const placed = { positionAnchor: `--a-${id}` } as CSSProperties;
   return (
     <>
-      <button
-        type="button"
-        popoverTarget={`menu-${id}`}
-        aria-label={label}
-        title={label}
-        style={anchor}
-        className={`grid size-10 shrink-0 place-items-center rounded-control text-ink-muted hover:bg-surface-4 hover:text-ink ${className}`}
-      >
-        <DotsThree aria-hidden="true" weight="bold" />
-      </button>
+      <Tooltip label={label}>
+        <button
+          type="button"
+          popoverTarget={`menu-${id}`}
+          aria-label={label}
+          style={anchor}
+          className={`grid size-10 shrink-0 place-items-center rounded-control text-ink-muted hover:bg-surface-4 hover:text-ink active:scale-[.98] ${className}`}
+        >
+          <DotsThree aria-hidden="true" weight="bold" />
+        </button>
+      </Tooltip>
       <div
         ref={menu}
         id={`menu-${id}`}

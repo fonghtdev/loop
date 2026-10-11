@@ -197,6 +197,57 @@ describe("redesign R2 auth screen", () => {
   });
 });
 
+describe("redesign R3 chat surfaces", () => {
+  const token = (name: string) => {
+    const m = css.match(new RegExp(`--color-${name}:\\s*rgb\\((\\d+) (\\d+) (\\d+) / ([\\d.]+)\\)`))!;
+    return { rgb: [+m[1], +m[2], +m[3]] as Rgb, alpha: +m[4] };
+  };
+  const wash = token("cosmic-wash");
+  const white = (alpha: number, under: Rgb) => composite([255, 255, 255], alpha, under);
+  // the active channel / DM row: cosmic wash, then the 5% white lift of the gradient, over the lightest point of the column
+  const activeRow = white(0.05, composite(wash.rgb, wash.alpha, lightest("chan")));
+  // hover lifts used on rows (channel .045, member .045, toolbar button .07, message .03)
+  const hoverChan = white(0.045, lightest("chan"));
+  const hoverMessage = white(0.03, rgb(tokens["surface-2"]));
+  const hoverToolbar = white(0.07, lightest("raise"));
+
+  it.each(["ink", "ink-muted"])("%s on the active channel row (wash + lift over the lightest column point) >= 4.5:1", (tk) => {
+    expect(contrast(rgb(tokens[tk]), activeRow)).toBeGreaterThanOrEqual(4.5);
+  });
+  it("ink-muted and ink on a hovered channel / member / DM row >= 4.5:1", () => {
+    expect(contrast(rgb(tokens["ink-muted"]), hoverChan)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(rgb(tokens.ink), hoverChan)).toBeGreaterThanOrEqual(4.5);
+  });
+  it("ink-faint timestamps and ink text on a hovered message row >= 4.5:1", () => {
+    expect(contrast(rgb(tokens["ink-faint"]), hoverMessage)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(rgb(tokens.ink), hoverMessage)).toBeGreaterThanOrEqual(4.5);
+  });
+  it("toolbar icons on the raise surface: ink-muted and danger >= 4.5:1, also hovered", () => {
+    for (const bg of [lightest("raise"), hoverToolbar]) {
+      expect(contrast(rgb(tokens["ink-muted"]), bg)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(rgb(tokens.danger), bg)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(rgb(tokens["moss-300"]), bg)).toBeGreaterThanOrEqual(4.5); // the "copied" check
+    }
+  });
+  it("upload progress ring (moss-300) on its scrim over the thumbnail >= 3:1", () => {
+    expect(contrast(rgb(tokens["moss-300"]), composite(rgb(tokens["surface-0"]), 0.65, rgb(tokens["surface-2"])))).toBeGreaterThanOrEqual(3);
+  });
+  it("the account avatar's presence ring (presence-on at 60%) against the account strip >= 3:1", () => {
+    const strip = rgb(tokens["surface-0"]);
+    expect(contrast(composite(rgb(tokens["presence-on"]), 0.6, strip), strip)).toBeGreaterThanOrEqual(3);
+  });
+  it("the over-limit composer ring and the failed-upload ring (danger) against the raise surface >= 3:1", () => {
+    expect(contrast(rgb(tokens.danger), lightest("raise"))).toBeGreaterThanOrEqual(3);
+  });
+  it("the sticky day label (ink-faint) on the solid surface-2 it sits on >= 4.5:1", () => {
+    expect(contrast(tokens["ink-faint"], tokens["surface-2"])).toBeGreaterThanOrEqual(4.5);
+  });
+  it("density variables: comfy is the root default and compact only changes sizes", () => {
+    expect(css).toMatch(/:root\s*{\s*--m-av: 40px;\s*--m-gs: 16px;\s*--m-py: 2px;\s*--m-fs: 15px;\s*--m-lh: 24px;/);
+    expect(css).toMatch(/html\[data-density="compact"\]\s*{\s*--m-av: 32px;/);
+  });
+});
+
 describe("design tokens meet WCAG AA", () => {
   it("drop-zone text (moss-300) on its overlay over the worst-case backdrop >= 4.5:1", () => {
     expect(contrast(tokens["moss-300"], overlay)).toBeGreaterThanOrEqual(4.5);

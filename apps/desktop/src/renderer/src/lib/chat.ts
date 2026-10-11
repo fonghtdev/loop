@@ -33,6 +33,8 @@ export type ConvChat = {
   unavailable: boolean;
   /** When a DM send was refused with 403 "Not friends" (the composer closes until the friends list says otherwise). */
   forbiddenAt: number | null;
+  /** The newest ids that came in through a live `message:new` (never a history page or a catch-up): the arrival animation. */
+  live: string[];
 };
 
 export const PAGE_SIZE = 50;
@@ -46,7 +48,9 @@ export const EMPTY_CONV: ConvChat = {
   olderFailed: false,
   unavailable: false,
   forbiddenAt: null,
+  live: [],
 };
+const LIVE_KEEP = 20;
 
 const lastChange = (m: Message) => m.editedAt ?? m.createdAt;
 
@@ -211,7 +215,8 @@ export function createChat({ request, myId, newId = () => crypto.randomUUID(), o
       patch(key, (c) => {
         const pending = dropEchoedPending(c.pending, m, myId());
         c.pending.filter((p) => !pending.includes(p)).forEach(release);
-        return { messages: mergeMessages(c.messages, [m]), pending };
+        const fresh = c.messages.some((x) => x.id === m.id) ? c.live : [...c.live, m.id].slice(-LIVE_KEEP);
+        return { messages: mergeMessages(c.messages, [m]), pending, live: fresh };
       });
     },
     /** Optimistic: shows at once as pending; on failure it stays (text and files kept) with retry/remove. */

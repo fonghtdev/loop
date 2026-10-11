@@ -253,7 +253,7 @@ test("at most 10 files per message; many long-named attachments do not overflow 
     await resize(app, w, h);
     await page.waitForTimeout(250);
     await expectNoHorizontalOverflow([tray(), page.locator("main"), log().locator(".."), notices()]);
-    await expectEllipsis(trayItem(longName(0)).locator("span[title]").first());
+    await expectEllipsis(trayItem(longName(0)).locator("span.truncate").first());
   }
   await resize(app, 1280, 800);
   for (const i of Array.from({ length: 10 }, (_, k) => k)) await tray().getByRole("button", { name: new RegExp(`^Bỏ tệp .*${i}\\.png$`) }).first().click();
@@ -425,7 +425,7 @@ test("a message with 10 long-named files and 2000 unbroken characters does not o
     await page.waitForTimeout(300);
     await expectNoHorizontalOverflow([log(), log().locator(".."), page.locator("main"), row]);
     await expectEllipsis(row.locator("figcaption").first());
-    await expectEllipsis(row.locator("button[title] span.truncate").first());
+    await expectEllipsis(row.locator("button span.truncate").first());
     expect(await row.locator("figure").first().evaluate((el) => el.getBoundingClientRect().width)).toBeLessThanOrEqual(320);
   }
   await resize(app, 1280, 800);

@@ -115,6 +115,34 @@ describe("history + live", () => {
   });
 });
 
+describe("live arrivals (the arrival animation's input)", () => {
+  it("only a live message:new is marked; history pages, catch-up, edits and our own pending echo are not", async () => {
+    const { chat, state, server } = setup(range(1, 80));
+    await chat.loadLatest(KEY);
+    expect(state().live).toEqual([]);
+    await chat.loadOlder(KEY);
+    expect(state().live).toEqual([]); // a history page
+    for (const m of range(81, 90)) server.post(m);
+    await chat.catchUp(KEY);
+    expect(state().live).toEqual([]); // a catch-up
+    chat.receive(KEY, { type: "message:new", message: msg(91) });
+    expect(state().live).toEqual([msg(91).id]);
+    chat.receive(KEY, { type: "message:new", message: msg(91) }); // the same message again: still one
+    chat.receive(KEY, { type: "message:update", message: { ...msg(91), content: "edited" } });
+    expect(state().live).toEqual([msg(91).id]);
+  });
+
+  it("keeps only the newest ids and a fresh load starts clean", async () => {
+    const { chat, state } = setup(range(1, 5));
+    await chat.loadLatest(KEY);
+    for (let i = 100; i < 140; i++) chat.receive(KEY, { type: "message:new", message: msg(i) });
+    expect(state().live).toHaveLength(20);
+    expect(state().live.at(-1)).toBe(msg(139).id);
+    await chat.loadLatest(KEY);
+    expect(state().live).toEqual([]);
+  });
+});
+
 describe("optimistic send", () => {
   it("shows pending at once and reconciles to exactly one message (POST answers first, echo after)", async () => {
     const { chat, state } = setup([]);

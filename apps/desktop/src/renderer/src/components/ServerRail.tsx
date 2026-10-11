@@ -1,12 +1,14 @@
 import { Compass, Plus, WarningCircle } from "@phosphor-icons/react";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { t } from "../i18n/t";
 import { queryClient, revalidateGuild, session } from "../lib/app";
 import { errorMessage } from "../lib/errors";
 import { arrowNav } from "../lib/focus";
+import { move, spring } from "../lib/motion";
 import { goHome, useNav } from "../lib/nav";
 import type { Channel, Guild } from "../lib/permissions";
 import { useGuilds } from "../lib/queries";
+import { pillOffset } from "../lib/rail";
 import { useDmTotal } from "../lib/unread-hooks";
 import { guildNameError, parseInviteCode } from "../lib/validation";
 import { Avatar } from "./Avatar";
@@ -16,11 +18,40 @@ import { LogoMark } from "./Logo";
 import { Badge } from "./Badge";
 import { Spinner } from "./Spinner";
 import { TextField } from "./TextField";
+import { Tooltip } from "./Tooltip";
 
 /** Opening a server (again) also refetches its data: permissions or channels may have changed since. */
 function openGuild(guildId: string) {
   revalidateGuild(guildId);
   useNav.setState(useNav.getState().guildId === guildId ? { settings: null } : { guildId, channelId: null, dmId: null, settings: null });
+}
+
+/**
+ * One pill, a child of the scrolling list (so scrolling carries it along), moves to the active item: a spring on
+ * `transform` through lib/motion (an instant jump under reduced motion). The first placement and a list that
+ * re-lays itself out (servers loading) snap; only a change of the active item travels.
+ */
+function useActivePill(list: RefObject<HTMLDivElement | null>, pill: RefObject<HTMLSpanElement | null>, watch: unknown[]) {
+  const at = useRef<number | null>(null);
+  const activeKey = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const item = list.current?.querySelector<HTMLElement>("[data-rail-active]");
+    const el = pill.current;
+    if (!el) return;
+    if (!item) {
+      el.style.opacity = "0";
+      at.current = null;
+      return;
+    }
+    const y = pillOffset(item.offsetTop, item.offsetHeight);
+    const key = item.dataset.railActive ?? "";
+    el.style.opacity = "1";
+    if (at.current === null || key === activeKey.current || y === at.current) el.style.transform = `translateY(${y}px)`;
+    else move(el, { y: [at.current, y], ease: spring({ bounce: 0.2, duration: 260 }) });
+    at.current = y;
+    activeKey.current = key;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, watch);
 }
 
 /** Server rail: home, one button per server (keyboard: Tab in, arrows between), create and join. */
@@ -29,24 +60,35 @@ export function ServerRail() {
   const current = useNav((s) => s.guildId);
   const [dialog, setDialog] = useState<"create" | "join" | null>(null);
   const homeUnread = useDmTotal();
+  const list = useRef<HTMLDivElement>(null);
+  const pill = useRef<HTMLSpanElement>(null);
+  useActivePill(list, pill, [current, guilds.data, guilds.isPending, guilds.isError]);
 
   return (
     <nav aria-label={t("shell.servers")} onKeyDown={arrowNav} className="grain flex min-h-0 flex-col items-center border-r border-hair bg-surface-0 [--grain-under:var(--background-image-rail)]">
-      <div className="flex w-full flex-1 flex-col items-center gap-2 overflow-y-auto py-3">
-        <RailItem label={t("shell.home")} active={current === null} onClick={goHome} unread={homeUnread}>
-          <span className="grid size-12 place-items-center rounded-control bg-surface-3 text-moss-300">
+      <div ref={list} className="relative flex w-full flex-1 flex-col items-center gap-2 overflow-y-auto py-3">
+        <span
+          ref={pill}
+          data-rail-pill
+          aria-hidden="true"
+          className="pointer-events-none absolute top-0 left-0 z-10 h-8 w-1 rounded-r-full bg-[linear-gradient(180deg,var(--color-cosmic-200),var(--color-cosmic-400))] opacity-0 shadow-[0_0_14px_var(--color-cosmic-glow)] will-change-transform"
+        />
+        <RailItem id="home" label={t("shell.home")} active={current === null} onClick={goHome} unread={homeUnread}>
+          <span className="grid size-12 place-items-center rounded-control bg-raise text-moss-300 shadow-e1">
             <LogoMark className="size-7" />
           </span>
         </RailItem>
         <div aria-hidden="true" className="h-px w-8 shrink-0 bg-line" />
         {guilds.isPending && <Spinner className="my-2 size-5 text-ink-faint" />}
         {guilds.isError && (
-          <button type="button" onClick={() => void guilds.refetch()} title={t("rail.loadFailed")} aria-label={t("rail.loadFailed")} data-nav-item className="grid size-12 place-items-center rounded-control text-danger hover:bg-surface-3">
-            <WarningCircle aria-hidden="true" />
-          </button>
+          <Tooltip side="right" label={t("rail.loadFailed")}>
+            <button type="button" onClick={() => void guilds.refetch()} aria-label={t("rail.loadFailed")} data-nav-item className="grid size-12 place-items-center rounded-control text-danger hover:bg-surface-3">
+              <WarningCircle aria-hidden="true" />
+            </button>
+          </Tooltip>
         )}
         {guilds.data?.map((g) => (
-          <RailItem key={g.id} label={g.name} active={current === g.id} onClick={() => openGuild(g.id)}>
+          <RailItem key={g.id} id={g.id} label={g.name} active={current === g.id} onClick={() => openGuild(g.id)}>
             <Avatar id={g.id} name={g.name} className="size-12 rounded-control text-base" />
           </RailItem>
         ))}
@@ -67,24 +109,23 @@ export function ServerRail() {
   );
 }
 
-function RailItem({ label, active, onClick, unread = 0, children }: { label: string; active: boolean; onClick: () => void; unread?: number; children: ReactNode }) {
+function RailItem({ id, label, active, onClick, unread = 0, children }: { id: string; label: string; active: boolean; onClick: () => void; unread?: number; children: ReactNode }) {
   return (
-    <div className="relative shrink-0">
-      <span
-        aria-hidden="true"
-        className={`absolute top-1/2 -left-3 w-1 -translate-y-1/2 rounded-r-full bg-moss-300 transition-[height] duration-(--duration-base) ${active ? "h-8" : "h-0"}`}
-      />
-      <button
-        type="button"
-        data-nav-item
-        aria-label={label}
-        aria-current={active ? "page" : undefined}
-        title={label}
-        onClick={onClick}
-        className={`block rounded-control transition-opacity duration-(--duration-fast) ${active ? "" : "opacity-80 hover:opacity-100"}`}
-      >
-        {children}
-      </button>
+    <div data-rail-active={active ? id : undefined} className="relative shrink-0">
+      <Tooltip side="right" label={label}>
+        <button
+          type="button"
+          data-nav-item
+          aria-label={label}
+          aria-current={active ? "page" : undefined}
+          onClick={onClick}
+          className={`block rounded-control transition-[translate,box-shadow] duration-(--duration-base) ease-(--ease-out-soft) hover:-translate-y-px active:scale-[.98] ${
+            active ? "shadow-[0_0_0_2px_var(--color-surface-0),0_0_0_4px_rgb(169_182_246/.55),0_0_18px_-2px_var(--color-cosmic-glow)]" : "hover:shadow-e2"
+          }`}
+        >
+          {children}
+        </button>
+      </Tooltip>
       {unread > 0 && <Badge count={unread} className="absolute -right-1 -bottom-1" />}
     </div>
   );
@@ -92,16 +133,17 @@ function RailItem({ label, active, onClick, unread = 0, children }: { label: str
 
 function RailButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      data-nav-item
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="grid size-12 shrink-0 place-items-center rounded-control border border-dashed border-line-strong text-moss-300 transition-colors duration-(--duration-fast) hover:bg-surface-3"
-    >
-      {children}
-    </button>
+    <Tooltip side="right" label={label}>
+      <button
+        type="button"
+        data-nav-item
+        aria-label={label}
+        onClick={onClick}
+        className="grid size-12 shrink-0 place-items-center rounded-control text-moss-300 shadow-[inset_0_0_0_1px_var(--color-line-strong)] transition-colors duration-(--duration-fast) hover:bg-moss-900 hover:shadow-[inset_0_0_0_1px_rgb(180_208_140/.4)] active:scale-[.98]"
+      >
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 

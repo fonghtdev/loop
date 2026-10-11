@@ -328,8 +328,10 @@ test("performance with 1100 loaded messages", async () => {
   const texts = Array.from({ length: 1100 }, (_, i) => `Tin hiệu năng ${i + 1}: xem https://example.com/${i} nhé, có dấu tiếng Việt ạ ơ ư.`);
   for (let i = 0; i < texts.length; i += 20) await Promise.all(texts.slice(i, i + 20).map((t) => post(B, channel.id, t)));
   await rail().getByRole("button", { name: longName }).click();
+  const tFirst = Date.now();
   await channelList().getByRole("button", { name: "hieu-nang", exact: true }).click();
   await expect(log().getByRole("article")).toHaveCount(50);
+  console.log(`first page of 50 messages: ${Date.now() - tFirst} ms (click to 50 rows in the DOM)`);
 
   const pageTimes: number[] = [];
   for (let n = 100; n <= 1100; n += 50) {
@@ -343,7 +345,13 @@ test("performance with 1100 loaded messages", async () => {
   // the same sweep with the film grain off (html[data-grain="off"]), to price the grain
   await page.evaluate(() => (document.documentElement.dataset.grain = "off"));
   const framesNoGrain = await sweepFrames();
+  const stats = (xs: number[]) => JSON.stringify({ count: xs.length, p50: percentile(xs, 0.5).toFixed(1), p95: percentile(xs, 0.95).toFixed(1), max: percentile(xs, 1).toFixed(1) });
+  // the same sweeps in the compact density (R3), grain on and off
+  await page.evaluate(() => (document.documentElement.dataset.density = "compact"));
+  console.log(`scroll frames compact, grain OFF: ${stats(await sweepFrames())}`);
   await page.evaluate(() => (document.documentElement.dataset.grain = "on"));
+  console.log(`scroll frames compact, grain ON: ${stats(await sweepFrames())}`);
+  await page.evaluate(() => (document.documentElement.dataset.density = "comfy"));
   console.log(`scroll frames grain OFF: ${JSON.stringify({ count: framesNoGrain.length, p50: percentile(framesNoGrain, 0.5).toFixed(1), p95: percentile(framesNoGrain, 0.95).toFixed(1), max: percentile(framesNoGrain, 1).toFixed(1) })}`);
   // a live message with 1100 rows mounted: time from the event to the DOM (React commit), measured in the page
   await scroller().evaluate((el) => (el.scrollTop = el.scrollHeight));
@@ -398,6 +406,10 @@ test("glass only on the auth card, dialogs and popovers; solid app surfaces; sol
 
   const frames = await sweepFrames();
   console.log(`scroll frames with a dialog open: ${JSON.stringify({ count: frames.length, p50: percentile(frames, 0.5).toFixed(1), p95: percentile(frames, 0.95).toFixed(1), max: percentile(frames, 1).toFixed(1) })}`);
+  await page.evaluate(() => (document.documentElement.dataset.density = "compact"));
+  const compactFrames = await sweepFrames();
+  console.log(`scroll frames with a dialog open, compact: ${JSON.stringify({ count: compactFrames.length, p50: percentile(compactFrames, 0.5).toFixed(1), p95: percentile(compactFrames, 0.95).toFixed(1), max: percentile(compactFrames, 1).toFixed(1) })}`);
+  await page.evaluate(() => (document.documentElement.dataset.density = "comfy"));
 
   // reduced transparency: the same panel turns solid (if this Chromium can emulate the media feature)
   const cdp = (globalThis as { cdp?: { send: (m: string, p: object) => Promise<unknown> } }).cdp!;
