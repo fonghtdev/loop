@@ -67,7 +67,7 @@ export function DmView({ dmId }: { dmId: string }) {
         </>
       }
       logLabel={t("dm.log", { name })}
-      start={{ icon: <ChatsCircle size={24} />, title: t("dm.startTitle", { name }), body: t("dm.startBody") }}
+      start={{ icon: <ChatsCircle size={24} />, title: t("dm.startTitle", { name }), body: t("dm.startBody"), emptyTitle: t("dm.startTitle", { name }), emptyBody: t("dm.emptyBody") }}
       canManage={false}
       composer={{
         label: t("dm.composerLabel", { name }),

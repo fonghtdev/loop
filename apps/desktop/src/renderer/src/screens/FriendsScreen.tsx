@@ -1,15 +1,20 @@
 import { ChatCircle, DotsThree, Prohibit, UserMinus, UsersThree } from "@phosphor-icons/react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import { PresenceAvatar } from "../components/Avatar";
 import { Banner } from "../components/Banner";
+import { Checklist } from "../components/Checklist";
 import { Button } from "../components/Button";
 import { ConfirmBody } from "../components/Confirm";
 import { Dialog } from "../components/Dialog";
+import { OrbitArt, PeopleArt, TicketArt } from "../components/Illustrations";
 import { ColumnHeader, EmptyState, LoadError, Skeleton } from "../components/States";
 import { TextField } from "../components/TextField";
+import { Welcome } from "../components/Welcome";
 import { t } from "../i18n/t";
 import type { MessageKey } from "../i18n/vi";
 import { errorMessage } from "../lib/errors";
+import { isFirstRun } from "../lib/firstrun";
+import { useFirstRun } from "../lib/firstrun-hooks";
 import { arrowNav } from "../lib/focus";
 import { useBlocks, useFriends, useIsOnline } from "../lib/queries";
 import { acceptRequest, blockUser, dismissRequest, openDm, sendFriendRequest, unblockUser, unfriend } from "../lib/social-actions";
@@ -42,6 +47,9 @@ export function FriendsScreen() {
     tabs.current[TABS[next]]?.focus();
   };
 
+  const firstRun = useFirstRun();
+  const addInput = useRef<HTMLInputElement>(null);
+
   const incoming = friends.data?.incoming;
   const seen = useRef<Set<string> | null>(null);
   const [announce, setAnnounce] = useState("");
@@ -60,7 +68,9 @@ export function FriendsScreen() {
       </ColumnHeader>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-[760px] flex-col gap-5 px-6 py-5">
-          <AddFriendForm />
+          {firstRun && isFirstRun(firstRun.counts) && <Welcome onAddFriend={() => addInput.current?.focus()} />}
+          <Checklist />
+          <AddFriendForm inputRef={addInput} />
           <div role="tablist" aria-label={t("friends.tabs")} onKeyDown={onTabKey} className="flex gap-1 border-b border-line">
             {TABS.map((id) => (
               <button
@@ -94,7 +104,7 @@ export function FriendsScreen() {
   );
 }
 
-function AddFriendForm() {
+function AddFriendForm({ inputRef }: { inputRef: Ref<HTMLInputElement> }) {
   const [name, setName] = useState("");
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -127,6 +137,7 @@ function AddFriendForm() {
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <TextField
+            ref={inputRef}
             label={t("friends.addLabel")}
             hint={t("friends.addHint")}
             spellCheck={false}
@@ -207,7 +218,7 @@ function FriendList() {
           <Banner tone="danger">{action.error}</Banner>
         </div>
       )}
-      <ListState query={friends} empty={sorted.length === 0 && <EmptyState icon={<UsersThree />} title={t("friends.noneTitle")} body={t("friends.noneBody")} />} />
+      <ListState query={friends} empty={sorted.length === 0 && <EmptyState art={<PeopleArt />} title={t("friends.noneTitle")} body={t("friends.noneBody")} />} />
       {friends.data && sorted.length > 0 && (
         <ul aria-label={t("friends.list")} className="flex flex-col gap-0.5">
           {sorted.map((f) => (
@@ -289,7 +300,7 @@ function PendingList() {
           <Banner tone="danger">{action.error}</Banner>
         </div>
       )}
-      <ListState query={friends} empty={incoming.length + outgoing.length === 0 && <EmptyState icon={<UsersThree />} title={t("friends.noPendingTitle")} body={t("friends.noPendingBody")} />} />
+      <ListState query={friends} empty={incoming.length + outgoing.length === 0 && <EmptyState art={<TicketArt />} title={t("friends.noPendingTitle")} body={t("friends.noPendingBody")} />} />
       {incoming.length > 0 && (
         <Section title={t("friends.incoming", { count: String(incoming.length) })}>
           {incoming.map((u) => (
@@ -340,7 +351,7 @@ function BlockedList() {
           <Banner tone="danger">{action.error}</Banner>
         </div>
       )}
-      <ListState query={blocks} empty={blocks.data?.length === 0 && <EmptyState icon={<Prohibit />} title={t("friends.noBlockedTitle")} body={t("friends.noBlockedBody")} />} />
+      <ListState query={blocks} empty={blocks.data?.length === 0 && <EmptyState art={<OrbitArt />} title={t("friends.noBlockedTitle")} body={t("friends.noBlockedBody")} />} />
       {!!blocks.data?.length && (
         <ul aria-label={t("friends.blockedList")} className="flex flex-col gap-0.5">
           {blocks.data.map((u) => (

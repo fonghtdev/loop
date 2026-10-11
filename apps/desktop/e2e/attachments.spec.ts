@@ -72,7 +72,7 @@ test.beforeAll(async () => {
   expect(await bConn.socket.emitWithAck("channel:subscribe", { channelId })).toEqual({ ok: true });
   await page.getByRole("button", { name: "Trang chủ" }).click();
   await openGuild();
-  await expect(log().getByText("Đây là đầu kênh #general")).toBeVisible();
+  await expect(log().getByText("Đây là khởi đầu của #general")).toBeVisible();
 });
 test.afterAll(async () => {
   bConn?.close();

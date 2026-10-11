@@ -1,4 +1,4 @@
-import { ChatsCircle, SignOut, UsersThree } from "@phosphor-icons/react";
+import { SignOut } from "@phosphor-icons/react";
 import { useEffect, useSyncExternalStore } from "react";
 import { useStore } from "zustand";
 import { Banner } from "../components/Banner";
@@ -8,6 +8,7 @@ import { ChatView } from "../components/ChatView";
 import { DmColumn } from "../components/DmColumn";
 import { DmView } from "../components/DmView";
 import { ImageViewer } from "../components/ImageViewer";
+import { ChatArt, PeopleArt } from "../components/Illustrations";
 import { IncomingCall } from "../components/IncomingCall";
 import { MemberList } from "../components/MemberList";
 import { ServerRail } from "../components/ServerRail";
@@ -167,7 +168,7 @@ export function Shell() {
             <>
               <ColumnHeader>{" "}</ColumnHeader>
               <div className="p-6">
-                <EmptyState icon={<ChatsCircle />} title={t("chat.noChannelTitle")} body={t("chat.noChannelBody")} />
+                <EmptyState art={<ChatArt />} title={t("chat.noChannelTitle")} body={t("chat.noChannelBody")} />
               </div>
             </>
           ) : dmId ? (
@@ -184,7 +185,7 @@ export function Shell() {
             <>
               <ColumnHeader>{t("shell.members")}</ColumnHeader>
               <div className="flex-1 overflow-y-auto p-4">
-                <EmptyState icon={<UsersThree />} body={t("shell.membersEmpty")} />
+                <EmptyState art={<PeopleArt />} title={t("shell.membersEmptyTitle")} body={t("shell.membersEmpty")} />
               </div>
             </>
           )}

@@ -413,3 +413,20 @@ describe("a DM send refused with 403 Not friends", () => {
     expect(chat.get(KEY).forbiddenAt).toBeNull();
   });
 });
+
+describe("onSent (the checklist's first-message step)", () => {
+  it("fires when the server accepts a message, and not when the send fails", async () => {
+    const onSent = vi.fn();
+    const request = vi.fn(async (method: string) => {
+      if (method === "GET") return { messages: [] };
+      if (request.mock.calls.filter((c) => c[0] === "POST").length === 1) throw new ApiError(500, "/channels/c1/messages");
+      return msg(1, ME, "ok");
+    });
+    const chat = createChat({ request: request as never, myId: () => ME, onSent });
+    await chat.loadLatest(KEY);
+    await chat.send(KEY, text("hỏng"));
+    expect(onSent).not.toHaveBeenCalled();
+    await chat.retry(KEY, chat.get(KEY).pending[0].tempId);
+    expect(onSent).toHaveBeenCalledTimes(1);
+  });
+});

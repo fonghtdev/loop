@@ -56,7 +56,7 @@ export function move(targets: Parameters<typeof animate>[0], params: Params, opt
 }
 
 /** A timeline whose steps go through the same budget. */
-export function timeline(opts: { kind?: Kind } = {}) {
+export function timeline(opts: { kind?: Kind; allow?: string[] } = {}) {
   const tl = createTimeline();
   const add = tl.add.bind(tl) as (targets: unknown, params: Params, position?: unknown) => typeof tl;
   tl.add = ((targets: unknown, params: Params, position?: unknown) => add(targets, budgeted(params, { reduced: reducedNow(), ...opts }), position)) as typeof tl.add;

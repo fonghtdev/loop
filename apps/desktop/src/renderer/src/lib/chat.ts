@@ -109,6 +109,8 @@ type Deps = {
   onForbidden?: () => void;
   /** Messages a catch-up brought in (posted while the socket was away): unread tracking counts them like live ones. */
   onMissed?: (key: ConvKey, missed: Message[]) => void;
+  /** One of our own messages was accepted by the server. */
+  onSent?: () => void;
 };
 export type LiveEvent = { type: "message:new" | "message:update"; message: Message } | { type: "message:delete"; id: string };
 export type Outgoing = { content: string; attachments: ReadyAttachment[] };
@@ -118,7 +120,7 @@ export type Outgoing = { content: string; attachments: ReadyAttachment[] };
  * layer can feed it). One store for both kinds: lists are keyed by `ConvKey`, and only the REST path differs.
  * REST is the source of truth for history and writes; socket events and catch-up pages merge into the same list.
  */
-export function createChat({ request, myId, newId = () => crypto.randomUUID(), onForbidden, onMissed }: Deps) {
+export function createChat({ request, myId, newId = () => crypto.randomUUID(), onForbidden, onMissed, onSent }: Deps) {
   const store = createStore<{ convs: Record<string, ConvChat> }>(() => ({ convs: {} }));
   const loads = new Map<string, Promise<void>>();
   const get = (key: ConvKey) => store.getState().convs[key] ?? EMPTY_CONV;
@@ -141,6 +143,7 @@ export function createChat({ request, myId, newId = () => crypto.randomUUID(), o
       const attachmentIds = p.attachments.map((a) => a.id);
       const m = await request<Message>("POST", messagesPath(key), { content: p.content, ...(attachmentIds.length && { attachmentIds }) });
       patch(key, (c) => ({ pending: withoutPending(c, p.tempId), messages: mergeMessages(c.messages, [m]) }));
+      onSent?.();
     } catch (e) {
       patch(key, (c) => ({ pending: c.pending.map((x) => (x.tempId === p.tempId ? { ...x, status: "failed" as const } : x)) }));
       lostAccess(key, e);

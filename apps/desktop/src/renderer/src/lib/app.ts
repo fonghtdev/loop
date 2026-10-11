@@ -12,6 +12,7 @@ import { goHome, openConversation, placeForKey, useNav, writeLastPlace } from ".
 import type { Guild } from "./permissions";
 import { createRealtime } from "./realtime";
 import { createSession } from "./session";
+import { createFirstRun } from "./firstrun";
 import { createUnread, titleWith, total } from "./unread";
 import { windowFocus } from "./window-focus";
 import { createUploader } from "./upload-client";
@@ -70,6 +71,9 @@ unread.store.subscribe((s) => {
   void window.loop.setBadge(n).catch(() => undefined);
 });
 
+/** The "Bắt đầu" checklist's saved part (events that leave no trace in the data), per account in localStorage. */
+export const firstRun = createFirstRun(() => localStorage);
+
 /** The main process's settings (notifications, tray, login item). */
 export const appSettings = createAppSettings(window.loop.settings);
 
@@ -79,6 +83,7 @@ export const chat = createChat({
   onMissed: (key, missed) => missed.forEach((m) => unread.message(key, m, m.author.id, myId())),
   // a refused DM send means the friends list is stale
   onForbidden: () => void queryClient.invalidateQueries({ queryKey: FRIENDS_KEY }),
+  onSent: () => void firstRun.record("message"),
 });
 
 /** Permissions or lists may have changed: refetch this guild's data (guild + channels, members, roles) and the server list. */
@@ -130,6 +135,8 @@ navigator.mediaDevices?.addEventListener("devicechange", () => void devices.refr
 void devices.refresh();
 // joining voice has just been granted microphone access: labels and ids are visible now
 voice.store.subscribe((s, prev) => s.status === "connected" && prev.status !== "connected" && void devices.refresh());
+// the first time in voice (a channel or a call) ticks a checklist step
+voice.store.subscribe((s, prev) => s.status === "connected" && prev.status !== "connected" && void firstRun.record("voice"));
 
 /** Asks for microphone access (macOS prompts through the main process) so the device names become readable. */
 export async function unlockDeviceLabels() {
@@ -224,11 +231,17 @@ export const realtime = createRealtime({
 // The socket lives exactly as long as the signed-in session.
 session.useSession.subscribe((s, prev) => {
   if (s.status === "signedIn" && prev.status !== "signedIn") {
-    if (s.user) unread.start(s.user.id);
+    if (s.user) {
+      unread.start(s.user.id);
+      firstRun.start(s.user.id);
+    }
     void appSettings.load();
     realtime.start();
   }
-  if (s.status !== "signedIn" && prev.status === "signedIn") realtime.stop();
+  if (s.status !== "signedIn" && prev.status === "signedIn") {
+    realtime.stop();
+    firstRun.stop();
+  }
 });
 
 useNav.subscribe((place) => {

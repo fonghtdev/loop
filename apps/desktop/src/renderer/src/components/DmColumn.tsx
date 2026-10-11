@@ -9,6 +9,7 @@ import { useDms, useIsOnline } from "../lib/queries";
 import { useUnreadMark } from "../lib/unread-hooks";
 import { Badge, UnreadDot } from "./Badge";
 import { PresenceAvatar } from "./Avatar";
+import { FriendsArt } from "./Illustrations";
 import { ColumnHeader, EmptyState, LoadError, Skeleton } from "./States";
 
 /** Home's channel column: the Friends entry, then the DMs (newest activity first) with an online dot. */
@@ -51,7 +52,7 @@ export function DmColumn() {
         )}
         {dms.data?.length === 0 && (
           <div className="mt-3">
-            <EmptyState icon={<UsersThree />} title={t("home.noDmsTitle")} body={t("home.noDmsBody")} />
+            <EmptyState art={<FriendsArt />} title={t("home.noDmsTitle")} body={t("home.noDmsBody")} />
           </div>
         )}
       </div>

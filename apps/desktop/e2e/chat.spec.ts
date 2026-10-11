@@ -154,8 +154,8 @@ test("create a server (validation, long name), empty channel, create channel, du
   await dialog.getByRole("button", { name: "Tạo máy chủ" }).click();
   await expect(dialog).toBeHidden();
   await expect(rail().getByRole("button", { name: longName })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("heading", { name: "Đây là đầu kênh #general" })).toBeHidden(); // it is a <p>, not a heading
-  await expect(log().getByText("Đây là đầu kênh #general")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Đây là khởi đầu của #general" })).toBeHidden(); // it is a <p>, not a heading
+  await expect(log().getByText("Đây là khởi đầu của #general")).toBeVisible(); // an empty channel shows the welcome scene
   await expectEllipsis(page.getByRole("button", { name: `Tuỳ chọn máy chủ ${longName}` }).locator("span").first());
 
   const guilds = await api<{ id: string; name: string }[]>(A.token, "GET", "/guilds");

@@ -1,5 +1,5 @@
 import { Permission } from "@loop/shared";
-import { ArrowDown, ArrowClockwise, Copy, Hash, PencilSimple, Prohibit, Trash, UploadSimple, WarningCircle } from "@phosphor-icons/react";
+import { ArrowDown, ArrowClockwise, Copy, Hash, PencilSimple, Trash, UploadSimple, WarningCircle } from "@phosphor-icons/react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
@@ -17,6 +17,7 @@ import { Avatar } from "./Avatar";
 import { Button } from "./Button";
 import { Composer, submitKey } from "./Composer";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
+import { ChatArt, OrbitArt } from "./Illustrations";
 import { MessageAttachments } from "./MessageAttachments";
 import { Spinner } from "./Spinner";
 import { ColumnHeader, EmptyState, LoadError, Skeleton } from "./States";
@@ -39,7 +40,7 @@ export function ChatView({ guildId, channelId }: { guildId: string; channelId: s
         </>
       }
       logLabel={t("chat.log", { name })}
-      start={{ icon: <Hash size={24} />, title: t("chat.startTitle", { name }), body: t("chat.startBody") }}
+      start={{ icon: <Hash size={24} />, title: t("chat.startTitle", { name }), body: t("chat.startBody"), emptyTitle: t("chat.emptyTitle", { name }), emptyBody: t("chat.emptyBody") }}
       canManage={perms.can(Permission.MANAGE_MESSAGES)}
       composer={{
         label: t("composer.label", { name }),
@@ -57,7 +58,7 @@ type ConversationProps = {
   /** Accessible name of the message log. */
   logLabel: string;
   /** The "this is the beginning" block at the top of the history. */
-  start: { icon: ReactNode; title: string; body: string };
+  start: { icon: ReactNode; title: string; body: string; emptyTitle: string; emptyBody: string };
   /** May delete other people's messages (a DM has no moderators). */
   canManage: boolean;
   composer: { label: string; placeholder: string; ready: boolean; closedReason: string | null };
@@ -102,7 +103,7 @@ export function Conversation({ convKey, header, logLabel, start, canManage, comp
       <ColumnHeader>{header}</ColumnHeader>
       {state.unavailable ? (
         <div className="flex-1 p-6">
-          <EmptyState icon={<Prohibit />} title={t("chat.unavailableTitle")} body={t("chat.unavailableBody")} />
+          <EmptyState art={<OrbitArt />} title={t("chat.unavailableTitle")} body={t("chat.unavailableBody")} />
         </div>
       ) : (
         <MessageList convKey={convKey} logLabel={logLabel} start={start} state={state} canManage={canManage} />
@@ -247,6 +248,7 @@ function MessageList({ convKey, logLabel, start, state, canManage }: { convKey: 
 
 function HistoryEdge({ state, convKey, start }: { state: ConvChat; convKey: ConvKey; start: ConversationProps["start"] }) {
   if (state.status !== "ready") return null;
+  if (state.reachedStart && !state.messages.length && !state.pending.length) return <EmptyState page art={<ChatArt />} title={start.emptyTitle} body={start.emptyBody} />;
   if (state.reachedStart)
     return (
       <div className="mx-4 mb-4 border-b border-line pb-4">

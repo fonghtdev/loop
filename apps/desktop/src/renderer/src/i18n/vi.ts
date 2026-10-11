@@ -72,6 +72,7 @@ export const vi = {
   "shell.channels": "Kênh",
   "shell.members": "Thành viên",
   "shell.membersEmpty": "Thành viên của máy chủ sẽ hiện ở đây.",
+  "shell.membersEmptyTitle": "Chưa mở máy chủ nào",
   "shell.account": "Tài khoản",
   "shell.logout": "Đăng xuất",
 
@@ -79,6 +80,24 @@ export const vi = {
   "notice.offline": "Mất kết nối mạng. Loop sẽ tiếp tục khi có mạng trở lại.",
   "notice.reconnecting": "Mất kết nối tới máy chủ. Đang kết nối lại…",
   "notice.realtimeFailed": "Không kết nối được tin nhắn trực tiếp.",
+
+  "welcome.title": "Chào mừng đến với Loop, {name}",
+  "welcome.lead": "Nơi nhóm bạn trò chuyện mỗi ngày. Bắt đầu bằng một trong ba việc dưới đây, bạn có thể đổi ý bất cứ lúc nào.",
+  "welcome.createBody": "Lập không gian riêng cho nhóm, bạn bè hoặc lớp học.",
+  "welcome.joinBody": "Đã có mã từ bạn bè? Dán vào để vào thẳng máy chủ.",
+  "welcome.friendBody": "Tìm bạn theo tên người dùng để nhắn tin riêng.",
+
+  "firstRun.title": "Bắt đầu",
+  "firstRun.progress": "{done} trên {total} bước",
+  "firstRun.hide": "Ẩn danh sách",
+  "firstRun.list": "Các bước làm quen",
+  "firstRun.step.server": "Tạo hoặc tham gia một máy chủ",
+  "firstRun.step.friend": "Kết bạn hoặc mở tin nhắn riêng",
+  "firstRun.step.message": "Gửi tin nhắn đầu tiên",
+  "firstRun.step.voice": "Vào kênh thoại hoặc gọi một người",
+  "firstRun.stepDone": "Đã xong",
+  "firstRun.stepOpen": "Chưa xong",
+  "firstRun.celebrate": "Bạn đã làm xong mọi bước. Chúc bạn trò chuyện vui vẻ!",
 
   "home.dms": "Tin nhắn trực tiếp",
   "home.dmList": "Danh sách tin nhắn trực tiếp",
@@ -325,6 +344,8 @@ export const vi = {
   "chat.deleteTitle": "Xoá tin nhắn?",
   "chat.deleteBody": "Tin nhắn sẽ bị xoá với mọi người và không khôi phục được.",
   "chat.deleteSubmit": "Xoá",
+  "chat.emptyTitle": "Đây là khởi đầu của #{name}",
+  "chat.emptyBody": "Chưa có ai nói gì ở đây. Gửi tin nhắn đầu tiên ở ô bên dưới để mở đầu cuộc trò chuyện.",
   "chat.unavailableTitle": "Không mở được kênh này",
   "chat.unavailableBody": "Kênh đã bị xoá hoặc bạn không còn quyền xem. Hãy chọn kênh khác.",
   "chat.noChannelTitle": "Chưa có kênh chat nào bạn xem được",
@@ -343,6 +364,7 @@ export const vi = {
   "dm.log": "Tin nhắn với {name}",
   "dm.startTitle": "Đây là khởi đầu cuộc trò chuyện với {name}",
   "dm.startBody": "Chỉ hai bạn thấy các tin nhắn ở đây.",
+  "dm.emptyBody": "Chưa có tin nhắn nào. Gửi lời chào đầu tiên ở ô bên dưới nhé.",
   "dm.composerLabel": "Nhắn cho {name}",
   "dm.placeholder": "Nhắn cho {name}",
 
@@ -454,6 +476,7 @@ export const vi = {
   "voice.room.join": "Tham gia kênh thoại",
   "voice.room.joinNoConnect": "Bạn không có quyền vào kênh này",
   "voice.room.elsewhere": "Bạn đang ở trong một kênh hoặc cuộc gọi khác. Tham gia sẽ rời khỏi đó.",
+  "voice.room.emptyTitle": "Phòng đang yên tĩnh",
   "voice.room.empty": "Chưa có ai trong kênh. Tham gia để bắt đầu nhé.",
   "voice.room.people": "Người trong kênh thoại",
 

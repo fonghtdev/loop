@@ -176,6 +176,27 @@ describe("redesign R1 materials", () => {
   });
 });
 
+describe("redesign R2 auth screen", () => {
+  // The brand panel's text sits straight on the aurora (no glass): the static `ambient` gradient plus the drifting blob on
+  // top of it. Both strengths are read from the shipped source, so changing a percentage re-runs this check.
+  const authSource = readFileSync(join(__dirname, "screens/AuthScreen.tsx"), "utf8");
+  const strength = (source: string, colour: string, re: (c: string) => RegExp) => +source.match(re(colour))![1] / 100;
+  const behindBrand = ["violet", "teal", "blue"].map((c) => {
+    const ambient = strength(css, c, (n) => new RegExp(`var\\(--color-aurora-${n}\\) (\\d+)%`));
+    const blob = strength(authSource, c, (n) => new RegExp(`color-mix\\(in_srgb,var\\(--color-aurora-${n}\\)_(\\d+)%`));
+    const base = rgb(tokens["surface-2"]);
+    return [`aurora-${c}`, composite(rgb(tokens[`aurora-${c}`]), blob, composite(rgb(tokens[`aurora-${c}`]), ambient, base))] as const;
+  });
+  // tagline and lead are `ink`: ink-muted would not hold over the violet
+  for (const [name, backdrop] of behindBrand)
+    it(`brand text ink on ${name} (ambient + blob) >= 4.5:1`, () => {
+      expect(contrast(rgb(tokens.ink), backdrop)).toBeGreaterThanOrEqual(4.5);
+    });
+  it("the oversized quiet logomark (moss-900) stays decorative: below text contrast on purpose, it is aria-hidden", () => {
+    expect(contrast(tokens["moss-900"], tokens["surface-2"])).toBeLessThan(3);
+  });
+});
+
 describe("design tokens meet WCAG AA", () => {
   it("drop-zone text (moss-300) on its overlay over the worst-case backdrop >= 4.5:1", () => {
     expect(contrast(tokens["moss-300"], overlay)).toBeGreaterThanOrEqual(4.5);

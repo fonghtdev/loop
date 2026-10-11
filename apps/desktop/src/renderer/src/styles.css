@@ -134,8 +134,13 @@
   --duration-slow: 260ms;
   --duration-pop: 300ms; /* dialog / popover open (spring) */
 
-  --animate-draw: draw 900ms var(--ease-out-soft) both;
   --animate-rise: rise 400ms var(--ease-out-soft) both;
+  --animate-fade: fade var(--duration-base) var(--ease-out-soft) both; /* splash content */
+  --animate-shake: shake 320ms var(--ease-out-quart) both; /* a field that just got an error */
+  --animate-err: err var(--duration-slow) var(--ease-out-soft) both; /* the error line sliding in */
+  --animate-drift-a: drift-a 48s ease-in-out infinite alternate; /* aurora, auth screen only */
+  --animate-drift-b: drift-b 56s ease-in-out infinite alternate;
+  --animate-drift-c: drift-a 64s ease-in-out infinite alternate-reverse;
   --animate-tick: tick var(--duration-slow) var(--ease-out-quart) both; /* a counter changing value */
   @keyframes tick {
     from {
@@ -143,12 +148,39 @@
       transform: translateY(60%);
     }
   }
-  @keyframes draw {
+  @keyframes fade {
     from {
-      stroke-dashoffset: 1;
+      opacity: 0;
     }
+  }
+  @keyframes shake {
+    20% {
+      transform: translateX(-4px);
+    }
+    40% {
+      transform: translateX(4px);
+    }
+    60% {
+      transform: translateX(-3px);
+    }
+    80% {
+      transform: translateX(2px);
+    }
+  }
+  @keyframes err {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+  @keyframes drift-a {
     to {
-      stroke-dashoffset: 0;
+      transform: translate3d(90px, 60px, 0);
+    }
+  }
+  @keyframes drift-b {
+    to {
+      transform: translate3d(-80px, -50px, 0);
     }
   }
   @keyframes rise {
@@ -200,6 +232,17 @@
     radial-gradient(55% 60% at 12% 8%, color-mix(in srgb, var(--color-aurora-violet) 60%, transparent), transparent 70%),
     radial-gradient(50% 55% at 92% 20%, color-mix(in srgb, var(--color-aurora-teal) 50%, transparent), transparent 70%),
     radial-gradient(60% 60% at 60% 105%, color-mix(in srgb, var(--color-aurora-blue) 55%, transparent), transparent 70%);
+}
+
+/*
+ * The drifting aurora layer of the auth screen: three big soft blobs (radial gradients, never filter: blur) that move
+ * very slowly with transform only. The static `ambient` gradients underneath are what reduced motion shows.
+ */
+@utility aurora-blob {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
 }
 
 /*

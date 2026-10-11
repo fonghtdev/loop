@@ -135,7 +135,7 @@ function useOneFieldForm(check: (v: string) => string | undefined, submit: (v: s
   return { value, setValue, error, serverError, busy, onSubmit };
 }
 
-function CreateServerForm({ onDone }: { onDone: () => void }) {
+export function CreateServerForm({ onDone }: { onDone: () => void }) {
   const f = useOneFieldForm(guildNameError, async (name) => {
     const { guild, channels } = await session.client.request<{ guild: Guild; channels: Channel[] }>("POST", "/guilds", { name: name.trim() });
     enterGuild(guild);
@@ -159,7 +159,7 @@ function CreateServerForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-function JoinServerForm({ onDone }: { onDone: () => void }) {
+export function JoinServerForm({ onDone }: { onDone: () => void }) {
   const f = useOneFieldForm(
     (v) => (v.trim() === "" ? t("validation.required") : parseInviteCode(v) ? undefined : t("validation.inviteCode")),
     async (raw) => {

@@ -6,8 +6,9 @@ import { voice } from "../lib/app";
 import { useGuild, usePermissions } from "../lib/queries";
 import { isActive, useVoiceParticipants } from "../lib/voice-hooks";
 import { Button } from "./Button";
+import { VoiceArt } from "./Illustrations";
 import { ParticipantTile } from "./ParticipantTile";
-import { ColumnHeader } from "./States";
+import { ColumnHeader, EmptyState } from "./States";
 
 /** The main area of a selected voice channel: who is in it, and the Join button until we are. */
 export function VoiceRoom({ guildId, channelId }: { guildId: string; channelId: string }) {
@@ -40,7 +41,7 @@ export function VoiceRoom({ guildId, channelId }: { guildId: string; channelId: 
           </div>
         )}
         {people.length === 0 ? (
-          !here && <p className="px-4 text-sm text-ink-muted">{t("voice.room.empty")}</p>
+          !here && <EmptyState page art={<VoiceArt />} title={t("voice.room.emptyTitle")} body={t("voice.room.empty")} />
         ) : (
           <ul aria-label={t("voice.room.people")} className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,200px),1fr))] content-start gap-3 p-4">
             {people.map((p) => (
