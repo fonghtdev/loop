@@ -16,6 +16,8 @@ export const env = {
     apiSecret: process.env.LIVEKIT_API_SECRET!,
   },
   port: 0,
+  rateLimit: false, // the suite signs up dozens of users from one address; rate-limit tests turn it on
+  trustProxy: false as boolean | number,
   corsOrigins: [] as string[],
   s3: {
     endpoint: process.env.S3_ENDPOINT!,

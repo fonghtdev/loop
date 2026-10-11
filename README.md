@@ -156,7 +156,8 @@ Phát hành bản mới: tăng `version` trong `apps/desktop/package.json`, buil
 - Bucket S3/R2: bật CORS cho `PUT` và `GET` từ `app://loop`, nếu không upload/hiện ảnh trong app sẽ lỗi.
 - LiveKit Cloud: đặt `LIVEKIT_URL`, `LIVEKIT_API_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`; client `livekit-client` đang ghim **2.9.9** cho server LiveKit **1.9.0**, nâng một bên thì kiểm tra lại cặp phiên bản.
 - Mọi thứ qua HTTPS/WSS (API, storage, LiveKit, feed cập nhật).
-- Server **chưa có rate limit** (đặc biệt `/auth/*`): đặt sau một lớp giới hạn (reverse proxy/CDN) trước khi mở cho người ngoài.
+- Rate limit (cần Redis, cùng `REDIS_URL`; đếm chung giữa các instance): **bật mặc định**, chỉ `RATE_LIMIT=off` mới tắt (chỉ dev/e2e/test, KHÔNG đặt trên production). Mặc định: toàn cục 300 yêu cầu/phút/người dùng (IP nếu chưa đăng nhập); đăng nhập 10/phút/IP và 5 lần/5 phút cho mỗi cặp (IP, email); đăng ký 5/giờ/IP; refresh 30/phút/IP; gửi tin 60/phút (và 10 trong 5 giây)/người dùng; kết bạn 20/giờ; vào invite 20/giờ; tạo guild 10/giờ; tạo upload 60/10 phút; token voice 30/phút; kết nối socket 60/phút/IP. Vượt thì 429 kèm `Retry-After`. Webhook LiveKit không bị giới hạn. Nếu Redis chết, giới hạn tạm tắt (server vẫn chạy, có log lỗi).
+- **`TRUST_PROXY`**: sau reverse proxy/CDN BẮT BUỘC đặt đúng, nếu không mọi người dùng chưa đăng nhập chung một IP của proxy (bị giới hạn chung) hoặc client giả được `X-Forwarded-For` để né giới hạn. Dùng số proxy tin cậy (`TRUST_PROXY=1`) khi biết chính xác số lớp proxy; `true` chỉ đúng khi proxy ghi đè header. Không đặt khi server nhận kết nối trực tiếp.
 - Sao lưu Postgres (và Redis nếu cần) định kỳ; thử khôi phục ít nhất một lần.
 
 ## Ghi chú cho người phát triển

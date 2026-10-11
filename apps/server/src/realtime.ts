@@ -7,6 +7,7 @@ import { z } from "zod";
 import { verifyAccessToken } from "./auth/tokens.js";
 import { HttpError } from "./http.js";
 import { hiddenChannels, requireChannelPermission } from "./guilds/access.js";
+import type { Limits } from "./limiter.js";
 import { friendIds } from "./social/access.js";
 import type { Voice } from "./voice/enforce.js";
 
@@ -35,7 +36,7 @@ const channelRoom = (channelId: string) => `channel:${channelId}`;
 const userRoom = (userId: string) => `user:${userId}`;
 const subscribeSchema = z.object({ channelId: z.string() });
 
-export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisUrl: string, voice: Voice, corsOrigins: string[]) {
+export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisUrl: string, voice: Voice, corsOrigins: string[], limits: Limits) {
   const pub = new Redis(redisUrl);
   const sub = pub.duplicate();
   const io = new Server(httpServer, { adapter: createAdapter(pub, sub), cors: { origin: corsOrigins } });
@@ -81,6 +82,8 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
   // ponytail: the token is only checked at handshake, so a socket outlives the 15 min access token;
   // ceiling = expiry/revocation latency, upgrade = periodic re-auth or short-lived socket tickets
   io.use(async (socket, next) => {
+    const { headers, address } = socket.handshake;
+    if (await limits.hit("socket-connect", limits.socketIp(headers, address))) return next(new Error("Too many requests"));
     const token = socket.handshake.auth.token;
     const userId = typeof token === "string" ? await verifyAccessToken(token, jwtSecret) : null;
     if (!userId) return next(new Error("Unauthorized"));
@@ -93,9 +96,11 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
     socket.join(userRoom(userId));
     socket.on("disconnect", () => trackPresence(userId, false));
 
+    const subscribeAllowed = limits.socketBudget(); // ponytail: per socket and in memory; reconnecting resets it, but connects are limited per IP
     const handle = (action: "join" | "leave") => async (payload: unknown, ack?: unknown) => {
       const reply = typeof ack === "function" ? ack : () => {};
       try {
+        if (!subscribeAllowed()) return reply({ ok: false, error: "Too many requests" });
         const parsed = subscribeSchema.safeParse(payload);
         if (!parsed.success) return reply({ ok: false, error: "Invalid request" });
         const { channelId } = parsed.data;
@@ -172,8 +177,8 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
 export type Realtime = ReturnType<typeof createRealtime>;
 
 /** Wires realtime into the Fastify lifecycle so `app.close()` leaves no open handles. */
-export function registerRealtime(app: FastifyInstance, jwtSecret: string, redisUrl: string, voice: Voice, corsOrigins: string[]) {
-  const realtime = createRealtime(app.server, jwtSecret, redisUrl, voice, corsOrigins);
+export function registerRealtime(app: FastifyInstance, jwtSecret: string, redisUrl: string, voice: Voice, corsOrigins: string[], limits: Limits) {
+  const realtime = createRealtime(app.server, jwtSecret, redisUrl, voice, corsOrigins, limits);
   app.decorate("realtime", realtime);
   app.addHook("preClose", async () => realtime.disconnectAll());
   app.addHook("onClose", async () => {

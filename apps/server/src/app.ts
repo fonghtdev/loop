@@ -6,6 +6,7 @@ import { attachmentRoutes } from "./attachments/routes.js";
 import { guildRoutes } from "./guilds/routes.js";
 import { inviteRoutes } from "./guilds/invites.js";
 import { roleRoutes } from "./guilds/roles.js";
+import { registerLimiter } from "./limiter.js";
 import { HttpError, requireUser } from "./http.js";
 import { messageRoutes } from "./messages/routes.js";
 import { registerRealtime } from "./realtime.js";
@@ -17,8 +18,12 @@ import { createLivekit } from "./voice/livekit.js";
 import { voiceRoutes } from "./voice/routes.js";
 import { webhookRoutes } from "./voice/webhook.js";
 
+// Fastify takes a hop count only as a trust function (proxy-addr: hop 0 is the socket itself).
+const proxyTrust = (t: boolean | number) => (typeof t === "number" ? (_addr: string, hop: number) => hop < t : t);
+
 export function buildApp(env: Env, logger: FastifyServerOptions["logger"] = false) {
-  const app = Fastify({ logger });
+  const app = Fastify({ logger, trustProxy: proxyTrust(env.trustProxy) });
+  const limits = registerLimiter(app, env); // first: its onRoute hook must see every route
   app.decorateRequest("userId", "");
   // Bearer tokens, no cookies: credentials stay off. An origin outside the list gets no CORS headers.
   app.register(cors, { origin: env.corsOrigins, allowedHeaders: ["Authorization", "Content-Type"], methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] });
@@ -39,7 +44,7 @@ export function buildApp(env: Env, logger: FastifyServerOptions["logger"] = fals
   app.addHook("onClose", async () => app.storage.close());
   app.decorate("livekit", createLivekit(env.livekit));
   app.decorate("voice", createVoice(app.livekit, app.log));
-  registerRealtime(app, env.jwtSecret, env.redisUrl, app.voice, env.corsOrigins);
+  registerRealtime(app, env.jwtSecret, env.redisUrl, app.voice, env.corsOrigins, limits);
   authRoutes(app, env);
   webhookRoutes(app); // authenticated by LiveKit's signature, not by a user token
   app.register(async (authed) => {
