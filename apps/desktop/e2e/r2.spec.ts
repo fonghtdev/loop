@@ -210,7 +210,7 @@ test.describe("auth screens", () => {
   });
 
   test("no console errors on the auth screens", () => {
-    expect(consoleErrors.filter((e) => !/401|Unauthorized|Failed to load resource|Loading the font .data:font/.test(e))).toEqual([]);
+    expect(consoleErrors.filter((e) => !/401|Unauthorized|Failed to load resource/.test(e))).toEqual([]);
   });
 });
 
@@ -365,7 +365,7 @@ test.describe("first run and empty states", () => {
   });
 
   test("no console errors in the first-run flows", () => {
-    expect(consoleErrors.filter((e) => !/401|Unauthorized|Failed to load resource|Loading the font .data:font/.test(e))).toEqual([]);
+    expect(consoleErrors.filter((e) => !/401|Unauthorized|Failed to load resource/.test(e))).toEqual([]);
   });
 });
 
