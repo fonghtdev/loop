@@ -163,7 +163,7 @@ test("create a server (validation, long name), empty channel, create channel, du
   generalId = (await api<{ channels: { id: string; name: string }[] }>(A.token, "GET", `/guilds/${guildId}`)).channels[0].id;
 
   await page.getByRole("button", { name: /^Tuỳ chọn máy chủ/ }).click();
-  await page.getByRole("button", { name: "Tạo kênh" }).click();
+  await page.getByRole("button", { name: "Tạo kênh", exact: true }).click();
   const create = page.getByRole("dialog", { name: "Tạo kênh" });
   await create.getByLabel("Tên kênh").fill("Thảo luận");
   await create.getByRole("button", { name: "Tạo kênh" }).click();
@@ -441,7 +441,7 @@ test("layout stress: 40 channels, 60 members, 2000-char unbroken message, diacri
   await channelList().getByRole("button", { name: /^general/ }).click(); // unread (B just posted): the name carries the badge text
   await expect(log().getByText("Thử dấu:", { exact: false })).toBeVisible();
   await expect(page.getByRole("complementary", { name: "Thành viên" }).getByRole("listitem")).toHaveCount(62);
-  await expect(channelList().getByRole("listitem")).toHaveCount(44);
+  await expect(channelList().getByRole("listitem")).toHaveCount(46);
   const voice = channelList().getByRole("button", { name: /^Kênh thoại / }).first();
   await expect(voice).toBeEnabled(); // since 9d a voice channel can be joined
 

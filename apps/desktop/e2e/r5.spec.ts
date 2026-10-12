@@ -89,6 +89,32 @@ test("Ctrl+K opens, Esc closes and gives the focus back; Cmd+K works too; the bu
   await expect(page.getByRole("tooltip")).toContainText(/^Chuyển nhanh(⌘K|Ctrl K)$/);
 });
 
+test("the server column has the quick-switch field and the category headers, with + for those who may create channels", async () => {
+  await rail().getByRole("button", { name: g1.name }).click();
+  const field = page.getByRole("button", { name: "Chuyển nhanh" });
+  await expect(field).toContainText(/^Chuyển nhanh(⌘K|Ctrl K)$/);
+  await field.click();
+  await expect(dialog()).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog()).toBeHidden();
+  const list = page.getByRole("list", { name: "Danh sách kênh" });
+  await expect(list.getByText("Kênh văn bản")).toBeVisible();
+  await expect(list.getByText("Kênh thoại")).toBeVisible();
+  await list.getByRole("button", { name: "Tạo kênh thoại" }).click();
+  await expect(page.getByRole("dialog", { name: "Tạo kênh" }).getByRole("radio").nth(1)).toBeChecked();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  // a plain member sees the headers but no +
+  const { code } = await api<{ code: string }>(A.token, "POST", `/guilds/${g1.id}/invites`, {});
+  await api(B.token, "POST", `/invites/${code}/join`);
+  const member = await launchAs(B);
+  const memberList = member.page.getByRole("list", { name: "Danh sách kênh" });
+  await member.page.getByRole("navigation", { name: "Danh sách máy chủ" }).getByRole("button", { name: g1.name }).click();
+  await expect(memberList.getByText("Kênh văn bản")).toBeVisible();
+  await expect(memberList.getByRole("button", { name: /^Tạo kênh/ })).toHaveCount(0);
+  await member.app.close();
+});
+
 test("the shortcut works while the composer has the focus, and not while another dialog is open", async () => {
   await rail().getByRole("button", { name: g1.name }).click();
   await expect(composer("general")).toBeVisible();

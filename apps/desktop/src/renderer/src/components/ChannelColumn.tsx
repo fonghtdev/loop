@@ -1,7 +1,7 @@
 import { Permission } from "@loop/shared";
 import { CaretDown, Check, Copy, Gear, Hash, LinkSimple, MicrophoneSlash, Plus, ShieldCheck, SignOut as Leave, SpeakerHigh, SpeakerSlash, Trash } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
 import { settingsSections } from "../lib/admin";
@@ -25,7 +25,8 @@ import { MenuItem, RowMenu } from "./RowMenu";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
 import { VoiceIndicators } from "./VoiceIndicators";
 import { Avatar } from "./Avatar";
-import { QuickSwitchButton } from "./QuickSwitcher";
+import { ChannelCategory } from "./ChannelCategory";
+import { QuickSwitchField } from "./QuickSwitchField";
 import { ColumnHeader, LoadError, Skeleton } from "./States";
 import { Spinner } from "./Spinner";
 import { TextField } from "./TextField";
@@ -40,59 +41,77 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
   const channelId = useNav((s) => s.channelId);
   const settings = useNav((s) => s.settings);
   const [dialog, setDialog] = useState<DialogName>(null);
+  const [newType, setNewType] = useState<Channel["type"]>("TEXT");
   const [deleting, setDeleting] = useState<Channel | null>(null);
   const sections = settingsSections(perms.bits, perms.standing?.isOwner ?? false);
   const close = () => setDialog(null);
   const name = guild.data?.guild.name ?? "";
+  const canManage = perms.can(Permission.MANAGE_CHANNELS);
+  const addChannel = (type: Channel["type"]) => {
+    setNewType(type);
+    setDialog("channel");
+  };
 
   return (
     <>
       <GuildMenu
         name={name}
         canInvite={perms.can(Permission.CREATE_INVITE)}
-        canManage={perms.can(Permission.MANAGE_CHANNELS)}
-        onPick={setDialog}
+        canManage={canManage}
+        onPick={(d) => (d === "channel" ? addChannel("TEXT") : setDialog(d))}
         onSettings={sections.length ? () => useNav.setState({ settings: sections[0] }) : undefined}
       />
+      <QuickSwitchField />
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         {guild.isPending && <Skeleton rows={6} />}
         {guild.isError && <LoadError message={errorMessage(guild.error)} onRetry={() => void guild.refetch()} />}
         {guild.data && (
           <ul aria-label={t("channels.list")} onKeyDown={arrowNav} className="flex flex-col gap-0.5">
-            {guild.data.channels.map((c) => (
-              <li key={c.id}>
-                <div className="group flex items-center">
-                  <ChannelItem channel={c} active={c.id === channelId && !settings} />
-                  {perms.can(Permission.MANAGE_CHANNELS) && (
-                    <RowMenu id={`ch-${c.id}`} label={t("channels.menu", { name: c.name })} className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100">
-                      {(close) => (
-                        <>
-                          {perms.can(Permission.MANAGE_ROLES) && (
-                            <MenuItem
-                              icon={<ShieldCheck aria-hidden="true" />}
-                              label={t("channels.permissions")}
-                              onClick={() => {
-                                close();
-                                useNav.setState({ channelId: c.id, settings: "overwrites" });
-                              }}
-                            />
+            {(["TEXT", "VOICE"] as const).map((type) => (
+              <Fragment key={type}>
+                <ChannelCategory
+                  label={t(type === "TEXT" ? "channels.textCategory" : "channels.voiceCategory")}
+                  addLabel={t(type === "TEXT" ? "channels.addText" : "channels.addVoice")}
+                  onAdd={canManage ? () => addChannel(type) : undefined}
+                />
+                {guild.data.channels
+                  .filter((c) => c.type === type)
+                  .map((c) => (
+                      <li key={c.id}>
+                        <div className="group flex items-center">
+                          <ChannelItem channel={c} active={c.id === channelId && !settings} />
+                          {canManage && (
+                            <RowMenu id={`ch-${c.id}`} label={t("channels.menu", { name: c.name })} className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100">
+                              {(close) => (
+                                <>
+                                  {perms.can(Permission.MANAGE_ROLES) && (
+                                    <MenuItem
+                                      icon={<ShieldCheck aria-hidden="true" />}
+                                      label={t("channels.permissions")}
+                                      onClick={() => {
+                                        close();
+                                        useNav.setState({ channelId: c.id, settings: "overwrites" });
+                                      }}
+                                    />
+                                  )}
+                                  <MenuItem
+                                    icon={<Trash aria-hidden="true" />}
+                                    label={t("channels.delete")}
+                                    danger
+                                    onClick={() => {
+                                      close();
+                                      setDeleting(c);
+                                    }}
+                                  />
+                                </>
+                              )}
+                            </RowMenu>
                           )}
-                          <MenuItem
-                            icon={<Trash aria-hidden="true" />}
-                            label={t("channels.delete")}
-                            danger
-                            onClick={() => {
-                              close();
-                              setDeleting(c);
-                            }}
-                          />
-                        </>
-                      )}
-                    </RowMenu>
-                  )}
-                </div>
-                {c.type === "VOICE" && <VoiceMembers channel={c} />}
-              </li>
+                        </div>
+                        {c.type === "VOICE" && <VoiceMembers channel={c} />}
+                      </li>
+                  ))}
+              </Fragment>
             ))}
           </ul>
         )}
@@ -106,7 +125,7 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
         <InviteBody guildId={guildId} onDone={close} />
       </Dialog>
       <Dialog open={dialog === "channel"} onClose={close} title={t("createChannel.title")}>
-        <CreateChannelForm guildId={guildId} onDone={close} />
+        <CreateChannelForm guildId={guildId} initialType={newType} onDone={close} />
       </Dialog>
       <Dialog open={dialog === "leave"} onClose={close} title={t("leave.title", { name })}>
         <LeaveBody guildId={guildId} onDone={close} />
@@ -198,7 +217,6 @@ function GuildMenu({ name, canInvite, canManage, onPick, onSettings }: { name: s
         )}
         <MenuItem icon={<Leave aria-hidden="true" />} label={t("guildMenu.leave")} danger onClick={() => pick("leave")} />
       </div>
-      <QuickSwitchButton />
     </ColumnHeader>
   );
 }
@@ -246,9 +264,9 @@ function InviteBody({ guildId, onDone }: { guildId: string; onDone: () => void }
   );
 }
 
-function CreateChannelForm({ guildId, onDone }: { guildId: string; onDone: () => void }) {
+function CreateChannelForm({ guildId, initialType, onDone }: { guildId: string; initialType: Channel["type"]; onDone: () => void }) {
   const [name, setName] = useState("");
-  const [type, setType] = useState<Channel["type"]>("TEXT");
+  const [type, setType] = useState(initialType);
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [serverError, setServerError] = useState("");

@@ -22,6 +22,7 @@ import { OrbitArt } from "./Illustrations";
 import { navRow } from "./navRow";
 import { openGuild } from "./ServerRail";
 import { EmptyState } from "./States";
+import { shortcutLabel } from "./QuickSwitchField";
 import { Tooltip } from "./Tooltip";
 
 /**
@@ -31,8 +32,6 @@ import { Tooltip } from "./Tooltip";
  * Upgrade = one server-side search endpoint.
  */
 const MAX_GUILDS = 20;
-
-const shortcutLabel = () => (window.loop.platform === "darwin" ? "⌘K" : "Ctrl K");
 
 /** The entry point in the column headers: an icon button with the shortcut in its tooltip. */
 export function QuickSwitchButton() {

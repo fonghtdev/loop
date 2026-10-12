@@ -212,6 +212,10 @@ export const vi = {
   "channels.list": "Danh sách kênh",
   "channels.voiceLabel": "Kênh thoại {name}",
   "channels.voiceMembers": "Người đang ở trong kênh {name}",
+  "channels.textCategory": "Kênh văn bản",
+  "channels.voiceCategory": "Kênh thoại",
+  "channels.addText": "Tạo kênh văn bản",
+  "channels.addVoice": "Tạo kênh thoại",
 
   "invite.title": "Mời bạn bè vào {name}",
   "invite.body": "Gửi mã này cho bạn bè. Họ bấm nút la bàn ở cột trái rồi dán mã để tham gia.",
