@@ -138,6 +138,8 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
       io.to(channelRoom(channelId)).emit(event, payload);
     },
     emitToUsers,
+    /** Liveness probe of the shared Redis connection (used by GET /health). */
+    ping: () => pub.ping(),
     /** Both participants' user rooms; no subscribe step. */
     emitDm: (dm: { userLowId: string; userHighId: string }, event: "new" | "update" | "delete", payload: object) =>
       emitToUsers([dm.userLowId, dm.userHighId], `dm:message:${event}`, payload),

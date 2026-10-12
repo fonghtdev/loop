@@ -134,7 +134,7 @@ describe("authenticated routes are keyed by user", () => {
 
 describe("exemptions", () => {
   it("the LiveKit webhook is never throttled", async () => {
-    expect(Object.keys(EXEMPT)).toEqual(["POST /livekit/webhook"]);
+    expect(Object.keys(EXEMPT)).toEqual(["GET /health", "POST /livekit/webhook"]);
     const app = limited({ global: { max: 1, windowMs: 60_000 } });
     const hook = () => app.inject({ method: "POST", url: "/livekit/webhook", headers: { "content-type": "application/webhook+json" }, payload: "{}" });
     expect(new Set(await statuses(50, hook))).toEqual(new Set([401])); // signature rejected, never 429

@@ -151,6 +151,8 @@ Phát hành bản mới: tăng `version` trong `apps/desktop/package.json`, buil
 
 ### Danh sách kiểm tra khi đưa server lên production
 
+Hướng dẫn từng bước (Docker Compose + Caddy, R2, LiveKit Cloud, bản cài không ký, sao lưu): [docs/DEPLOY.md](docs/DEPLOY.md); file cấu hình nằm ở `deploy/`.
+
 - `JWT_SECRET` dài, ngẫu nhiên (>= 32 ký tự), khác dev.
 - `CORS_ORIGINS` phải có `app://loop` (origin của app đóng gói).
 - Bucket S3/R2: bật CORS cho `PUT` và `GET` từ `app://loop`, nếu không upload/hiện ảnh trong app sẽ lỗi.

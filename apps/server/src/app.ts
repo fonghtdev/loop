@@ -3,6 +3,7 @@ import Fastify, { type FastifyError, type FastifyServerOptions } from "fastify";
 import { authRoutes } from "./auth/routes.js";
 import type { Env } from "./env.js";
 import { attachmentRoutes } from "./attachments/routes.js";
+import { healthRoutes } from "./health.js";
 import { guildRoutes } from "./guilds/routes.js";
 import { inviteRoutes } from "./guilds/invites.js";
 import { roleRoutes } from "./guilds/roles.js";
@@ -45,6 +46,7 @@ export function buildApp(env: Env, logger: FastifyServerOptions["logger"] = fals
   app.decorate("livekit", createLivekit(env.livekit));
   app.decorate("voice", createVoice(app.livekit, app.log));
   registerRealtime(app, env.jwtSecret, env.redisUrl, app.voice, env.corsOrigins, limits);
+  healthRoutes(app);
   authRoutes(app, env);
   webhookRoutes(app); // authenticated by LiveKit's signature, not by a user token
   app.register(async (authed) => {

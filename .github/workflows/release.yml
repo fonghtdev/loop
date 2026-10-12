@@ -1,0 +1,61 @@
+# UNSIGNED desktop installers, built by hand or on a version tag. NOTHING is published: the installers are uploaded
+# as workflow artifacts (Actions run page -> Artifacts, kept 14 days) and no GitHub Release is created.
+#
+# !!! This workflow has NEVER RUN. The runner labels, the macOS x64 cross-build and the artifact paths are unverified. !!!
+#
+# Setup: Settings -> Secrets and variables -> Actions -> Variables: LOOP_API_URL, LOOP_STORAGE_ORIGIN,
+# LOOP_LIVEKIT_ORIGIN (and optionally LOOP_UPDATE_URL). They are public addresses baked into the app, not secrets.
+#
+# To publish later: download the artifacts and attach them to a Release of a separate PUBLIC repository
+# (this one is private, so testers could not download from it), e.g.
+#   gh release create v0.1.0 --repo <you>/loop-releases --title v0.1.0 *.exe *.dmg *.zip
+# docs/DEPLOY.md explains the whole flow.
+name: release
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  installers:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, os: windows-latest, script: "dist:win", extra: "" }
+          # macos-latest is an Apple Silicon (arm64) runner: this DMG/zip only runs natively on M-series Macs.
+          - { name: macos-arm64, os: macos-latest, script: "dist:mac", extra: "" }
+          # Intel Macs: same runner, electron-builder cross-builds for x64 (no native modules in the app).
+          - { name: macos-x64, os: macos-latest, script: "dist:mac", extra: "--x64" }
+    env:
+      VITE_API_URL: ${{ vars.LOOP_API_URL }}
+      VITE_STORAGE_ORIGIN: ${{ vars.LOOP_STORAGE_ORIGIN }}
+      VITE_LIVEKIT_ORIGIN: ${{ vars.LOOP_LIVEKIT_ORIGIN }}
+      VITE_UPDATE_URL: ${{ vars.LOOP_UPDATE_URL }}
+      CSC_IDENTITY_AUTO_DISCOVERY: "false" # never look for a signing certificate: the builds are unsigned
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 12.10.1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # the desktop app imports @loop/shared through its dist
+      - run: pnpm --filter @loop/shared build
+      # runs scripts/check-release-env.mjs first: fails when a variable is missing, not https/wss, or points at localhost
+      - run: pnpm --filter @loop/desktop ${{ matrix.script }} ${{ matrix.extra }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loop-${{ matrix.name }}
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/latest*.yml
+          if-no-files-found: error
+          retention-days: 14

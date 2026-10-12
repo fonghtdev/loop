@@ -69,5 +69,6 @@ export const ROUTES: Record<string, PolicyName[]> = {
 
 /** Never throttled, with the reason. */
 export const EXEMPT: Record<string, string> = {
+  "GET /health": "load balancer / uptime probes poll it; it reveals nothing and takes no input",
   "POST /livekit/webhook": "authenticated by LiveKit's signature; throttling it would lose room events",
 };

@@ -1,0 +1,27 @@
+# {$DOMAIN} = your host name (HTTPS is automatic: Let's Encrypt, ports 80 and 443 must be reachable).
+# A value like "http://localhost" serves plain HTTP (local testing only).
+{$DOMAIN} {
+	encode zstd gzip
+
+	# The API only takes small JSON (files go straight to R2), so a small cap is safe and cheap protection.
+	request_body {
+		max_size 2MB
+	}
+
+	# WebSockets (Socket.IO) are proxied automatically. X-Forwarded-For is set by Caddy from the real client address
+	# and any value sent by the client is discarded, which is what TRUST_PROXY=1 on the server relies on.
+	# The Authorization header is passed through untouched.
+	reverse_proxy server:3000 {
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 60s
+		}
+		# keep open WebSockets alive across a Caddy config reload
+		stream_close_delay 5m
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
