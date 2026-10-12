@@ -98,9 +98,7 @@
   --shadow-e1: inset 0 1px 0 var(--color-highlight), inset 0 -1px 0 var(--color-lowlight), 1px 2px 3px rgb(12 8 36 / 0.42);
   --shadow-e2: inset 0 1px 0 var(--color-highlight), inset 1px 0 0 rgb(255 255 255 / 0.025), inset 0 -1px 0 var(--color-lowlight), 3px 8px 18px -8px rgb(12 8 40 / 0.66);
   --shadow-e3: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 1px 0 0 rgb(255 255 255 / 0.035), inset 0 -1px 0 var(--color-lowlight), 5px 14px 32px -12px rgb(12 8 44 / 0.74);
-  --shadow-e4: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 1px 0 0 rgb(255 255 255 / 0.04), 8px 28px 72px -22px rgb(10 6 44 / 0.85);
   --shadow-moss: inset 0 1px 0 rgb(255 255 255 / 0.58), inset 0 -1px 0 rgb(48 70 20 / 0.28), 2px 10px 22px -8px rgb(126 159 87 / 0.58);
-  --shadow-cosmic: 0 0 0 1px rgb(143 160 244 / 0.35), 0 0 22px -4px var(--color-cosmic-glow);
 
   /* type scale: 10 steps, line-heights on a 4 px grid (`text-micro` ... `text-display`) */
   --text-micro: 11px;
