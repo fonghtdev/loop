@@ -15,6 +15,7 @@ extraResources:
   - from: resources
     to: resources
 icon: build/icon.png
+afterPack: scripts/adhoc-sign.cjs
 mac:
   category: public.app-category.social-networking
   target: [dmg, zip]
