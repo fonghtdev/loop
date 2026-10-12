@@ -1,0 +1,27 @@
+# Render blueprint: Loop server on the free web service (docs/DEPLOY.md, "Phương án miễn phí: Render + Neon").
+# Secrets are sync: false (typed in the Render dashboard); nothing real belongs in this file.
+services:
+  - type: web
+    name: loop-server
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./deploy/render/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - { key: RATE_LIMIT, value: "on" }
+      - { key: TRUST_PROXY, value: "1" } # Render's TLS proxy is the one hop in front of the server
+      - { key: S3_REGION, value: auto }
+      - { key: CORS_ORIGINS, value: "app://loop" }
+      - { key: DATABASE_URL, sync: false } # Neon pooled URL (host contains -pooler), ?sslmode=require&pgbouncer=true
+      - { key: DIRECT_URL, sync: false } # Neon direct URL (no -pooler), ?sslmode=require; used for migrations only
+      - { key: JWT_SECRET, sync: false }
+      - { key: S3_ENDPOINT, sync: false }
+      - { key: S3_BUCKET, sync: false }
+      - { key: S3_ACCESS_KEY, sync: false }
+      - { key: S3_SECRET_KEY, sync: false }
+      - { key: LIVEKIT_URL, sync: false }
+      - { key: LIVEKIT_API_URL, sync: false }
+      - { key: LIVEKIT_API_KEY, sync: false }
+      - { key: LIVEKIT_API_SECRET, sync: false }

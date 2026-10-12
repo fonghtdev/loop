@@ -218,3 +218,51 @@ Cùng bộ `deploy/` chạy được trên Mac/PC có Docker. Nhưng:
 **Đã chạy thật trên máy phát triển (macOS arm64, Docker Desktop), với giá trị thử:** image build được (kiến trúc máy, ~775 MB trên đĩa, ~170 MB nén); entrypoint áp 8 migration lên DB trống; `/health` 200 qua Caddy, 503 khi dừng Redis, 200 lại khi bật; đăng ký/đăng nhập/refresh/`/me` qua proxy; giới hạn tốc độ tính theo IP thật mà Caddy thấy và **bỏ qua** `X-Forwarded-For` do client tự gửi; Socket.IO (WebSocket) qua Caddy nhận tin nhắn thật; dữ liệu còn sau `restart` và `--force-recreate`; server chạy user không phải root; Postgres/Redis không công bố cổng ra máy chủ; Caddy cấp chứng chỉ nội bộ cho `localhost` (HTTPS).
 
 **Chưa kiểm chứng:** VM Oracle thật và cổng 80/443 từ Internet; DuckDNS; Let's Encrypt; R2 thật (presigned URL, CORS); LiveKit Cloud thật (token, webhook); workflow GitHub Actions (chưa chạy; chỉ lint YAML bằng actionlint); runner Windows/macOS; cài và chạy bản không ký trên máy sạch; tự cập nhật; kiểm tra khôi phục sao lưu trên VM thật.
+
+## 16. Phương án miễn phí: Render + Neon (không cần VM)
+
+Thay cho mục 3-7: server chạy trong **một container** trên Render (gói Web Service miễn phí), Postgres ở **Neon**, Redis chạy **ngay trong container** (không lưu đĩa, chỉ nghe `127.0.0.1`, mật khẩu ngẫu nhiên sinh mỗi lần khởi động). Không có Caddy: Render tự lo HTTPS. R2 và LiveKit Cloud giữ nguyên (mục 6). File: `render.yaml` (gốc repo), `deploy/render/Dockerfile`, `apps/server/docker-entrypoint.render.sh`.
+
+```
+ app Loop --HTTPS/WSS--> [Render free web service: 1 container, 512 MB]
+                           tini -> redis-server (127.0.0.1) + node server :$PORT
+                              -> Neon Postgres (SSL, ngoài container)   -> Cloudflare R2   <-> LiveKit Cloud
+```
+
+### Các bước
+1. **Neon** (https://neon.tech): tạo project, chọn region gần Render (Singapore nếu có). Trong *Connection Details* có hai chuỗi, copy **cả hai** (bật/tắt công tắc *Connection pooling*):
+   - **pooled** (host có `-pooler`) -> sẽ là `DATABASE_URL`. Thêm `&pgbouncer=true` vào cuối, ví dụ `postgresql://USER:PASS@ep-xxx-pooler.REGION.aws.neon.tech/neondb?sslmode=require&pgbouncer=true`.
+   - **direct** (host KHÔNG có `-pooler`) -> sẽ là `DIRECT_URL`, ví dụ `postgresql://USER:PASS@ep-xxx.REGION.aws.neon.tech/neondb?sslmode=require`.
+   Vì sao hai chuỗi: `prisma migrate deploy` cần khoá advisory và phiên riêng nên **không chạy được qua pooler (pgbouncer)**. Entrypoint dùng `DIRECT_URL` cho migration (nếu bỏ trống thì dùng `DATABASE_URL`, đúng khi bạn dùng chuỗi direct cho cả hai), còn server chạy bằng `DATABASE_URL`. Không cần sửa schema Prisma. Nếu không muốn dùng pooler, đặt `DATABASE_URL` = chuỗi direct và bỏ `DIRECT_URL` (với < 20 người vẫn đủ kết nối; kiểm tra giới hạn kết nối của gói Neon).
+2. **R2 và LiveKit Cloud**: làm mục 6 (bucket, token, CORS). Chưa khai webhook LiveKit vội (bước 5).
+3. **Render** (https://render.com): đưa repo private lên GitHub rồi *New -> Blueprint*, cấp quyền cho đúng repo, Render đọc `render.yaml` và tạo service `loop-server` (gói free, runtime docker, region Singapore, health check `/health`). Render hỏi giá trị cho các biến `sync: false`; điền theo bảng dưới. Lần build đầu mất vài phút.
+4. Khi service **Live**: `curl https://<service>.onrender.com/health` phải ra `{"ok":true}` (lần đầu có thể chậm do đang đánh thức). Log phải có `All migrations have been successfully applied.` rồi `Server listening`.
+5. **Webhook LiveKit**: Settings -> Webhooks -> URL `https://<service>.onrender.com/livekit/webhook`, chọn đúng API Key đã đặt trong Render.
+6. **Build app desktop** (mục 8) với địa chỉ này: đặt *Repository variables* `LOOP_API_URL=https://<service>.onrender.com`, `LOOP_STORAGE_ORIGIN`, `LOOP_LIVEKIT_ORIGIN` rồi chạy workflow release.
+
+### Biến môi trường
+| Biến | Giá trị | Ghi chú |
+|---|---|---|
+| `DATABASE_URL` | chuỗi **pooled** Neon + `sslmode=require&pgbouncer=true` | secret, điền tay |
+| `DIRECT_URL` | chuỗi **direct** Neon + `sslmode=require` | secret, chỉ dùng cho migration |
+| `JWT_SECRET` | `openssl rand -base64 48` | secret |
+| `S3_ENDPOINT` / `S3_BUCKET` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` | từ R2 (mục 6) | secret; `S3_REGION=auto` đã cố định |
+| `LIVEKIT_URL` / `LIVEKIT_API_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | từ LiveKit Cloud (mục 6) | secret |
+| `RATE_LIMIT=on`, `TRUST_PROXY=1`, `CORS_ORIGINS=app://loop` | cố định trong `render.yaml` | `TRUST_PROXY=1` vì chỉ có một proxy (Render) phía trước; chưa kiểm chứng trên Render thật, hãy thử `X-Forwarded-For` giả sau khi lên |
+| `PORT` | Render tự đặt (mặc định 10000) | server đọc `PORT`, không đặt tay |
+| `REDIS_URL` | **không đặt** | entrypoint tự tạo, trỏ `127.0.0.1` |
+
+### Giới hạn của phương án này (ghi nhận 2026-10-12, đối chiếu lại trên trang Render/Neon)
+| Hạng mục | Ghi nhận | Hệ quả |
+|---|---|---|
+| Ngủ khi rảnh | ngủ sau 15 phút không có request vào | request đầu sau khi ngủ chờ ~1 phút; mọi socket bị ngắt khi ngủ, app phải kết nối lại; Redis (và bộ đếm giới hạn tốc độ) mất khi ngủ/khởi động lại |
+| Giờ miễn phí | 750 giờ/tháng mỗi workspace | một service chạy liên tục vừa đủ cả tháng; nhiều service dùng chung hạn mức |
+| RAM | 512 MB | đã đo: ~90 MB (xem dưới); Node giới hạn heap 256 MB, Redis tối đa 64 MB |
+| Đĩa | tạm thời (mất khi deploy/khởi động lại) | không sao: tệp ở R2, dữ liệu ở Neon, Redis không cần lưu |
+| Độ tin cậy | Render khuyên không dùng gói free cho production | chỉ dùng cho người thử |
+| Neon free | dung lượng và giờ compute có hạn, DB tự tạm dừng khi rảnh | truy vấn đầu sau khi DB ngủ chậm thêm vài giây |
+| Một instance | Redis trong container nên không chia sẻ được | không được tăng số instance (mỗi instance có Redis riêng, sự kiện realtime sẽ không xuyên instance) |
+
+### Đã kiểm chứng và chưa kiểm chứng (phương án này)
+**Đã chạy trên Mac (Docker, arm64), với Postgres 16 tạm có bật SSL tự ký, MinIO và LiveKit dev:** image build được; container chạy user `node` (không root), redis-server cũng user `node`; migration áp đủ (cả khi `DATABASE_URL` hỏng và chỉ `DIRECT_URL` đúng); kết nối Postgres dùng SSL (`pg_stat_ssl.ssl = t`) với `sslmode=require&pgbouncer=true`; `/health` 200; đăng ký/đăng nhập; tin nhắn Socket.IO tới đủ 10/10 socket; Redis không có cổng công bố, container khác cùng mạng không kết nối được, và trong container vẫn đòi mật khẩu; `docker stop` xong trong ~0,15 giây (exit 143 do SIGTERM); không đặt `PORT` thì nghe 3000, đặt `PORT=10000` thì nghe 10000; RAM container ~87 MiB lúc rảnh, ~94 MiB với 10 socket đang nối.
+**Chưa kiểm chứng:** Render và Neon thật (build trên Render, `render.yaml` chưa được Render đọc thử, health check, ngủ/đánh thức thực tế); region Singapore có sẵn cho gói free hay không; đăng ký có dùng được từ Việt Nam hay đòi thẻ; Neon pooler thật (chỉ giả lập bằng tham số `pgbouncer=true`, không có pgbouncer thật) và chứng chỉ SSL công khai của Neon (thử mới với chứng chỉ tự ký, `sslmode=require` không xác minh chứng chỉ); hành vi `TRUST_PROXY=1` sau proxy của Render; R2/LiveKit Cloud thật.
