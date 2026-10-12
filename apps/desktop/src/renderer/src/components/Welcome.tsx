@@ -12,7 +12,7 @@ export function Welcome({ onAddFriend }: { onAddFriend: () => void }) {
   const [dialog, setDialog] = useState<"create" | "join" | null>(null);
   return (
     <section aria-labelledby="welcome-title" className="animate-rise">
-      <h2 id="welcome-title" className="font-display text-heading1 font-extrabold tracking-[-0.035em] text-balance min-[1280px]:text-display min-[1280px]:tracking-[-0.04em]">
+      <h2 id="welcome-title" className="font-display text-heading1 font-extrabold tracking-[-0.035em] text-balance [overflow-wrap:anywhere] min-[1280px]:text-display min-[1280px]:tracking-[-0.04em]">
         {t("welcome.title", { name })}
       </h2>
       <p className="mt-3 mb-6 max-w-[56ch] text-title text-ink-muted">{t("welcome.lead")}</p>

@@ -6,6 +6,7 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
+    "jsx": "react-jsx",
     "types": ["node", "vite/client"]
   },
   "include": ["electron.vite.config.ts", "vitest.config.ts", "playwright.config.ts", "src/main", "src/preload", "src/shared", "src/**/*.test.ts", "e2e"]

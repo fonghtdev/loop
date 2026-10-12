@@ -5,7 +5,7 @@ import { devices, session, unlockDeviceLabels, voice } from "../lib/app";
 import { labelsAvailable, optionsFor, type DeviceKind } from "../lib/devices";
 import { useNav } from "../lib/nav";
 import { isActive } from "../lib/voice-hooks";
-import { Avatar } from "./Avatar";
+import { ACCOUNT_TRIGGER_SIZE, AccountIdentity, accountMenuLabel } from "./AccountIdentity";
 import { MenuItem, RowMenu } from "./RowMenu";
 import { Control } from "./VoiceBar";
 import { HeadphonesSlash } from "./VoiceIndicators";
@@ -54,22 +54,13 @@ export function AccountStrip() {
     <section aria-label={t("shell.account")} className="flex items-center px-1.5 py-2">
       <RowMenu
         id="account"
-        label={t("shell.accountMenu")}
+        label={accountMenuLabel(user?.username)}
         align="left"
         width="w-64"
-        size="h-12 min-w-0 flex-1 px-1"
+        size={ACCOUNT_TRIGGER_SIZE}
         className="text-left !text-ink"
         trigger={
-          <span className="flex w-full min-w-0 items-center gap-2">
-            <span className="relative shrink-0">
-              <Avatar id={user?.id ?? ""} name={user?.username ?? ""} className="size-8 rounded-full text-xs ring-2 ring-presence-on/60" />
-              <span aria-hidden="true" className="absolute -right-0.5 -bottom-0.5 size-3 rounded-full bg-presence-on ring-2 ring-surface-3" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-ui leading-tight font-semibold">{user?.username}</span>
-              <span className="block truncate text-caption leading-tight text-ink-muted">{t("presence.online")}</span>
-            </span>
-          </span>
+          <AccountIdentity id={user?.id ?? ""} username={user?.username ?? ""} status={t("presence.online")} />
         }
       >
         {(close) => (
