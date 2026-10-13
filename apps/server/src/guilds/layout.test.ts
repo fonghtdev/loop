@@ -260,3 +260,15 @@ describe("realtime", () => {
     expect(owner.got["category:deleted"]![0].channels).toHaveLength(2);
   });
 });
+
+describe("GET /guilds/:id channel order", () => {
+  it("breaks position ties by creation time, not by row order", async () => {
+    const f = await setup();
+    await f.addChannel("in-voice", f.voice.id);
+    const loose = await f.addChannel("loose");
+    // all three channels have position 0 (positions are per category): make the last-created one the oldest
+    await prisma.channel.update({ where: { id: loose.id }, data: { createdAt: new Date(0) } });
+    const names = (await f.view()).channels.map((c) => c.name);
+    expect(names).toEqual(["loose", "general", "in-voice"]);
+  });
+});

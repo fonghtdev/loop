@@ -86,7 +86,8 @@ export function guildRoutes(app: FastifyInstance) {
     const access = await requireMember(req.params.guildId, req.userId);
     const channels = await prisma.channel.findMany({
       where: { guildId: access.guild.id },
-      orderBy: { position: "asc" },
+      // positions are per category (not unique across the guild): break ties the same way as `byPlacement` in categories.ts
+      orderBy: [{ position: "asc" }, { createdAt: "asc" }, { id: "asc" }],
       include: { overwrites: { select: { roleId: true, allow: true, deny: true } } },
     });
     const visible = channels.filter((c) => hasPermission(channelPermissions(access, c.overwrites), Permission.VIEW_CHANNEL));
