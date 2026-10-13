@@ -77,6 +77,90 @@ export const shiftCategory = <C>(tree: Tree<C>, categoryId: string, by: -1 | 1):
 
 export const groupIds = (tree: Tree<unknown>) => tree.groups.map((g) => ({ id: g.category.id }));
 
+// ---- drag and drop: the pure rules, then the optimistic commit ----
+
+export type DragSource = { kind: "channel" | "category"; id: string };
+/**
+ * Where a drag ends. `loose` is the uncategorised area (id null). `inside` = the FIRST place of a category / the
+ * uncategorised area, so a header, a collapsed category (it stays collapsed) and an empty category all work the same.
+ */
+export type DropTarget = { kind: "channel" | "category" | "loose"; id: string | null; position: "before" | "after" | "inside" };
+
+const sameLayout = (a: Tree<Idd>, b: Tree<Idd>) => JSON.stringify(layoutOf(a)) === JSON.stringify(layoutOf(b));
+const putAt = <T>(list: T[], i: number, item: T) => [...list.slice(0, i), item, ...list.slice(i)];
+
+function dropCategory<C>(tree: Tree<C>, id: string, t: DropTarget): Tree<C> | null {
+  const moving = tree.groups.find((g) => g.category.id === id);
+  if (!moving || t.kind !== "category" || t.position === "inside" || t.id === id) return null; // never into a channel list
+  const rest = tree.groups.filter((g) => g !== moving);
+  const at = rest.findIndex((g) => g.category.id === t.id);
+  return at < 0 ? null : { ...tree, groups: putAt(rest, at + (t.position === "after" ? 1 : 0), moving) };
+}
+
+function dropChannel<C extends Idd>(tree: Tree<C>, id: string, t: DropTarget): Tree<C> | null {
+  const moving = [...tree.loose, ...tree.groups.flatMap((g) => g.channels)].find((c) => c.id === id);
+  if (!moving) return null;
+  const rest: Tree<C> = { loose: without(tree.loose, id), groups: tree.groups.map((g) => ({ ...g, channels: without(g.channels, id) })) };
+  if (t.kind === "loose") return t.position === "inside" ? { ...rest, loose: putAt(rest.loose, 0, moving) } : null;
+  if (t.kind === "category") {
+    if (t.position !== "inside" || !rest.groups.some((g) => g.category.id === t.id)) return null;
+    return { ...rest, groups: rest.groups.map((g) => (g.category.id === t.id ? { ...g, channels: putAt(g.channels, 0, moving) } : g)) };
+  }
+  if (t.position === "inside" || t.id === id) return null;
+  // before/after another channel: it adopts that channel's category (or the uncategorised area)
+  const at = (list: C[]) => {
+    const i = list.findIndex((c) => c.id === t.id);
+    return i < 0 ? -1 : i + (t.position === "after" ? 1 : 0);
+  };
+  if (at(rest.loose) >= 0) return { ...rest, loose: putAt(rest.loose, at(rest.loose), moving) };
+  const home = rest.groups.findIndex((g) => at(g.channels) >= 0);
+  if (home < 0) return null;
+  return { ...rest, groups: rest.groups.map((g, i) => (i === home ? { ...g, channels: putAt(g.channels, at(g.channels), moving) } : g)) };
+}
+
+/** The tree after a drop, or null when nothing would change (onto itself, an unknown id, a forbidden target, a no-op): then no request. */
+export function dropOn<C extends Idd>(tree: Tree<C>, source: DragSource, target: DropTarget): Tree<C> | null {
+  const next = source.kind === "category" ? dropCategory(tree, source.id, target) : dropChannel(tree, source.id, target);
+  return next && !sameLayout(tree, next) ? next : null;
+}
+
+/** The cached guild with the tree's order written into the positions (what the server will answer after the PUT). */
+export function applyTree(data: GuildData, tree: Tree<Idd>): GuildData {
+  const place = new Map<string, { categoryId: string | null; position: number }>();
+  tree.loose.forEach((c, position) => place.set(c.id, { categoryId: null, position }));
+  tree.groups.forEach((g) => g.channels.forEach((c, position) => place.set(c.id, { categoryId: g.category.id, position })));
+  const index = new Map(tree.groups.map((g, i) => [g.category.id, i]));
+  return {
+    ...data,
+    categories: data.categories.map((c) => ({ ...c, position: index.get(c.id) ?? c.position })),
+    channels: data.channels.map((c) => ({ ...c, ...place.get(c.id) })),
+  };
+}
+
+// One drop at a time per guild: a new drag is refused while its PUT (and the refetch after it) is running, and the
+// realtime `layout:updated` is skipped meanwhile (the refetch brings the truth, our own echo included).
+const inFlight = new Set<string>();
+export const layoutInFlight = (guildId: string) => inFlight.has(guildId);
+
+/**
+ * Shows `next` at once, sends it, and on failure puts the old data back (unless a refetch already replaced our guess
+ * with the server's truth, which must not be overwritten). Rethrows so the caller can toast.
+ */
+export async function commitLayout(qc: QueryClient, guildId: string, next: Tree<Idd>, send: (layout: Layout) => Promise<unknown>) {
+  const key = ["guild", guildId];
+  const before = qc.getQueryData<GuildData>(key);
+  const guess = before && qc.setQueryData<GuildData>(key, applyTree(before, next)); // the stored object: a refetch replaces it
+  inFlight.add(guildId);
+  try {
+    await send(layoutOf(next));
+  } catch (err) {
+    if (before && qc.getQueryData(key) === guess) qc.setQueryData(key, before);
+    throw err;
+  } finally {
+    inFlight.delete(guildId);
+  }
+}
+
 // ---- realtime: each event is applied by id and idempotently, so an echo, a duplicate or a late one cannot corrupt the cache ----
 
 export type GuildEvent =
@@ -124,7 +208,7 @@ const guildIdOf = (e: GuildEvent) => (e.type === "channel:created" ? e.channel.g
 export function applyGuildEvent(qc: QueryClient, e: GuildEvent) {
   const key = ["guild", guildIdOf(e)];
   const before = qc.getQueryData<GuildData>(key);
-  if (!before) return;
+  if (!before || (e.type === "layout:updated" && inFlight.has(e.event.guildId))) return;
   qc.setQueryData<GuildData>(key, reduceGuild(before, e));
   if (e.type === "channel:created" && !before.channels.some((c) => c.id === e.channel.id)) void qc.invalidateQueries({ queryKey: key });
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { blockFileNavigation, hasFiles, nameForPasted, pastedFiles } from "./drop";
+import { blockFileNavigation, hasFiles, isLayoutDrag, LAYOUT_DRAG, nameForPasted, pastedFiles } from "./drop";
 
 const file = (name: string, type: string) => new File(["x"], name, { type });
 
@@ -9,6 +9,19 @@ describe("hasFiles", () => {
     expect(hasFiles({ types: ["text/plain", "Files"] })).toBe(true);
     expect(hasFiles({ types: ["text/plain"] })).toBe(false);
     expect(hasFiles(null)).toBe(false);
+  });
+});
+
+describe("internal layout drags vs file drags", () => {
+  it("a channel/category drag carries only its own type, so it is never a file drag (no overlay, no upload)", () => {
+    const internal = { types: [LAYOUT_DRAG] };
+    expect(isLayoutDrag(internal)).toBe(true);
+    expect(hasFiles(internal)).toBe(false);
+  });
+  it("a file drag is never a layout drag (the channel column leaves it alone)", () => {
+    expect(isLayoutDrag({ types: ["Files"] })).toBe(false);
+    expect(isLayoutDrag({ types: ["text/plain"] })).toBe(false);
+    expect(isLayoutDrag(null)).toBe(false);
   });
 });
 

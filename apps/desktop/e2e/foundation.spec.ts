@@ -107,11 +107,15 @@ test("base components: primary gradient, cosmic focus ring, dialog glass opens w
   await field.focus();
   await page.keyboard.press("Shift+Tab");
   await page.keyboard.press("Tab");
-  const ring = await field.evaluate((el) => {
-    const cs = getComputedStyle(el);
-    return { outline: cs.outlineColor, width: cs.outlineWidth, border: cs.borderTopColor };
-  });
-  expect(ring).toEqual({ outline: "rgb(169, 182, 246)", width: "2px", border: "rgb(169, 182, 246)" }); // cosmic-300
+  // the colours transition on focus: poll until the transition has ended instead of reading a mid-transition value
+  await expect
+    .poll(() =>
+      field.evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return { outline: cs.outlineColor, width: cs.outlineWidth, border: cs.borderTopColor };
+      }),
+    )
+    .toEqual({ outline: "rgb(169, 182, 246)", width: "2px", border: "rgb(169, 182, 246)" }); // cosmic-300
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
 });

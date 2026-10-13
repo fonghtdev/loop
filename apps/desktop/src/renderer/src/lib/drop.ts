@@ -5,6 +5,10 @@ type DataTransferLike = { types?: readonly string[]; files?: ArrayLike<File> };
 /** A drag carrying files (text drags and in-page drags do not show the overlay). */
 export const hasFiles = (dt: DataTransferLike | null | undefined): boolean => !!dt?.types && Array.from(dt.types).includes("Files");
 
+/** Set on dragstart of a channel/category row; the channel column reacts only to drags that carry it, never to files. */
+export const LAYOUT_DRAG = "application/x-loop-layout";
+export const isLayoutDrag = (dt: DataTransferLike | null | undefined): boolean => !!dt?.types && Array.from(dt.types).includes(LAYOUT_DRAG);
+
 /**
  * Files of a paste, or [] to leave the paste alone (plain text). Files win, except when the clipboard also has
  * HTML (copying from Word or a spreadsheet brings an image of the cells along with the text the user wants).

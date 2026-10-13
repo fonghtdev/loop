@@ -1,14 +1,16 @@
 import { CaretDown, Plus } from "@phosphor-icons/react";
-import type { ReactNode } from "react";
+import type { LiHTMLAttributes, ReactNode } from "react";
+import type { DropTarget } from "../lib/categories";
+import { dragClass } from "./dragRow";
 import { Tooltip } from "./Tooltip";
 
 /**
  * A category header: the title is the button that folds it (aria-expanded; the chevron turns). The + (a channel in this
- * category) and the menu exist only when the caller passes them, i.e. with MANAGE_CHANNELS.
+ * category) and the menu exist only when the caller passes them, i.e. with MANAGE_CHANNELS; so do the drag props (`dnd`).
  */
-export function ChannelCategory({ name, collapsed, onToggle, addLabel, onAdd, menu }: { name: string; collapsed: boolean; onToggle: () => void; addLabel: string; onAdd?: () => void; menu?: ReactNode }) {
+export function ChannelCategory({ name, collapsed, onToggle, addLabel, onAdd, menu, dnd, drop, dragging }: { name: string; collapsed: boolean; onToggle: () => void; addLabel: string; onAdd?: () => void; menu?: ReactNode; dnd?: LiHTMLAttributes<HTMLLIElement>; drop?: DropTarget["position"]; dragging?: boolean }) {
   return (
-    <li className="group flex h-8 items-center pt-2 pr-1 first:pt-0">
+    <li {...dnd} data-drop={drop} className={`group flex h-8 items-center pt-2 pr-1 first:pt-0 ${dragClass(!!dnd?.draggable, drop, dragging)}`}>
       <Tooltip label={name}>
         <button
           type="button"

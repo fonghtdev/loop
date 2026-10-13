@@ -1,17 +1,18 @@
 import { Permission } from "@loop/shared";
 import { ArrowDown, ArrowUp, CaretDown, Check, Copy, FolderSimple, FolderSimplePlus, Gear, Hash, LinkSimple, PencilSimple, Plus, ShieldCheck, SignOut as Leave, SpeakerHigh, Trash } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useRef, useState, type DragEvent, type FormEvent, type LiHTMLAttributes, type ReactNode } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
 import { settingsSections } from "../lib/admin";
 import { admin, queryClient, revalidateGuild, session, voice } from "../lib/app";
 import { ApiError } from "../lib/auth-client";
-import { buildTree, canShift, groupIds, layoutOf, moveChannel, reduceGuild, shiftCategory, shiftChannel, shownChannels, type Category, type GuildData, type Tree } from "../lib/categories";
+import { buildTree, canShift, commitLayout, dropOn, groupIds, layoutInFlight, layoutOf, moveChannel, reduceGuild, shiftCategory, shiftChannel, shownChannels, type Category, type DragSource, type DropTarget, type GuildData, type Tree } from "../lib/categories";
 import { collapse, useCollapsed } from "../lib/category-collapse";
 import { toast } from "../lib/toast";
 import { useCopy } from "../lib/clipboard";
 import { errorMessage } from "../lib/errors";
+import { isLayoutDrag, LAYOUT_DRAG } from "../lib/drop";
 import { arrowNav } from "../lib/focus";
 import { goHome, useNav } from "../lib/nav";
 import type { Channel, Guild } from "../lib/permissions";
@@ -30,6 +31,7 @@ import { Dialog, DialogActions, DialogError } from "./Dialog";
 import { VoiceIndicators } from "./VoiceIndicators";
 import { Avatar } from "./Avatar";
 import { CategoryNameForm, MoveChannelBody } from "./CategoryForms";
+import { dragClass } from "./dragRow";
 import { ChannelCategory } from "./ChannelCategory";
 import { QuickSwitchField } from "./QuickSwitchField";
 import { ColumnHeader, LoadError, Skeleton } from "./States";
@@ -67,17 +69,72 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
   const tree = guild.data && buildTree(guild.data.channels, guild.data.categories);
   const keep = (c: Channel) => c.id === channelId || c.id === joinedVoiceId; // a folded category still shows the open channel and the voice room we are in
 
-  async function saveLayout(next: Tree) {
+  async function saveLayout(next: Tree, optimistic = false) {
+    const send = (layout: ReturnType<typeof layoutOf>) => admin.setLayout(guildId, layout); // refetches the guild afterwards, success or not
     try {
-      await admin.setLayout(guildId, layoutOf(next)); // refetches the guild afterwards, success or not
+      await (optimistic ? commitLayout(queryClient, guildId, next, send) : send(layoutOf(next)));
     } catch (err) {
       toast.push(err instanceof ApiError && err.status === 409 ? t("channels.layoutConflict") : errorMessage(err), "error");
     }
   }
+
+  // Drag and drop (MANAGE_CHANNELS only). `live` is the source for the handlers; `drag` (the dimmed row) is set a tick
+  // later, so the browser's drag image is not dimmed. Only drags carrying LAYOUT_DRAG count: a file drag is not ours.
+  const live = useRef<DragSource | null>(null);
+  const [drag, setDrag] = useState<DragSource | null>(null);
+  const [over, setOver] = useState<DropTarget | null>(null);
+  const endDrag = () => {
+    live.current = null;
+    setDrag(null);
+    setOver(null);
+  };
+  const startDrag = (e: DragEvent, source: DragSource) => {
+    if (layoutInFlight(guildId)) return e.preventDefault(); // one drop at a time: the previous PUT has not finished
+    e.dataTransfer.setData(LAYOUT_DRAG, `${source.kind}:${source.id}`);
+    e.dataTransfer.effectAllowed = "move";
+    live.current = source;
+    setTimeout(() => live.current && setDrag(source));
+  };
+  const hover = (e: DragEvent, target: DropTarget | null) => {
+    if (!isLayoutDrag(e.dataTransfer)) return;
+    const src = live.current;
+    if (!tree || !src || !target || !dropOn(tree, src, target)) return setOver(null);
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setOver((o) => (o && o.kind === target.kind && o.id === target.id && o.position === target.position ? o : target));
+  };
+  const release = (e: DragEvent, target: DropTarget | null) => {
+    if (!isLayoutDrag(e.dataTransfer)) return;
+    e.preventDefault();
+    const src = live.current;
+    const next = tree && src && target ? dropOn(tree, src, target) : null;
+    endDrag();
+    if (next) void saveLayout(next, true);
+  };
+  /** Props for a row that can be dragged (source) and/or dropped on (`target` decides from the pointer). */
+  const dnd = (source: DragSource | null, target: (e: DragEvent<HTMLLIElement>) => DropTarget | null): LiHTMLAttributes<HTMLLIElement> | undefined =>
+    canManage
+      ? { ...(source && { draggable: true, onDragStart: (e) => startDrag(e, source), onDragEnd: endDrag }), onDragOver: (e) => hover(e, target(e)), onDrop: (e) => release(e, target(e)) }
+      : undefined;
+  const mark = (kind: DropTarget["kind"], id: string | null) => (over && over.kind === kind && over.id === id ? over.position : undefined);
+  const upper = (e: DragEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return e.clientY < r.top + r.height / 2 ? "before" : "after";
+  };
+  // Chromium gives drag events no relatedTarget, so "left the list" is decided by the pointer position
+  const leftList = (e: DragEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX >= r.right || e.clientY < r.top || e.clientY >= r.bottom;
+  };
+  const lastGroup = tree?.groups.at(-1)?.category.id ?? null;
+
   const row = (c: Channel, siblings: Channel[]) => (
     <ChannelRow
       key={c.id}
       channel={c}
+      dnd={dnd({ kind: "channel", id: c.id }, (e) => (live.current?.kind === "channel" ? { kind: "channel", id: c.id, position: upper(e) } : null))}
+      drop={mark("channel", c.id)}
+      dragging={drag?.kind === "channel" && drag.id === c.id}
       active={c.id === channelId && !settings}
       canManage={canManage}
       canPermissions={perms.can(Permission.MANAGE_ROLES)}
@@ -102,7 +159,19 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
         {guild.isPending && <Skeleton rows={6} />}
         {guild.isError && <LoadError message={errorMessage(guild.error)} onRetry={() => void guild.refetch()} />}
         {tree && (
-          <ul aria-label={t("channels.list")} onKeyDown={arrowNav} className="flex flex-col gap-0.5">
+          <ul
+            aria-label={t("channels.list")}
+            onKeyDown={arrowNav}
+            onDragLeave={(e) => leftList(e) && setOver(null)}
+            className="flex flex-col gap-0.5"
+          >
+            {drag?.kind === "channel" && tree.loose.length === 0 && (
+              <li
+                {...dnd(null, () => ({ kind: "loose", id: null, position: "inside" }))}
+                data-drop={mark("loose", null)}
+                className={`h-6 shrink-0 rounded-control border border-dashed border-line ${dragClass(false, mark("loose", null))}`}
+              />
+            )}
             {tree.loose.map((c) => row(c, tree.loose))}
             {tree.groups.map(({ category, channels }) => {
               const folded = collapsed.has(category.id);
@@ -111,6 +180,9 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
                   <ChannelCategory
                     name={category.name}
                     collapsed={folded}
+                    dnd={dnd({ kind: "category", id: category.id }, () => ({ kind: "category", id: category.id, position: live.current?.kind === "channel" ? "inside" : "before" }))}
+                    drop={mark("category", category.id) === "after" ? undefined : mark("category", category.id)}
+                    dragging={drag?.kind === "category" && drag.id === category.id}
                     onToggle={() => collapse.toggle(category.id)}
                     addLabel={t("category.add", { name: category.name })}
                     onAdd={canManage ? () => addChannel(category) : undefined}
@@ -137,6 +209,13 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
                 </Fragment>
               );
             })}
+            {drag?.kind === "category" && lastGroup && (
+              <li
+                {...dnd(null, () => ({ kind: "category", id: lastGroup, position: "after" }))}
+                data-drop={mark("category", lastGroup) === "after" ? "before" : undefined}
+                className={`h-6 shrink-0 ${dragClass(false, mark("category", lastGroup) === "after" ? "before" : undefined)}`}
+              />
+            )}
           </ul>
         )}
       </div>
@@ -183,9 +262,9 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
 }
 
 /** One channel line: the channel, its menu (with MANAGE_CHANNELS) and, for a voice channel, who is in it. */
-function ChannelRow({ channel: c, active, canManage, canPermissions, onUp, onDown, onMove, onDelete }: { channel: Channel; active: boolean; canManage: boolean; canPermissions: boolean; onUp?: () => void; onDown?: () => void; onMove: () => void; onDelete: () => void }) {
+function ChannelRow({ channel: c, active, canManage, canPermissions, onUp, onDown, onMove, onDelete, dnd, drop, dragging }: { channel: Channel; active: boolean; canManage: boolean; canPermissions: boolean; onUp?: () => void; onDown?: () => void; onMove: () => void; onDelete: () => void; dnd?: LiHTMLAttributes<HTMLLIElement>; drop?: DropTarget["position"]; dragging?: boolean }) {
   return (
-    <li>
+    <li {...dnd} data-drop={drop} className={dragClass(!!dnd?.draggable, drop, dragging)}>
       <div className="group flex items-center">
         <ChannelItem channel={c} active={active} />
         {canManage && (
