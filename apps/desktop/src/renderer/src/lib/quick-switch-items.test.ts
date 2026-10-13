@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildItems, resolveRecents } from "./quick-switch-items";
 
 const guild = { id: "g1", name: "Chúng ta", ownerId: "u", createdAt: "" };
-const text = { id: "c1", guildId: "g1", name: "chung", type: "TEXT" as const, position: 0, overwrites: [] };
-const voice = { id: "c2", guildId: "g1", name: "voz", type: "VOICE" as const, position: 1, overwrites: [] };
+const text = { id: "c1", guildId: "g1", name: "chung", type: "TEXT" as const, position: 0, categoryId: null, overwrites: [] };
+const voice = { id: "c2", guildId: "g1", name: "voz", type: "VOICE" as const, position: 1, categoryId: null, overwrites: [] };
 const an = { id: "u1", username: "an", online: false };
 const bo = { id: "u2", username: "bo", online: true };
 

@@ -1,11 +1,15 @@
 import { Permission } from "@loop/shared";
-import { CaretDown, Check, Copy, Gear, Hash, LinkSimple, MicrophoneSlash, Plus, ShieldCheck, SignOut as Leave, SpeakerHigh, SpeakerSlash, Trash } from "@phosphor-icons/react";
+import { ArrowDown, ArrowUp, CaretDown, Check, Copy, FolderSimple, FolderSimplePlus, Gear, Hash, LinkSimple, PencilSimple, Plus, ShieldCheck, SignOut as Leave, SpeakerHigh, Trash } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
 import { settingsSections } from "../lib/admin";
 import { admin, queryClient, revalidateGuild, session, voice } from "../lib/app";
+import { ApiError } from "../lib/auth-client";
+import { buildTree, canShift, groupIds, layoutOf, moveChannel, reduceGuild, shiftCategory, shiftChannel, shownChannels, type Category, type GuildData, type Tree } from "../lib/categories";
+import { collapse, useCollapsed } from "../lib/category-collapse";
+import { toast } from "../lib/toast";
 import { useCopy } from "../lib/clipboard";
 import { errorMessage } from "../lib/errors";
 import { arrowNav } from "../lib/focus";
@@ -25,6 +29,7 @@ import { MenuItem, RowMenu } from "./RowMenu";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
 import { VoiceIndicators } from "./VoiceIndicators";
 import { Avatar } from "./Avatar";
+import { CategoryNameForm, MoveChannelBody } from "./CategoryForms";
 import { ChannelCategory } from "./ChannelCategory";
 import { QuickSwitchField } from "./QuickSwitchField";
 import { ColumnHeader, LoadError, Skeleton } from "./States";
@@ -32,7 +37,7 @@ import { Spinner } from "./Spinner";
 import { TextField } from "./TextField";
 import { Tooltip } from "./Tooltip";
 
-type DialogName = "invite" | "channel" | "leave" | null;
+type DialogName = "invite" | "channel" | "category" | "leave" | null;
 
 /** The selected server's column: name + menu, channel list. */
 export function ChannelColumn({ guildId }: { guildId: string }) {
@@ -40,17 +45,48 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
   const perms = usePermissions(guildId);
   const channelId = useNav((s) => s.channelId);
   const settings = useNav((s) => s.settings);
+  const collapsed = useCollapsed();
+  const joinedVoiceId = useStore(voice.store, (s) => (s.target?.kind === "channel" && s.status !== "disconnected" ? s.target.id : null));
   const [dialog, setDialog] = useState<DialogName>(null);
   const [newType, setNewType] = useState<Channel["type"]>("TEXT");
+  const [newIn, setNewIn] = useState<Category | null>(null);
   const [deleting, setDeleting] = useState<Channel | null>(null);
+  const [moving, setMoving] = useState<Channel | null>(null);
+  const [renaming, setRenaming] = useState<Category | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState<Category | null>(null);
   const sections = settingsSections(perms.bits, perms.standing?.isOwner ?? false);
   const close = () => setDialog(null);
   const name = guild.data?.guild.name ?? "";
   const canManage = perms.can(Permission.MANAGE_CHANNELS);
-  const addChannel = (type: Channel["type"]) => {
-    setNewType(type);
+  // the server menu's "Tạo kênh" makes an uncategorised channel; a category's + preselects that category
+  const addChannel = (category: Category | null) => {
+    setNewType("TEXT");
+    setNewIn(category);
     setDialog("channel");
   };
+  const tree = guild.data && buildTree(guild.data.channels, guild.data.categories);
+  const keep = (c: Channel) => c.id === channelId || c.id === joinedVoiceId; // a folded category still shows the open channel and the voice room we are in
+
+  async function saveLayout(next: Tree) {
+    try {
+      await admin.setLayout(guildId, layoutOf(next)); // refetches the guild afterwards, success or not
+    } catch (err) {
+      toast.push(err instanceof ApiError && err.status === 409 ? t("channels.layoutConflict") : errorMessage(err), "error");
+    }
+  }
+  const row = (c: Channel, siblings: Channel[]) => (
+    <ChannelRow
+      key={c.id}
+      channel={c}
+      active={c.id === channelId && !settings}
+      canManage={canManage}
+      canPermissions={perms.can(Permission.MANAGE_ROLES)}
+      onUp={tree && canShift(siblings, c.id, -1) ? () => void saveLayout(shiftChannel(tree, c.id, -1)) : undefined}
+      onDown={tree && canShift(siblings, c.id, 1) ? () => void saveLayout(shiftChannel(tree, c.id, 1)) : undefined}
+      onMove={() => setMoving(c)}
+      onDelete={() => setDeleting(c)}
+    />
+  );
 
   return (
     <>
@@ -58,61 +94,49 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
         name={name}
         canInvite={perms.can(Permission.CREATE_INVITE)}
         canManage={canManage}
-        onPick={(d) => (d === "channel" ? addChannel("TEXT") : setDialog(d))}
+        onPick={(d) => (d === "channel" ? addChannel(null) : setDialog(d))}
         onSettings={sections.length ? () => useNav.setState({ settings: sections[0] }) : undefined}
       />
       <QuickSwitchField />
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         {guild.isPending && <Skeleton rows={6} />}
         {guild.isError && <LoadError message={errorMessage(guild.error)} onRetry={() => void guild.refetch()} />}
-        {guild.data && (
+        {tree && (
           <ul aria-label={t("channels.list")} onKeyDown={arrowNav} className="flex flex-col gap-0.5">
-            {(["TEXT", "VOICE"] as const).map((type) => (
-              <Fragment key={type}>
-                <ChannelCategory
-                  label={t(type === "TEXT" ? "channels.textCategory" : "channels.voiceCategory")}
-                  addLabel={t(type === "TEXT" ? "channels.addText" : "channels.addVoice")}
-                  onAdd={canManage ? () => addChannel(type) : undefined}
-                />
-                {guild.data.channels
-                  .filter((c) => c.type === type)
-                  .map((c) => (
-                      <li key={c.id}>
-                        <div className="group flex items-center">
-                          <ChannelItem channel={c} active={c.id === channelId && !settings} />
-                          {canManage && (
-                            <RowMenu id={`ch-${c.id}`} label={t("channels.menu", { name: c.name })} className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100">
-                              {(close) => (
-                                <>
-                                  {perms.can(Permission.MANAGE_ROLES) && (
-                                    <MenuItem
-                                      icon={<ShieldCheck aria-hidden="true" />}
-                                      label={t("channels.permissions")}
-                                      onClick={() => {
-                                        close();
-                                        useNav.setState({ channelId: c.id, settings: "overwrites" });
-                                      }}
-                                    />
-                                  )}
-                                  <MenuItem
-                                    icon={<Trash aria-hidden="true" />}
-                                    label={t("channels.delete")}
-                                    danger
-                                    onClick={() => {
-                                      close();
-                                      setDeleting(c);
-                                    }}
-                                  />
-                                </>
+            {tree.loose.map((c) => row(c, tree.loose))}
+            {tree.groups.map(({ category, channels }) => {
+              const folded = collapsed.has(category.id);
+              return (
+                <Fragment key={category.id}>
+                  <ChannelCategory
+                    name={category.name}
+                    collapsed={folded}
+                    onToggle={() => collapse.toggle(category.id)}
+                    addLabel={t("category.add", { name: category.name })}
+                    onAdd={canManage ? () => addChannel(category) : undefined}
+                    menu={
+                      canManage && (
+                        <RowMenu id={`cat-${category.id}`} label={t("category.menu", { name: category.name })} size="size-8" className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100">
+                          {(closeMenu) => (
+                            <>
+                              {canShift(groupIds(tree), category.id, -1) && (
+                                <MenuItem icon={<ArrowUp aria-hidden="true" />} label={t("category.moveUp")} onClick={() => { closeMenu(); void saveLayout(shiftCategory(tree, category.id, -1)); }} />
                               )}
-                            </RowMenu>
+                              {canShift(groupIds(tree), category.id, 1) && (
+                                <MenuItem icon={<ArrowDown aria-hidden="true" />} label={t("category.moveDown")} onClick={() => { closeMenu(); void saveLayout(shiftCategory(tree, category.id, 1)); }} />
+                              )}
+                              <MenuItem icon={<PencilSimple aria-hidden="true" />} label={t("category.rename")} onClick={() => { closeMenu(); setRenaming(category); }} />
+                              <MenuItem icon={<Trash aria-hidden="true" />} label={t("category.delete")} danger onClick={() => { closeMenu(); setDeletingCategory(category); }} />
+                            </>
                           )}
-                        </div>
-                        {c.type === "VOICE" && <VoiceMembers channel={c} />}
-                      </li>
-                  ))}
-              </Fragment>
-            ))}
+                        </RowMenu>
+                      )
+                    }
+                  />
+                  {shownChannels(channels, folded, keep).map((c) => row(c, channels))}
+                </Fragment>
+              );
+            })}
           </ul>
         )}
       </div>
@@ -121,16 +145,74 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
           <ConfirmBody body={t("channels.deleteBody")} submit={t("channels.delete")} onDone={() => setDeleting(null)} action={() => admin.deleteChannel(guildId, deleting.id)} />
         )}
       </Dialog>
+      <Dialog open={!!deletingCategory} onClose={() => setDeletingCategory(null)} title={t("category.deleteTitle", { name: deletingCategory?.name ?? "" })}>
+        {deletingCategory && (
+          <ConfirmBody body={t("category.deleteBody")} submit={t("category.delete")} onDone={() => setDeletingCategory(null)} action={() => admin.deleteCategory(guildId, deletingCategory.id)} />
+        )}
+      </Dialog>
+      <Dialog open={!!renaming} onClose={() => setRenaming(null)} title={t("category.rename")}>
+        {renaming && <CategoryNameForm initial={renaming.name} submit={t("category.save")} action={(n) => admin.renameCategory(guildId, renaming.id, n)} onDone={() => setRenaming(null)} />}
+      </Dialog>
+      <Dialog open={!!moving} onClose={() => setMoving(null)} title={t("channels.moveTitle", { name: moving?.name ?? "" })}>
+        {moving && tree && (
+          <MoveChannelBody
+            categories={tree.groups.map((g) => g.category)}
+            current={moving.categoryId}
+            onPick={(categoryId) => {
+              const next = moveChannel(tree, moving.id, categoryId);
+              setMoving(null);
+              if (categoryId !== moving.categoryId) void saveLayout(next);
+            }}
+          />
+        )}
+      </Dialog>
       <Dialog open={dialog === "invite"} onClose={close} title={t("invite.title", { name })}>
         <InviteBody guildId={guildId} onDone={close} />
       </Dialog>
       <Dialog open={dialog === "channel"} onClose={close} title={t("createChannel.title")}>
-        <CreateChannelForm guildId={guildId} initialType={newType} onDone={close} />
+        <CreateChannelForm guildId={guildId} initialType={newType} category={newIn} onDone={close} />
+      </Dialog>
+      <Dialog open={dialog === "category"} onClose={close} title={t("category.createTitle")}>
+        <CategoryNameForm submit={t("category.create")} action={(n) => admin.createCategory(guildId, n)} onDone={close} />
       </Dialog>
       <Dialog open={dialog === "leave"} onClose={close} title={t("leave.title", { name })}>
         <LeaveBody guildId={guildId} onDone={close} />
       </Dialog>
     </>
+  );
+}
+
+/** One channel line: the channel, its menu (with MANAGE_CHANNELS) and, for a voice channel, who is in it. */
+function ChannelRow({ channel: c, active, canManage, canPermissions, onUp, onDown, onMove, onDelete }: { channel: Channel; active: boolean; canManage: boolean; canPermissions: boolean; onUp?: () => void; onDown?: () => void; onMove: () => void; onDelete: () => void }) {
+  return (
+    <li>
+      <div className="group flex items-center">
+        <ChannelItem channel={c} active={active} />
+        {canManage && (
+          <RowMenu id={`ch-${c.id}`} label={t("channels.menu", { name: c.name })} className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100">
+            {(close) => (
+              <>
+                {canPermissions && (
+                  <MenuItem
+                    icon={<ShieldCheck aria-hidden="true" />}
+                    label={t("channels.permissions")}
+                    onClick={() => {
+                      close();
+                      useNav.setState({ channelId: c.id, settings: "overwrites" });
+                    }}
+                  />
+                )}
+                <MenuItem icon={<FolderSimple aria-hidden="true" />} label={t("channels.move")} onClick={() => { close(); onMove(); }} />
+                {onUp && <MenuItem icon={<ArrowUp aria-hidden="true" />} label={t("channels.moveUp")} onClick={() => { close(); onUp(); }} />}
+                {onDown && <MenuItem icon={<ArrowDown aria-hidden="true" />} label={t("channels.moveDown")} onClick={() => { close(); onDown(); }} />}
+                <MenuItem icon={<Trash aria-hidden="true" />} label={t("channels.delete")} danger onClick={() => { close(); onDelete(); }} />
+              </>
+            )}
+          </RowMenu>
+        )}
+      </div>
+      {c.type === "VOICE" && <VoiceMembers channel={c} />}
+    </li>
   );
 }
 
@@ -205,6 +287,7 @@ function GuildMenu({ name, canInvite, canManage, onPick, onSettings }: { name: s
       >
         {canInvite && <MenuItem icon={<LinkSimple aria-hidden="true" />} label={t("guildMenu.invite")} onClick={() => pick("invite")} />}
         {canManage && <MenuItem icon={<Plus aria-hidden="true" />} label={t("guildMenu.createChannel")} onClick={() => pick("channel")} />}
+        {canManage && <MenuItem icon={<FolderSimplePlus aria-hidden="true" />} label={t("guildMenu.createCategory")} onClick={() => pick("category")} />}
         {onSettings && (
           <MenuItem
             icon={<Gear aria-hidden="true" />}
@@ -264,7 +347,7 @@ function InviteBody({ guildId, onDone }: { guildId: string; onDone: () => void }
   );
 }
 
-function CreateChannelForm({ guildId, initialType, onDone }: { guildId: string; initialType: Channel["type"]; onDone: () => void }) {
+function CreateChannelForm({ guildId, initialType, category, onDone }: { guildId: string; initialType: Channel["type"]; category: Category | null; onDone: () => void }) {
   const [name, setName] = useState("");
   const [type, setType] = useState(initialType);
   const [tried, setTried] = useState(false);
@@ -279,10 +362,9 @@ function CreateChannelForm({ guildId, initialType, onDone }: { guildId: string; 
     setBusy(true);
     setServerError("");
     try {
-      const channel = await session.client.request<Channel>("POST", `/guilds/${guildId}/channels`, { name, type });
-      queryClient.setQueryData<{ guild: Guild; channels: Channel[] }>(["guild", guildId], (old) =>
-        old ? { ...old, channels: [...old.channels, { ...channel, overwrites: [] }] } : old,
-      );
+      const channel = await session.client.request<Channel>("POST", `/guilds/${guildId}/channels`, { name, type, ...(category && { categoryId: category.id }) });
+      // by id: our own channel:created event may already have put it there
+      queryClient.setQueryData<GuildData>(["guild", guildId], (old) => old && reduceGuild(old, { type: "channel:created", channel }));
       revalidateGuild(guildId);
       if (type === "TEXT") useNav.setState({ channelId: channel.id, settings: null });
       onDone();
@@ -295,6 +377,7 @@ function CreateChannelForm({ guildId, initialType, onDone }: { guildId: string; 
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+      {category && <p className="-mt-1 truncate text-sm text-ink-muted">{t("createChannel.inCategory", { name: category.name })}</p>}
       <fieldset className="flex flex-col gap-1.5">
         <legend className="mb-1.5 text-sm font-medium">{t("createChannel.type")}</legend>
         {(["TEXT", "VOICE"] as const).map((value) => (

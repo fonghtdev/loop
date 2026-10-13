@@ -1,4 +1,4 @@
-import { createChannelSchema, createGuildSchema, loginSchema, registerSchema, usernameSchema } from "@loop/shared";
+import { categoryNameSchema, createChannelSchema, createGuildSchema, loginSchema, registerSchema, usernameSchema } from "@loop/shared";
 import { t } from "../i18n/t";
 
 export type Field = "email" | "username" | "password";
@@ -38,6 +38,12 @@ export function validate(mode: "login" | "register", values: Values): Partial<Re
 export function guildNameError(name: string): string | undefined {
   if (name.trim() === "") return t("validation.required");
   return createGuildSchema.safeParse({ name }).success ? undefined : t("validation.guildNameLong");
+}
+
+/** Category name (categoryNameSchema): Vietnamese error, or undefined when valid. */
+export function categoryNameError(name: string): string | undefined {
+  if (name.trim() === "") return t("validation.required");
+  return categoryNameSchema.safeParse({ name }).success ? undefined : t("validation.categoryNameLong");
 }
 
 /** Channel name (createChannelSchema: 1..100 of a-z 0-9 - _). */

@@ -288,7 +288,7 @@ test("history: 130 seeded messages page in on scroll without jumping, down to th
   const channel = await api<{ id: string }>(A.token, "POST", `/guilds/${guildId}/channels`, { name: "lich-su", type: "TEXT" });
   for (let i = 1; i <= 130; i++) await post(B, channel.id, `Lịch sử #${i}`);
   await rail().getByRole("button", { name: longName }).click(); // reopening a server refetches its channels
-  await channelList().getByRole("button", { name: "lich-su", exact: true }).click();
+  await channelList().getByRole("button", { name: /^lich-su/ }).click();
   await expect(messageText("Lịch sử #130")).toBeVisible();
   await expect(log().getByRole("article")).toHaveCount(50);
   // pinned to the bottom after the first load
@@ -329,7 +329,7 @@ test("performance with 1100 loaded messages", async () => {
   for (let i = 0; i < texts.length; i += 20) await Promise.all(texts.slice(i, i + 20).map((t) => post(B, channel.id, t)));
   await rail().getByRole("button", { name: longName }).click();
   const tFirst = Date.now();
-  await channelList().getByRole("button", { name: "hieu-nang", exact: true }).click();
+  await channelList().getByRole("button", { name: /^hieu-nang/ }).click();
   await expect(log().getByRole("article")).toHaveCount(50);
   console.log(`first page of 50 messages: ${Date.now() - tFirst} ms (click to 50 rows in the DOM)`);
 

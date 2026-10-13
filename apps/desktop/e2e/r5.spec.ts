@@ -53,7 +53,8 @@ test.beforeAll(async () => {
   await api(A.token, "POST", "/dms", { userId: B.user.id });
   g1 = await createGuild(`Chúng ta ${run}`);
   g2 = await createGuild(`Khác ${run}`);
-  await api(A.token, "POST", `/guilds/${g1.id}/channels`, { name: "chung", type: "TEXT" });
+  const { categories } = await api<{ categories: { id: string; name: string }[] }>(A.token, "GET", `/guilds/${g1.id}`);
+  await api(A.token, "POST", `/guilds/${g1.id}/channels`, { name: "chung", type: "TEXT", categoryId: categories.find((c) => c.name === "Kênh văn bản")!.id });
   await api(A.token, "POST", `/guilds/${g2.id}/channels`, { name: "phong-hai", type: "TEXT" });
   await api(A.token, "POST", `/guilds/${g2.id}/channels`, { name: "voz-r5", type: "VOICE" });
   await createGuild(`Đà Nẵng ${run}`);
@@ -100,8 +101,8 @@ test("the server column has the quick-switch field and the category headers, wit
   const list = page.getByRole("list", { name: "Danh sách kênh" });
   await expect(list.getByText("Kênh văn bản")).toBeVisible();
   await expect(list.getByText("Kênh thoại")).toBeVisible();
-  await list.getByRole("button", { name: "Tạo kênh thoại" }).click();
-  await expect(page.getByRole("dialog", { name: "Tạo kênh" }).getByRole("radio").nth(1)).toBeChecked();
+  await list.getByRole("button", { name: "Tạo kênh trong Kênh thoại" }).click(); // the category's +: the dialog knows where the channel goes
+  await expect(page.getByRole("dialog", { name: "Tạo kênh" }).getByText("Trong danh mục Kênh thoại")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   // a plain member sees the headers but no +

@@ -3,6 +3,7 @@ import { createStore } from "zustand/vanilla";
 import type { LiveEvent as ChannelEvent, Message } from "./chat";
 import { channelKey, dmKey, parseKey, type ConvKey } from "./conversation";
 import type { CallEvent } from "./calls";
+import type { GuildEvent } from "./categories";
 import type { Friend, PublicUser, SocialEvent } from "./social";
 import type { Seat } from "./voice-presence";
 
@@ -41,6 +42,8 @@ type Deps = {
   onRefused: (key: ConvKey) => void;
   /** Friend, DM-list and presence events (they arrive whatever is open). */
   onSocial: (event: SocialEvent) => void;
+  /** Channel and category changes of a server we are in (they arrive in the user's own room, whatever is open). */
+  onGuild: (event: GuildEvent) => void;
   /** A watched voice channel was subscribed (first time and after every reconnect): fetch who is in it. */
   onWatched: (channelId: string) => void;
   /** The server refused a watched channel (no VIEW any more, or it is gone). */
@@ -66,7 +69,7 @@ type Deps = {
  * - The server never subscribes by itself: the open channel is (re)subscribed on every connect. A DM needs no
  *   subscribe (every socket is in the user's own room); friend, DM and presence events arrive in that room.
  */
-export function createRealtime({ url, getToken, onEvent, onActivity, onSubscribed, onRefused, onSocial, onWatched, onWatchRefused, onVoiceUpdate, onCall, onReconnected, io = connectIo, retryDelayMs = 1000 }: Deps) {
+export function createRealtime({ url, getToken, onEvent, onActivity, onSubscribed, onRefused, onSocial, onGuild, onWatched, onWatchRefused, onVoiceUpdate, onCall, onReconnected, io = connectIo, retryDelayMs = 1000 }: Deps) {
   const state = createStore<{ status: ConnectionStatus }>(() => ({ status: "idle" }));
   const setStatus = (status: ConnectionStatus) => state.setState({ status });
   let socket: SocketLike | null = null;
@@ -181,6 +184,12 @@ export function createRealtime({ url, getToken, onEvent, onActivity, onSubscribe
     s.on("friend:accepted", (d: { user: PublicUser }) => d?.user && social({ type: "friend:accepted", user: d.user }));
     s.on("friend:removed", (d: { userId: string }) => d?.userId && social({ type: "friend:removed", userId: d.userId }));
     s.on("presence:update", (d: { userId: string; online: boolean }) => d?.userId && social({ type: "presence", userId: d.userId, online: d.online === true }));
+    const guild = (event: GuildEvent) => s === socket && onGuild(event);
+    s.on("channel:created", (d: Extract<GuildEvent, { type: "channel:created" }>["channel"]) => d?.id && guild({ type: "channel:created", channel: d }));
+    s.on("category:created", (d: Extract<GuildEvent, { type: "category:created" }>["category"]) => d?.id && guild({ type: "category:created", category: d }));
+    s.on("category:updated", (d: Extract<GuildEvent, { type: "category:updated" }>["category"]) => d?.id && guild({ type: "category:updated", category: d }));
+    s.on("category:deleted", (d: Extract<GuildEvent, { type: "category:deleted" }>["event"]) => d?.categoryId && Array.isArray(d.channels) && guild({ type: "category:deleted", event: d }));
+    s.on("layout:updated", (d: Extract<GuildEvent, { type: "layout:updated" }>["event"]) => d?.guildId && Array.isArray(d.categories) && Array.isArray(d.channels) && guild({ type: "layout:updated", event: d }));
     s.on("voice:update", (d: { channelId: string; participants: Seat[] }) => {
       if (s === socket && d && watched.has(d.channelId) && Array.isArray(d.participants)) onVoiceUpdate(d.channelId, d.participants);
     });

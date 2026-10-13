@@ -20,6 +20,7 @@ import { createVoice, type RoomLike } from "./voice";
 import { createVoicePresence } from "./voice-presence";
 import { dmKey, type ConvKey } from "./conversation";
 import { callNotice, messageNotice, shouldNotify } from "./notify";
+import { applyGuildEvent } from "./categories";
 import { applySocialEvent, BLOCKS_KEY, DMS_KEY, FRIENDS_KEY, type Dm, type PublicUser } from "./social";
 
 // The app's singletons. REST data goes through TanStack Query using `session.client.request`; messages live in `chat`.
@@ -220,6 +221,7 @@ export const realtime = createRealtime({
     revalidateGuild(useNav.getState().guildId);
   },
   onSocial: (event) => applySocialEvent(queryClient, event),
+  onGuild: (event) => applyGuildEvent(queryClient, event),
   onWatched: (channelId) => void fetchVoiceSeats(channelId),
   onWatchRefused: () => revalidateGuild(useNav.getState().guildId),
   onVoiceUpdate: (channelId, seats) => voicePresence.update(channelId, seats),

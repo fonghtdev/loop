@@ -82,6 +82,7 @@ function setup(first: string = "a1", refreshes: (string | null)[] = ["a2", "a3"]
     onSubscribed: vi.fn(),
     onRefused: vi.fn(),
     onSocial: vi.fn(),
+    onGuild: vi.fn(),
     onWatched: vi.fn(),
     onWatchRefused: vi.fn(),
     onVoiceUpdate: vi.fn(),
@@ -322,6 +323,25 @@ describe("DM, friend and presence events", () => {
       { type: "presence", userId: "u", online: true },
       { type: "presence", userId: "u", online: false },
     ]);
+  });
+
+  it("channel and category events reach onGuild whatever is open; malformed ones and ones after stop do not", async () => {
+    const s = await connected();
+    const sock = s.socket();
+    const category = { id: "k", guildId: "g", name: "n", position: 0, createdAt: "t" };
+    const gone = { guildId: "g", categoryId: "k", channels: [] };
+    const layout = { guildId: "g", categories: [], channels: [] };
+    sock.fire("channel:created", { id: "c", guildId: "g" });
+    sock.fire("category:created", category);
+    sock.fire("category:updated", category);
+    sock.fire("category:deleted", gone);
+    sock.fire("layout:updated", layout);
+    for (const [event, payload] of [["channel:created", null], ["category:created", {}], ["category:deleted", { categoryId: "k" }], ["layout:updated", { guildId: "g" }]] as const) sock.fire(event, payload);
+    expect(s.onGuild.mock.calls.map((c) => c[0].type)).toEqual(["channel:created", "category:created", "category:updated", "category:deleted", "layout:updated"]);
+    const late = [...(sock.handlers.get("layout:updated") ?? [])];
+    s.rt.stop();
+    late.forEach((fn) => fn(layout));
+    expect(s.onGuild).toHaveBeenCalledTimes(5);
   });
 
   it("malformed payloads are dropped", async () => {

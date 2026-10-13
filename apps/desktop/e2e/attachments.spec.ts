@@ -380,7 +380,7 @@ test("loading images moves nothing: boxes keep their size and the text below sta
     await route.continue().catch(() => {});
   });
   await openGuild(); // reopening a server refetches its channels
-  await page.getByRole("navigation", { name: "Kênh" }).getByRole("button", { name: "cuon", exact: true }).click();
+  await page.getByRole("navigation", { name: "Kênh" }).getByRole("button", { name: /^cuon/ }).click();
   await expect(log().getByText("Dòng 68", { exact: true })).toBeVisible();
   const scroller = log().locator("..");
   // page up until the oldest message is loaded

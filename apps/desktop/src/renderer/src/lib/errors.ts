@@ -51,6 +51,7 @@ export function errorMessage(err: unknown): string {
     if (path === "/auth/register") return t("errors.taken");
     if (path.endsWith("/members/me")) return t("errors.ownerCannotLeave");
     if (path.endsWith("/channels")) return t("errors.channelTaken");
+    if (/\/categories(\/[^/]+)?$/.test(path)) return t("errors.categoryTaken");
     return t("errors.unknown");
   }
   if (status === 429) return t("errors.rateLimited");

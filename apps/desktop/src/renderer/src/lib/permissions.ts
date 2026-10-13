@@ -2,7 +2,7 @@ import { computePermissions, type Overwrite } from "@loop/shared";
 
 /** Server shapes (GET /guilds/:id, /guilds/:id/roles, /guilds/:id/members) the client computes permissions from. */
 export type Guild = { id: string; name: string; ownerId: string; createdAt: string };
-export type Channel = { id: string; guildId: string; name: string; type: "TEXT" | "VOICE"; position: number; overwrites: Overwrite[] };
+export type Channel = { id: string; guildId: string; name: string; type: "TEXT" | "VOICE"; position: number; categoryId: string | null; overwrites: Overwrite[] };
 export type Role = { id: string; guildId: string; name: string; permissions: number; position: number };
 export type Member = { userId: string; username: string; joinedAt: string; roleIds: string[] };
 

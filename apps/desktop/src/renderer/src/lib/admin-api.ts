@@ -1,3 +1,4 @@
+import type { Category, Layout } from "@loop/shared";
 import type { Method } from "./auth-client";
 import type { Guild, Role } from "./permissions";
 
@@ -28,6 +29,10 @@ export function createAdminApi({ request, changed, gone }: { request: Request; c
       call(g, "PUT", `/channels/${channelId}/overwrites/${roleId}`, body),
     clearOverwrite: (g: string, channelId: string, roleId: string) => call(g, "DELETE", `/channels/${channelId}/overwrites/${roleId}`),
     deleteChannel: (g: string, channelId: string) => call(g, "DELETE", `/guilds/${g}/channels/${channelId}`),
+    createCategory: (g: string, name: string) => call<Category>(g, "POST", `/guilds/${g}/categories`, { name }),
+    renameCategory: (g: string, categoryId: string, name: string) => call<Category>(g, "PATCH", `/guilds/${g}/categories/${categoryId}`, { name }),
+    deleteCategory: (g: string, categoryId: string) => call(g, "DELETE", `/guilds/${g}/categories/${categoryId}`),
+    setLayout: (g: string, layout: Layout) => call(g, "PUT", `/guilds/${g}/layout`, layout),
     transfer: (g: string, userId: string) => call<{ guild: Guild }>(g, "POST", `/guilds/${g}/transfer`, { userId }),
     async deleteGuild(g: string) {
       try {

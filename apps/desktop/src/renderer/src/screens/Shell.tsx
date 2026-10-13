@@ -22,6 +22,8 @@ import { ToastHost } from "../components/Toast";
 import { t } from "../i18n/t";
 import { ApiError } from "../lib/auth-client";
 import { queryClient, realtime, revalidateGuild, session, unread, voice, voicePresence } from "../lib/app";
+import { buildTree, displayOrder } from "../lib/categories";
+import { collapse } from "../lib/category-collapse";
 import { density } from "../lib/density";
 import { move, reducedNow } from "../lib/motion";
 import { goHome, readLastPlace, useNav } from "../lib/nav";
@@ -129,7 +131,11 @@ export function Shell() {
   // The message density is the account's own: it follows the user in, and nothing of it stays after sign-out.
   useLayoutEffect(() => {
     density.load(user?.id ?? null);
-    return () => density.load(null);
+    collapse.load(user?.id ?? null);
+    return () => {
+      density.load(null);
+      collapse.load(null);
+    };
   }, [user?.id]);
 
   // A dropped file must never navigate the window to it (the conversation's own drop zone handles real drops).
@@ -263,11 +269,12 @@ function useValidPlace(): string | null {
   }, [guildId, guilds, lostGuild]);
 
   const channels = guild.data?.channels;
+  const categories = guild.data?.categories;
   const valid = !!channels?.some((c) => c.id === channelId);
   useEffect(() => {
-    const fallback = channels?.find((c) => c.type === "TEXT")?.id ?? null;
+    const fallback = (channels && categories ? displayOrder(buildTree(channels, categories)) : []).find((c) => c.type === "TEXT")?.id ?? null;
     if (channels && !valid && useNav.getState().channelId !== fallback) useNav.setState({ channelId: fallback });
-  }, [channels, valid]);
+  }, [channels, categories, valid]);
 
   return valid ? channelId : null;
 }

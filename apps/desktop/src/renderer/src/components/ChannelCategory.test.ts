@@ -7,15 +7,24 @@ import { ChannelCategory } from "./ChannelCategory";
 import { QuickSwitchField } from "./QuickSwitchField";
 import { toggleQuickSwitch } from "../lib/quick-switch-state";
 
-const html = (onAdd?: () => void) =>
-  renderToStaticMarkup(createElement("ul", null, createElement(ChannelCategory, { label: "Kênh văn bản", addLabel: "Tạo kênh văn bản", onAdd })));
+const html = (props: { collapsed?: boolean; onAdd?: () => void } = {}) =>
+  renderToStaticMarkup(
+    createElement("ul", null, createElement(ChannelCategory, { name: "Trò chuyện", collapsed: false, onToggle: () => {}, addLabel: "Tạo kênh trong Trò chuyện", ...props })),
+  );
 
 describe("channel category header", () => {
-  it("shows its label, and the + button only when adding is allowed", () => {
-    expect(html()).toContain("Kênh văn bản");
-    expect(html()).not.toContain("<button");
-    const withAdd = html(() => {});
-    expect(withAdd).toContain('aria-label="Tạo kênh văn bản"');
+  it("its title is the fold button: aria-expanded follows the state, the chevron turns when folded", () => {
+    const open = html();
+    expect(open).toContain("Trò chuyện");
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).not.toContain("-rotate-90");
+    const folded = html({ collapsed: true });
+    expect(folded).toContain('aria-expanded="false"');
+    expect(folded).toContain("-rotate-90");
+  });
+  it("shows the + button only when adding is allowed", () => {
+    expect(html()).not.toContain("Tạo kênh trong");
+    expect(html({ onAdd: () => {} })).toContain('aria-label="Tạo kênh trong Trò chuyện"');
   });
 });
 
@@ -35,11 +44,21 @@ describe("quick switch field", () => {
 
 describe("channel column wiring", () => {
   const src = readFileSync(join(__dirname, "ChannelColumn.tsx"), "utf8");
-  it("offers + only with MANAGE_CHANNELS (the same check as the server menu entry), voice header preselects VOICE", () => {
+  it("offers + and the category menu only with MANAGE_CHANNELS (the same check as the server menu entries)", () => {
     expect(src).toMatch(/const canManage = perms\.can\(Permission\.MANAGE_CHANNELS\)/);
-    expect(src).toMatch(/onAdd=\{canManage \? \(\) => addChannel\(type\) : undefined\}/);
-    expect(src).toMatch(/\["TEXT", "VOICE"\] as const/);
-    expect(src).toMatch(/initialType=\{newType\}/);
+    expect(src).toMatch(/onAdd=\{canManage \? \(\) => addChannel\(category\) : undefined\}/);
+    expect(src).toMatch(/canManage && \(\s*<RowMenu id=\{`cat-/);
+    expect(src).toMatch(/\{canManage && <MenuItem [^\n]*guildMenu\.createCategory/);
+    expect(src).toMatch(/category=\{newIn\}/);
+  });
+  it("renders the tree (loose channels first, then each category) and folds through the per-account store", () => {
+    expect(src).toMatch(/tree\.loose\.map[\s\S]*tree\.groups\.map/);
+    expect(src).toMatch(/shownChannels\(channels, folded, keep\)/);
+    expect(src).toMatch(/onToggle=\{\(\) => collapse\.toggle\(category\.id\)\}/);
+  });
+  it("every reorder and move goes through the one layout payload", () => {
+    expect(src.match(/saveLayout\(/g)!.length).toBeGreaterThanOrEqual(5);
+    expect(src).toMatch(/admin\.setLayout\(guildId, layoutOf\(next\)\)/);
   });
   it("the quick switch is the field under the header, not a second icon in it", () => {
     expect(src).toMatch(/<QuickSwitchField \/>/);

@@ -4,7 +4,8 @@ import { useMemo } from "react";
 import { standingFor } from "./admin";
 import { session } from "./app";
 import { BLOCKS_KEY, DMS_KEY, FRIENDS_KEY, showOnline, type Dm, type FriendsData, type PublicUser } from "./social";
-import { permissionsFor, type Channel, type Guild, type Member, type Role } from "./permissions";
+import { permissionsFor, type Guild, type Member, type Role } from "./permissions";
+import type { GuildData } from "./categories";
 
 const api = session.client.request;
 
@@ -13,7 +14,7 @@ export const useGuilds = () => useQuery({ queryKey: ["guilds"], queryFn: () => a
 
 export const guildQuery = (guildId: string | null) => ({
   queryKey: ["guild", guildId],
-  queryFn: () => api<{ guild: Guild; channels: Channel[] }>("GET", `/guilds/${guildId}`),
+  queryFn: () => api<GuildData>("GET", `/guilds/${guildId}`),
 });
 
 export const useGuild = (guildId: string | null) => useQuery({ ...guildQuery(guildId), enabled: !!guildId });
