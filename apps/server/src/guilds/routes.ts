@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import {
   createChannelSchema,
+  DEFAULT_CATEGORIES,
   createGuildSchema,
   DEFAULT_EVERYONE_PERMISSIONS,
   hasPermission,
@@ -47,19 +48,30 @@ export function guildRoutes(app: FastifyInstance) {
     const body = parse(createGuildSchema, req.body, reply);
     if (!body) return;
     const id = randomUUID(); // @everyone shares the guild's id
-    const guild = await prisma.guild.create({
-      data: {
-        id,
-        name: body.name,
-        ownerId: req.userId,
-        roles: { create: { id, name: "@everyone", permissions: DEFAULT_EVERYONE_PERMISSIONS, position: 0 } },
-        members: { create: { userId: req.userId } },
-        channels: { create: { name: "general", type: "TEXT", position: 0 } },
-      },
-      include: { channels: true },
+    const textCategoryId = randomUUID();
+    const { channels, categories, ...rest } = await prisma.$transaction(async (tx) => {
+      const guild = await tx.guild.create({
+        data: {
+          id,
+          name: body.name,
+          ownerId: req.userId,
+          roles: { create: { id, name: "@everyone", permissions: DEFAULT_EVERYONE_PERMISSIONS, position: 0 } },
+          members: { create: { userId: req.userId } },
+          categories: {
+            create: [
+              { id: textCategoryId, name: DEFAULT_CATEGORIES.TEXT, position: 0 },
+              { name: DEFAULT_CATEGORIES.VOICE, position: 1 },
+            ],
+          },
+        },
+        include: { categories: { orderBy: { position: "asc" } } },
+      });
+      const general = await tx.channel.create({
+        data: { guildId: id, categoryId: textCategoryId, name: "general", type: "TEXT", position: 0 },
+      });
+      return { ...guild, channels: [general] };
     });
-    const { channels, ...rest } = guild;
-    return reply.code(201).send({ guild: rest, channels });
+    return reply.code(201).send({ guild: rest, channels, categories });
   });
 
   app.get("/guilds", async (req) =>
@@ -78,7 +90,8 @@ export function guildRoutes(app: FastifyInstance) {
       include: { overwrites: { select: { roleId: true, allow: true, deny: true } } },
     });
     const visible = channels.filter((c) => hasPermission(channelPermissions(access, c.overwrites), Permission.VIEW_CHANNEL));
-    return { guild: access.guild, channels: visible };
+    const categories = await prisma.category.findMany({ where: { guildId: access.guild.id }, orderBy: { position: "asc" } });
+    return { guild: access.guild, channels: visible, categories };
   });
 
   app.delete<{ Params: Params }>("/guilds/:guildId", async (req, reply) => {
@@ -98,7 +111,8 @@ export function guildRoutes(app: FastifyInstance) {
     try {
       const channel = await prisma.$transaction(async (tx) => {
         await lockGuild(tx, guild.id);
-        const last = await tx.channel.aggregate({ where: { guildId: guild.id }, _max: { position: true } });
+        // position is per category; new channels are uncategorised (categoryId null) until the API says otherwise
+        const last = await tx.channel.aggregate({ where: { guildId: guild.id, categoryId: null }, _max: { position: true } });
         return tx.channel.create({
           data: { guildId: guild.id, ...body, position: (last._max.position ?? -1) + 1 },
         });

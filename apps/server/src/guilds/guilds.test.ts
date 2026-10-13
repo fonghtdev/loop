@@ -104,11 +104,11 @@ describe("guilds", () => {
 });
 
 describe("channels", () => {
-  it("owner creates channels with increasing positions", async () => {
+  it("a new channel is uncategorised and first in the uncategorised area (position is per category)", async () => {
     const { owner, base } = await setup();
     const res = await call("POST", `${base}/channels`, owner, { name: "voice_1", type: "VOICE" });
     expect(res.statusCode).toBe(201);
-    expect(res.json()).toMatchObject({ name: "voice_1", type: "VOICE", position: 1 });
+    expect(res.json()).toMatchObject({ name: "voice_1", type: "VOICE", position: 0, categoryId: null });
   });
 
   it("409 on a duplicate name, 400 on a bad name", async () => {

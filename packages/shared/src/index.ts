@@ -30,6 +30,30 @@ export const createGuildSchema = z.object({ name: z.string().trim().min(1).max(1
 
 export const channelTypeSchema = z.enum(["TEXT", "VOICE"]);
 
+/** Names of the two categories every guild starts with (also written by the categories migration). */
+export const DEFAULT_CATEGORIES = { TEXT: "Kênh văn bản", VOICE: "Kênh thoại" } as const;
+
+export const categorySchema = z.object({
+  id: z.string().uuid(),
+  guildId: z.string().uuid(),
+  name: z.string().min(1).max(100),
+  position: z.number().int().min(0),
+  createdAt: z.string(),
+});
+export type Category = z.infer<typeof categorySchema>;
+
+/** Channel as returned by the guild endpoints; `categoryId` null = uncategorised area. */
+export const channelSchema = z.object({
+  id: z.string().uuid(),
+  guildId: z.string().uuid(),
+  name: z.string(),
+  type: channelTypeSchema,
+  position: z.number().int().min(0),
+  categoryId: z.string().uuid().nullable(),
+  createdAt: z.string(),
+});
+export type Channel = z.infer<typeof channelSchema>;
+
 export const createChannelSchema = z.object({
   name: z
     .string()

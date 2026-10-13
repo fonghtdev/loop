@@ -46,15 +46,16 @@ model Session {
 }
 
 model Guild {
-  id        String    @id @default(uuid()) @db.Uuid
-  name      String
-  ownerId   String    @db.Uuid
-  owner     User      @relation(fields: [ownerId], references: [id])
-  createdAt DateTime  @default(now())
-  channels  Channel[]
-  members   Member[]
-  invites   Invite[]
-  roles     Role[]
+  id         String     @id @default(uuid()) @db.Uuid
+  name       String
+  ownerId    String     @db.Uuid
+  owner      User       @relation(fields: [ownerId], references: [id])
+  createdAt  DateTime   @default(now())
+  channels   Channel[]
+  categories Category[]
+  members    Member[]
+  invites    Invite[]
+  roles      Role[]
 }
 
 enum ChannelType {
@@ -68,7 +69,11 @@ model Channel {
   guild       Guild              @relation(fields: [guildId], references: [id], onDelete: Cascade)
   name        String
   type        ChannelType
-  position    Int
+  position    Int // order within its category (or within the uncategorised area when categoryId is null)
+  categoryId  String?            @db.Uuid
+  // Composite FK keeps a channel inside its own guild's categories. The migration makes it
+  // `ON DELETE SET NULL ("categoryId")` so deleting a category only nulls categoryId, never guildId.
+  category    Category?          @relation(fields: [guildId, categoryId], references: [guildId, id], onDelete: SetNull)
   createdAt   DateTime           @default(now())
   messages    Message[]
   overwrites  ChannelOverwrite[]
@@ -76,6 +81,19 @@ model Channel {
 
   @@unique([guildId, name])
   @@unique([guildId, id]) // target of composite FKs that keep overwrites inside one guild
+}
+
+model Category {
+  id        String    @id @default(uuid()) @db.Uuid
+  guildId   String    @db.Uuid
+  guild     Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  name      String
+  position  Int
+  createdAt DateTime  @default(now())
+  channels  Channel[]
+
+  @@unique([guildId, name])
+  @@unique([guildId, id]) // target of the composite FK from Channel
 }
 
 model Member {
