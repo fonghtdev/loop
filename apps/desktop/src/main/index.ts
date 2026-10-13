@@ -1,7 +1,10 @@
+import { tmpdir } from "node:os";
+import { appendFileSync, existsSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { autoUpdater } from "electron-updater";
-import { app, BrowserWindow, ipcMain, net, Notification, protocol, safeStorage, session, shell, systemPreferences, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, safeStorage, session, shell, systemPreferences, type IpcMainInvokeEvent } from "electron";
 import { APP_ID } from "../shared/app-id";
 import { API_URL, LIVEKIT_ORIGIN, STORAGE_ORIGIN, UPDATE_URL, WS_URL } from "../shared/config";
 import type { Settings } from "../shared/settings";
@@ -14,6 +17,7 @@ import { createSettingsStore } from "./settings";
 import { createTokenStore } from "./token-store";
 import { createTray, type TrayHandle } from "./tray";
 import { createUpdater } from "./updater";
+import { runUninstall } from "./uninstall";
 
 // Set by electron-vite in dev only; production loads the built renderer from app://loop.
 const devServerUrl = process.env.ELECTRON_RENDERER_URL;
@@ -34,6 +38,7 @@ let win: BrowserWindow | null = null;
 let tray: TrayHandle | null = null;
 let quitting = false; // a real quit is under way: closing windows must not be intercepted
 let focusOverride: boolean | null = null; // e2e only
+let uninstallAnswer = false; // e2e only: stands in for the click on the native confirmation
 let settings: ReturnType<typeof createSettingsStore>;
 let updater: ReturnType<typeof createUpdater>;
 
@@ -99,6 +104,7 @@ function registerIpc() {
     return updater.status();
   });
   handle("update:install", () => updater.install());
+  handle("app:uninstall", () => uninstallApp(() => revokeSession(store.get())));
   handle("notify:show", (payload) => notifier.show(payload));
   handle("notify:close", (key) => notifier.close(key));
   handle("badge:set", (count) => {
@@ -109,6 +115,63 @@ function registerIpc() {
   handle("media:ensureAccess", (kind) => {
     if (!isMediaKind(kind)) throw new Error("invalid media kind");
     return ensureMediaAccess(kind, process.platform, systemPreferences);
+  });
+}
+
+const UNINSTALL_PROMPT = {
+  type: "warning" as const,
+  buttons: ["Hủy", "Gỡ cài đặt"],
+  defaultId: 0, // Enter / Esc mean cancel
+  cancelId: 0,
+  title: "Gỡ cài đặt Loop",
+  message: "Gỡ cài đặt Loop khỏi máy tính này?",
+  detail:
+    "Loop và dữ liệu của nó trên máy này sẽ bị xoá: đăng nhập, cài đặt, bộ nhớ đệm và mục tự khởi động cùng máy. " +
+    "Tài khoản và mọi dữ liệu trên máy chủ không bị xoá: cài lại Loop và đăng nhập là có lại tất cả.",
+};
+
+/** The native confirmation is the real gate: a compromised renderer cannot click it. */
+/** Same call as the renderer's sign-out (POST /auth/logout); the caller bounds the wait and ignores failures. The token is never logged. */
+async function revokeSession(refreshToken: string | null) {
+  if (!refreshToken) return;
+  const res = await net.fetch(`${API_URL}/auth/logout`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ refreshToken }), signal: AbortSignal.timeout(3000) });
+  recordUninstall({ action: "revokeRequest", status: res.status });
+}
+
+const recordUninstall = (entry: Record<string, unknown>) =>
+  void (e2e && process.env.LOOP_E2E_UNINSTALL_LOG && appendFileSync(process.env.LOOP_E2E_UNINSTALL_LOG, `${JSON.stringify(entry)}\n`));
+
+function uninstallApp(revoke: () => Promise<void>) {
+  const throwaway = e2e && !!process.env.LOOP_USER_DATA_DIR;
+  return runUninstall({
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    e2e,
+    userDataOverridden: throwaway,
+    deleteInE2e: process.env.LOOP_E2E_UNINSTALL_DELETE === "1",
+    userData: app.getPath("userData"),
+    appData: app.getPath("appData"),
+    tmpdir: tmpdir(),
+    home: app.getPath("home"),
+    exe: app.getPath("exe"),
+    appName: app.getName(),
+    pid: process.pid,
+    exists: existsSync,
+    confirm: async () => (e2e ? uninstallAnswer : (win && !win.isDestroyed() ? await dialog.showMessageBox(win, UNINSTALL_PROMPT) : await dialog.showMessageBox(UNINSTALL_PROMPT)).response === 1),
+    revoke,
+    removeLoginItem: () => app.setLoginItemSettings({ openAtLogin: false }),
+    teardown: async () => {
+      quitting = true;
+      tray?.destroy();
+      await session.defaultSession.clearStorageData().catch(() => undefined);
+      await session.defaultSession.clearCache().catch(() => undefined);
+      BrowserWindow.getAllWindows().forEach((w) => w.destroy());
+    },
+    trash: (path) => shell.trashItem(path),
+    spawnDetached: ({ cmd, args, env }) => spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: true, env: env && { ...process.env, ...env } }).unref(),
+    warn: async (message) => void (await dialog.showMessageBox({ type: "info", message, buttons: ["OK"] })),
+    exit: () => app.exit(0),
+    record: recordUninstall, // e2e only: what was done or would have been done, one JSON line each (the process is gone by the time anyone could ask)
   });
 }
 
@@ -211,6 +274,7 @@ function hookE2e() {
     trayItem: (id: "open" | "notifications" | "quit") => tray && (id === "open" ? showWindow() : id === "quit" ? app.quit() : toggleNotifications()),
     window: () => ({ exists: !!win && !win.isDestroyed(), visible: !!win && win.isVisible() }),
     settings: () => settings.get(),
+    setUninstallAnswer: (value: boolean) => (uninstallAnswer = value),
   });
 }
 

@@ -1,4 +1,4 @@
-import { Gear, SignOut, X } from "@phosphor-icons/react";
+import { Gear, SignOut, Trash, X } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useStore } from "zustand";
 import type { Settings } from "../../../shared/settings";
@@ -13,6 +13,7 @@ import { useNav } from "../lib/nav";
 import { soundPrefs, useSoundPrefs } from "../lib/sound-prefs";
 import { toast } from "../lib/toast";
 import { Button } from "./Button";
+import { Dialog, DialogActions } from "./Dialog";
 import { Segmented } from "./Segmented";
 import { Switch } from "./Switch";
 import { Tooltip } from "./Tooltip";
@@ -93,9 +94,67 @@ export function UserSettings() {
               </Button>
             </div>
           </Group>
+          <Group id="uninstall" title="userSettings.uninstall">
+            <UninstallSection />
+          </Group>
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * Removes the app and its data from THIS computer. The account stays on the server (said plainly in the dialog). The
+ * real gate is the native dialog the main process shows (this page cannot click it); only after it does main revoke the
+ * session on the server (best effort) and remove everything, so declining leaves the user signed in.
+ */
+function UninstallSection() {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const proceed = async () => {
+    setBusy(true);
+    try {
+      await window.loop.uninstall(); // main asks natively, then revokes the session itself; "cancelled" leaves everything as it was
+    } finally {
+      setBusy(false);
+      setOpen(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-3 px-3 py-2">
+      <p className="text-[13px] leading-relaxed text-ink-muted">{t("userSettings.uninstallHint")}</p>
+      <div>
+        <Button variant="danger" onClick={() => setOpen(true)}>
+          <Trash aria-hidden="true" />
+          {t("userSettings.uninstallOpen")}
+        </Button>
+      </div>
+      <Dialog open={open} onClose={() => !busy && setOpen(false)} title={t("userSettings.uninstallTitle")}>
+        <div className="flex flex-col gap-3 text-[15px]">
+          <div>
+            <p className="font-medium">{t("userSettings.uninstallRemoved")}</p>
+            <ul className="mt-1 list-disc pl-5 text-ink-muted">
+              <li>{t("userSettings.uninstallRemovedApp")}</li>
+              <li>{t("userSettings.uninstallRemovedData")}</li>
+              <li>{t("userSettings.uninstallRemovedStartup")}</li>
+            </ul>
+          </div>
+          <div>
+            <p className="font-medium">{t("userSettings.uninstallKept")}</p>
+            <p className="mt-1 text-ink-muted">{t("userSettings.uninstallKeptAccount")}</p>
+          </div>
+          <p className="text-[13px] text-ink-muted">{t("userSettings.uninstallNote")}</p>
+        </div>
+        <DialogActions>
+          <Button variant="ghost" disabled={busy} onClick={() => setOpen(false)}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="danger" loading={busy} onClick={() => void proceed()}>
+            {t("userSettings.uninstallConfirm")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </div>
   );
 }
 

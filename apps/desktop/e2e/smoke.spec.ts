@@ -39,6 +39,7 @@ test("register, restore the session after a relaunch, logout, wrong password", a
     "session",
     "setBadge",
     "settings",
+    "uninstall",
     "update",
     "version",
   ]);

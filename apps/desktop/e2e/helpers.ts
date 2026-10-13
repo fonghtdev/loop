@@ -122,8 +122,8 @@ export const hook = <T = unknown>(app: ElectronApplication, name: string, ...arg
   app.evaluate((_, [n, a]) => (globalThis as unknown as { __loopE2E: Record<string, (...x: unknown[]) => unknown> }).__loopE2E[n as string](...(a as unknown[])), [name, args]) as Promise<T>;
 
 /** Launches the built app (or the Vite dev server when ELECTRON_RENDERER_URL is set) and signs `s` in. */
-export async function launchAs(s: Session, { userData = mkdtempSync(join(tmpdir(), "loop-e2e-9c-")), args = [] as string[] } = {}): Promise<{ app: ElectronApplication; page: Page; userData: string }> {
-  const app = await _electron.launch(launchOptions(userData, args));
+export async function launchAs(s: Session, { userData = mkdtempSync(join(tmpdir(), "loop-e2e-9c-")), args = [] as string[], env = {} as Record<string, string> } = {}): Promise<{ app: ElectronApplication; page: Page; userData: string }> {
+  const app = await _electron.launch({ ...launchOptions(userData, args), env: { ...launchEnv(userData), ...env } });
   const page = await app.firstWindow();
   await page.getByLabel("Email").fill(`${s.user.username}@example.com`);
   await page.getByLabel("Mật khẩu", { exact: true }).fill(password);

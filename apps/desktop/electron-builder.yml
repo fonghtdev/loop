@@ -35,6 +35,7 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   perMachine: false
+  deleteAppDataOnUninstall: true # unconditional: uninstalling from Windows Settings > Apps also removes the user data (account/server data is untouched)
 # Makes the build write latest.yml / latest-mac.yml next to the artifacts (upload all of them to VITE_UPDATE_URL).
 # The url is a placeholder: the file lists relative names, and the app is told the real feed by setFeedURL (src/main/updater.ts).
 # The dist scripts pass --publish never, so electron-builder uploads nothing.
