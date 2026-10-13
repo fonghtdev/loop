@@ -1,10 +1,100 @@
 # Loop
 
-App chat kiểu Discord cho Windows và macOS: máy chủ (server) với kênh chat, tin nhắn riêng, bạn bè, vai trò và quyền, tệp đính kèm, gọi thoại và video.
+**Ứng dụng chat cộng đồng cho Windows và macOS.** Máy chủ riêng với kênh chữ và kênh thoại được gom theo danh mục, tin nhắn riêng, bạn bè, vai trò và quyền chi tiết, tệp đính kèm, gọi thoại và video, tất cả theo thời gian thực.
 
-> **Trạng thái:** server đã xong (đăng nhập, server/kênh, chat realtime, vai trò, bạn bè và DM, tệp, voice/video). App desktop đã có **đăng nhập, máy chủ, kênh, chat text trực tiếp, bạn bè, tin nhắn riêng (DM), chặn, chấm online, tệp đính kèm, kênh thoại (micro + camera) và gọi 1-1 thoại/video trong DM**; màn hình quản lý vai trò và thông báo hệ điều hành đang làm tiếp (chưa có chia sẻ màn hình, chọn thiết bị âm thanh, chuông cuộc gọi).
+[![CI](https://github.com/fonghtdev/loop/actions/workflows/ci.yml/badge.svg)](https://github.com/fonghtdev/loop/actions/workflows/ci.yml)
+[![Bản phát hành](https://img.shields.io/github/v/release/fonghtdev/loop?label=b%E1%BA%A3n%20ph%C3%A1t%20h%C3%A0nh)](https://github.com/fonghtdev/loop/releases/latest)
+![Nền tảng](https://img.shields.io/badge/n%E1%BB%81n%20t%E1%BA%A3ng-macOS%20%7C%20Windows-lightgrey)
 
-## Cần có
+## Mục lục
+
+- [Tải về](#tải-về)
+- [Tính năng](#tính-năng)
+- [Kiến trúc](#kiến-trúc)
+- [Công nghệ](#công-nghệ)
+- [Chạy trên máy phát triển](#chạy-trên-máy-phát-triển)
+- [Kiểm thử](#kiểm-thử)
+- [Cấu trúc thư mục](#cấu-trúc)
+- [Cấu hình](#cấu-hình-env)
+- [Triển khai và phát hành](#đóng-gói-và-phát-hành)
+- [Bảo mật](#bảo-mật)
+- [Trạng thái và giới hạn](#trạng-thái-và-giới-hạn)
+
+## Tải về
+
+Bản mới nhất ở trang **[Releases](https://github.com/fonghtdev/loop/releases/latest)**.
+
+| Máy của bạn | Tệp |
+|---|---|
+| Mac chip Apple (M1, M2, M3...) | `Loop-<phiên bản>-mac-apple-silicon.dmg` |
+| Mac Intel | `Loop-<phiên bản>-mac-intel.dmg` |
+| Windows 64-bit | `Loop-Setup-<phiên bản>-windows-x64.exe` |
+
+Bản cài **chưa được ký số**, nên hệ điều hành sẽ cảnh báo lần đầu mở:
+
+- **macOS:** kéo Loop vào Applications, **chuột phải vào Loop, chọn Open, rồi Open**. Nếu vẫn báo không mở được: `xattr -cr /Applications/Loop.app`.
+- **Windows:** khi hiện "Windows protected your PC", bấm **More info**, rồi **Run anyway**.
+
+Gỡ cài đặt ngay trong app: Cài đặt, cuối trang, **Gỡ cài đặt Loop**. Việc này xóa app và dữ liệu của nó trên máy; tài khoản và dữ liệu trên máy chủ được giữ nguyên.
+
+## Tính năng
+
+**Cộng đồng**
+- Máy chủ với **danh mục** và kênh chữ/kênh thoại: tạo, đổi tên, xóa, thu gọn theo từng tài khoản, **kéo thả** để sắp xếp (hoặc dùng menu bằng bàn phím).
+- Lời mời bằng mã, rời, đuổi thành viên, chuyển quyền chủ, xóa máy chủ.
+- **Vai trò và quyền** theo bitmask, ghi đè quyền theo từng kênh, luật phân cấp chống leo thang quyền.
+
+**Trò chuyện**
+- Tin nhắn thời gian thực, lịch sử có phân trang, sửa và xóa tin, đồng bộ lại khi mất kết nối.
+- **Tệp và ảnh đính kèm** (tối đa 25 MB mỗi tệp, 10 tệp mỗi tin; ảnh, PDF, văn bản, ZIP, MP4, MP3) với xem ảnh phóng to.
+- Tin nhắn riêng (DM), bạn bè, chặn người dùng, chấm trạng thái trực tuyến.
+- Đếm tin chưa đọc, thông báo của hệ điều hành, biểu tượng khay hệ thống.
+
+**Thoại và video**
+- Vào kênh thoại bằng một cú nhấp; micro, tai nghe, camera, chọn thiết bị vào/ra.
+- Gọi 1-1 thoại hoặc video trong tin nhắn riêng.
+- Âm báo khi có người vào/ra phòng (tắt/bật và chỉnh âm lượng trong Cài đặt).
+- Truyền qua [LiveKit](https://livekit.io), thu hồi quyền ngay khi bị đổi vai trò hoặc bị đuổi.
+
+**Trải nghiệm**
+- **Chuyển nhanh** bằng Ctrl+K (macOS: Cmd+K): tìm máy chủ, kênh, tin nhắn riêng, bạn bè mà không cần gõ dấu.
+- Giao diện tiếng Việt, tối ưu cho bàn phím, tôn trọng chế độ giảm chuyển động của hệ điều hành.
+- Thu vào khay, mở cùng máy, chỉ một cửa sổ chạy một lúc.
+
+## Kiến trúc
+
+```
+        Ứng dụng desktop (Electron + React)
+                 |  HTTPS / WSS (REST + Socket.IO)            |  WSS (thoại, video)
+                 v                                            v
+        +---------------------+                      +----------------+
+        |  Máy chủ Loop       |  token, webhook      |    LiveKit     |
+        |  Fastify + Socket.IO| <------------------> |  (Cloud/Docker)|
+        +----------+----------+                      +----------------+
+          |        |        |
+          v        v        v
+     PostgreSQL   Redis   S3 / Cloudflare R2
+     (dữ liệu)  (realtime, (tệp đính kèm,
+                 giới hạn)  URL ký sẵn)
+```
+
+- **REST là nguồn sự thật**, Socket.IO chỉ đẩy sự kiện; mọi kiểm tra quyền đi qua một lớp duy nhất dùng chung giữa server và app (`packages/shared`).
+- Tệp được tải thẳng lên kho S3 bằng URL ký sẵn rồi server **xác minh nội dung** (kích thước, loại tệp qua chữ ký đầu tệp) trước khi cho đính vào tin nhắn.
+- Redis nối nhiều instance server (Socket.IO adapter, nên trạng thái trực tuyến tính đúng xuyên instance) và giữ bộ đếm giới hạn tần suất.
+
+## Công nghệ
+
+| Lớp | Công nghệ |
+|---|---|
+| Desktop | Electron, React, Vite, Tailwind CSS, TanStack Query, Zustand, `livekit-client` |
+| Server | Node.js 22, Fastify, Socket.IO, Prisma, PostgreSQL, Redis, LiveKit Server SDK |
+| Lưu trữ | S3 tương thích (MinIO khi phát triển, Cloudflare R2 khi chạy thật) |
+| Dùng chung | TypeScript, zod |
+| Công cụ | pnpm workspace, Vitest, Playwright (Electron), GitHub Actions, electron-builder |
+
+## Chạy trên máy phát triển
+
+**Cần có:**
 
 | Công cụ | Ghi chú |
 |---|---|
@@ -12,7 +102,7 @@ App chat kiểu Discord cho Windows và macOS: máy chủ (server) với kênh c
 | pnpm 12 | cài bằng `npm i -g pnpm` (Node 26 không còn kèm corepack) |
 | Docker Desktop | chạy Postgres, Redis, MinIO và LiveKit. **Phải bật trước khi bắt đầu** |
 
-## Chạy lần đầu
+**Chạy lần đầu:**
 
 ```bash
 # 1. Cài thư viện
@@ -32,28 +122,18 @@ pnpm build
 pnpm --filter @loop/server db:deploy
 ```
 
-## Chạy hằng ngày
-
-Mở **hai cửa sổ terminal**, cả hai ở thư mục gốc dự án.
+**Chạy hằng ngày** (hai cửa sổ terminal, ở thư mục gốc):
 
 ```bash
-# Terminal 1: server (cổng 3000)
-pnpm --filter @loop/server dev
-
-# Terminal 2: app desktop (cửa sổ Electron)
-pnpm --filter @loop/desktop dev
+pnpm --filter @loop/server dev      # terminal 1: server, cổng 3000
+pnpm --filter @loop/desktop dev     # terminal 2: app desktop (cửa sổ Electron)
 ```
 
-Lần đầu chạy app desktop, Electron tải bộ chạy của nó (vài chục MB), nên hơi lâu.
+Lần đầu chạy app desktop, Electron tải bộ chạy của nó (vài chục MB) nên hơi lâu. Trong app, bấm **Tạo tài khoản** (tên người dùng gồm chữ thường không dấu, số, `_`, `.`; mật khẩu từ 8 ký tự), rồi bấm **+** ở cột trái để tạo máy chủ.
 
-Trong app: bấm **Tạo tài khoản**, nhập email, tên người dùng (chữ thường không dấu, số, `_`, `.`) và mật khẩu từ 8 ký tự. Sau khi đăng nhập, bấm nút **+** ở cột trái để tạo máy chủ (có sẵn kênh `#general`), hoặc nút la bàn để tham gia bằng mã mời. Bấm tên máy chủ ở đầu cột kênh để mời bạn bè (lấy mã), tạo kênh hoặc rời máy chủ. Bấm **Ctrl+K** (macOS: **Cmd+K**) ở bất kỳ đâu trong app, hoặc nút kính lúp ở đầu cột kênh, để mở **Chuyển nhanh**: gõ vài chữ (không cần dấu) rồi Enter để nhảy tới máy chủ, kênh, tin nhắn riêng, bạn bè hoặc Trang chủ / Cài đặt. Gõ tin ở ô dưới cùng: Enter để gửi, Shift+Enter để xuống dòng; rê chuột (hoặc Tab) vào một tin để sao chép, sửa hoặc xoá. Bấm nút Loop trên cùng cột trái để vào **Trang chủ**: tab **Bạn bè** (thêm bạn bằng tên người dùng, lời mời đang chờ, danh sách đã chặn) và danh sách tin nhắn riêng; bấm **Nhắn tin** ở một người bạn để mở DM. Bấm kẹp giấy, kéo thả hoặc dán (Ctrl/Cmd+V) để đính kèm tệp (tối đa 25 MB mỗi tệp, 10 tệp mỗi tin; ảnh PNG/JPEG/GIF/WebP, PDF, TXT, ZIP, MP4, MP3); bấm vào ảnh để xem lớn. Bấm một **kênh thoại** để vào ngay (micro bật, dùng thiết bị đã chọn trong Cài đặt, mặc định là của hệ thống; thanh ở cuối cột kênh có nút tắt micro, tắt tiếng nghe, camera và rời); trong DM, nút điện thoại / camera ở đầu cuộc trò chuyện gọi người bạn (chỉ khi hai bạn còn là bạn bè), người nhận thấy hộp thoại Trả lời / Từ chối. Quản trị: nếu bạn là chủ máy chủ hoặc có quyền quản trị, menu máy chủ có **Cài đặt máy chủ** (vai trò và quyền, gán vai trò, đuổi thành viên, quyền theo kênh, và với chủ: chuyển quyền chủ / xoá máy chủ); menu "..." cạnh mỗi kênh để xoá kênh hoặc chỉnh quyền của kênh. Tin chưa đọc: DM in đậm kèm số tin, nút Trang chủ hiện tổng ("9+" khi nhiều), kênh chữ của máy chủ đang mở in đậm kèm chấm, tiêu đề cửa sổ có tiền tố `(n)` và biểu tượng Dock (macOS) hiện số. Khi cửa sổ không được xem, tin nhắn DM và cuộc gọi đến hiện thông báo của hệ điều hành; bấm vào thông báo mở đúng cuộc trò chuyện. Bấm tên của bạn ở góc dưới cột kênh để mở **Cài đặt của bạn**: thông báo (bật/tắt, có hiện nội dung tin hay không), đóng cửa sổ thì thu vào khay (Loop vẫn chạy; thoát hẳn bằng menu biểu tượng khay hoặc Cmd/Ctrl+Q), mở khi đăng nhập máy (chỉ bản đã cài), và chọn micro, loa, camera. Chỉ mở được một cửa sổ Loop: mở lần hai sẽ đưa cửa sổ đang chạy ra phía trước. Lần đầu dùng micro hoặc camera, macOS sẽ hỏi quyền (nếu lỡ từ chối: Cài đặt hệ thống, Quyền riêng tư). Muốn thử với hai người, mở thêm một tài khoản khác bằng `curl` hoặc nhờ bạn cùng chạy (xem `CLAUDE.md` để biết đường dẫn và sự kiện).
+**Tắt mọi thứ:** `Ctrl+C` ở mỗi terminal; `docker compose stop` tắt dịch vụ nền nhưng giữ dữ liệu (bật lại bằng `docker compose up -d --wait`).
 
-### Tắt mọi thứ
-
-- Mỗi terminal bấm `Ctrl+C`.
-- Tắt dịch vụ nền nhưng **giữ dữ liệu**: `docker compose stop`. Bật lại bằng `docker compose up -d --wait`.
-
-## Kiểm tra
+## Kiểm thử
 
 ```bash
 pnpm lint      # kiểm tra kiểu TypeScript cho shared, server, desktop
@@ -75,7 +155,9 @@ pnpm --filter @loop/desktop e2e
 apps/server      Fastify + Prisma + Socket.IO (REST, realtime, LiveKit, S3)
 apps/desktop     Electron + React + Tailwind (main, preload, renderer)
 packages/shared  schema zod, quyền (computePermissions) dùng chung server và app
-docker/          cấu hình LiveKit và khởi tạo database test
+deploy/          cấu hình triển khai: Docker Compose + Caddy, Render, sao lưu
+docker/          cấu hình LiveKit và khởi tạo database cho môi trường phát triển
+docs/            hướng dẫn triển khai (DEPLOY.md)
 ```
 
 ## Cấu hình (`.env`)
@@ -162,6 +244,24 @@ Hướng dẫn từng bước (Docker Compose + Caddy, R2, LiveKit Cloud, bản 
 - **`TRUST_PROXY`**: sau reverse proxy/CDN BẮT BUỘC đặt đúng, nếu không mọi người dùng chưa đăng nhập chung một IP của proxy (bị giới hạn chung) hoặc client giả được `X-Forwarded-For` để né giới hạn. Dùng số proxy tin cậy (`TRUST_PROXY=1`) khi biết chính xác số lớp proxy; `true` chỉ đúng khi proxy ghi đè header. Không đặt khi server nhận kết nối trực tiếp.
 - Sao lưu Postgres (và Redis nếu cần) định kỳ; thử khôi phục ít nhất một lần.
 
-## Ghi chú cho người phát triển
+## Bảo mật
 
-Quy ước, hợp đồng API và sự kiện realtime, luật phân quyền và giới hạn đã biết nằm trong `CLAUDE.md` ở thư mục gốc (file này chỉ dùng cục bộ, không được commit).
+- Mật khẩu băm bằng **argon2**; đăng nhập bằng JWT ngắn hạn (15 phút) kèm **refresh token xoay vòng có phát hiện dùng lại** (dùng lại token cũ sẽ thu hồi toàn bộ phiên).
+- Trên desktop, access token chỉ nằm trong bộ nhớ; refresh token được mã hóa bằng kho khóa của hệ điều hành (`safeStorage`) và giữ ở tiến trình chính.
+- Electron cứng hóa: `contextIsolation`, `sandbox`, không `nodeIntegration`, CSP chặt, kiểm tra người gửi của mọi lệnh IPC, chặn điều hướng và cửa sổ lạ.
+- Quyền kiểm tra tập trung ở server (client chỉ dùng để ẩn giao diện); quyền thoại/video bị thu hồi ngay khi vai trò thay đổi.
+- Giới hạn tần suất bằng Redis cho mọi route; tệp tải lên qua URL ký sẵn và được xác minh nội dung phía server.
+
+## Trạng thái và giới hạn
+
+Loop đang ở giai đoạn **thử nghiệm** (beta):
+
+- Bản cài chưa ký số và chưa notarize; chưa có tự cập nhật mặc định.
+- Đã kiểm thử kỹ trên macOS; Windows có bản cài nhưng chưa được kiểm tra đầy đủ.
+- Giao diện chỉ có tiếng Việt.
+- Chưa có chia sẻ màn hình.
+- Máy chủ thử nghiệm chạy trên gói miễn phí và tự ngủ khi vắng người dùng (lần kết nối đầu có thể chờ khoảng một phút).
+
+## Giấy phép
+
+Chưa công bố giấy phép: mặc định mọi quyền được bảo lưu.
