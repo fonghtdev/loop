@@ -5,7 +5,7 @@ import { expect, test, type ElectronApplication, type Page } from "@playwright/t
 import { api, befriend, expectNoHorizontalOverflow, launchAs, register, resize, run, type Session } from "./helpers";
 import { callToken, channelToken, joinRoom, leaveAll } from "./livekit";
 
-// Voice UX: joining never navigates, the Discord-style bottom panel, mic / headphones marks, device menus.
+// Voice UX: joining never navigates, the bottom user/voice panel, mic / headphones marks, device menus.
 let app: ElectronApplication;
 let page: Page;
 let A: Session;

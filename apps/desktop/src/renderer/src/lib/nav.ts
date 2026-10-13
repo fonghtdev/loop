@@ -69,7 +69,7 @@ export function placeForKey(key: ConvKey, dmIds: readonly string[] | undefined):
 
 /**
  * What choosing a channel does. A text channel is opened. A voice channel you are not in is only JOINED (the main
- * area stays where it is, like Discord); one you are already in opens its room view.
+ * area stays where it is); one you are already in opens its room view.
  */
 export const planOpen = (type: Channel["type"], connected: boolean) => ({ navigate: type !== "VOICE" || connected, join: type === "VOICE" && !connected });
 

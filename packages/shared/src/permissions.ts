@@ -47,7 +47,7 @@ export type PermissionInput = {
 };
 
 /**
- * Discord's algorithm (minus member-specific overwrites):
+ * The usual role-based algorithm with channel overwrites (no member-specific overwrites):
  * 1. owner -> everything; 2. base = @everyone | every member role; ADMINISTRATOR in base -> everything;
  * 3. channel: apply the @everyone overwrite (deny, then allow); then OR the deny of all the member's role
  *    overwrites and the allow of all of them, apply the denies, then the allows (so any role's allow beats

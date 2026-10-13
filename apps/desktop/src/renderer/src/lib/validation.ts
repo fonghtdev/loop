@@ -54,7 +54,7 @@ export function channelNameError(name: string): string | undefined {
   return issue.code === "too_big" ? t("validation.channelNameLong") : t("validation.channelNameChars");
 }
 
-/** What people type while naming a channel: lower case, spaces become dashes (Discord does the same). */
+/** What people type while naming a channel: lower case, spaces become dashes. */
 export const normalizeChannelName = (raw: string) => raw.toLowerCase().replace(/\s+/g, "-");
 
 /** An invite code, or the code at the end of a pasted link; null when it cannot be one. */
