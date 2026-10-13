@@ -10,6 +10,7 @@
 
 - [Tải về](#tải-về)
 - [Tính năng](#tính-năng)
+- [Giao diện](#giao-diện)
 - [Kiến trúc](#kiến-trúc)
 - [Công nghệ](#công-nghệ)
 - [Chạy trên máy phát triển](#chạy-trên-máy-phát-triển)
@@ -60,6 +61,19 @@ Gỡ cài đặt ngay trong app: Cài đặt, cuối trang, **Gỡ cài đặt L
 - **Chuyển nhanh** bằng Ctrl+K (macOS: Cmd+K): tìm máy chủ, kênh, tin nhắn riêng, bạn bè mà không cần gõ dấu.
 - Giao diện tiếng Việt, tối ưu cho bàn phím, tôn trọng chế độ giảm chuyển động của hệ điều hành.
 - Thu vào khay, mở cùng máy, chỉ một cửa sổ chạy một lúc.
+
+## Giao diện
+
+![Kênh chat của một máy chủ với danh mục, kênh chữ và thoại, tin nhắn có ảnh đính kèm và danh sách thành viên theo vai trò](docs/images/chat.png)
+
+*Máy chủ với danh mục, kênh chữ và kênh thoại, tin nhắn có ảnh, vai trò thành viên ở cột phải.*
+
+| | |
+|---|---|
+| ![Phòng thoại với nhiều người tham gia, một người đang nói và một người đã tắt micro](docs/images/voice.png) | ![Hộp Chuyển nhanh mở bằng Ctrl+K hoặc Cmd+K với danh sách kênh khớp từ khóa](docs/images/quick-switch.png) |
+| *Phòng thoại: ai đang nói, ai tắt micro, thanh điều khiển cuộc gọi ở góc dưới trái.* | *Chuyển nhanh (Ctrl+K / Cmd+K): tìm kênh, máy chủ, bạn bè mà không cần gõ dấu.* |
+| ![Màn hình Cài đặt với âm báo vào/ra phòng thoại, âm lượng, chọn micro, loa và camera](docs/images/settings.png) | ![Màn hình đăng nhập của Loop](docs/images/login.png) |
+| *Cài đặt: âm báo vào/ra phòng thoại, âm lượng, chọn micro, loa và camera.* | *Màn hình đăng nhập.* |
 
 ## Kiến trúc
 
