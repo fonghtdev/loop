@@ -7,6 +7,7 @@ import { healthRoutes } from "./health.js";
 import { guildRoutes } from "./guilds/routes.js";
 import { inviteRoutes } from "./guilds/invites.js";
 import { roleRoutes } from "./guilds/roles.js";
+import { categoryRoutes } from "./guilds/categories.js";
 import { registerLimiter } from "./limiter.js";
 import { HttpError, requireUser } from "./http.js";
 import { messageRoutes } from "./messages/routes.js";
@@ -54,6 +55,7 @@ export function buildApp(env: Env, logger: FastifyServerOptions["logger"] = fals
     guildRoutes(authed);
     inviteRoutes(authed);
     roleRoutes(authed);
+    categoryRoutes(authed);
     messageRoutes(authed);
     attachmentRoutes(authed);
     socialRoutes(authed);

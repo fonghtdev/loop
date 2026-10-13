@@ -53,7 +53,9 @@ export const ROUTES: Record<string, PolicyName[]> = {
   ...only(
     "POST /auth/logout", "GET /me",
     "GET /guilds", "GET /guilds/:guildId", "DELETE /guilds/:guildId", "POST /guilds/:guildId/channels",
-    "DELETE /guilds/:guildId/channels/:channelId", "GET /guilds/:guildId/members", "DELETE /guilds/:guildId/members/me",
+    "DELETE /guilds/:guildId/channels/:channelId",
+    "POST /guilds/:guildId/categories", "PATCH /guilds/:guildId/categories/:categoryId",
+    "DELETE /guilds/:guildId/categories/:categoryId", "PUT /guilds/:guildId/layout", "GET /guilds/:guildId/members", "DELETE /guilds/:guildId/members/me",
     "DELETE /guilds/:guildId/members/:userId", "POST /guilds/:guildId/transfer",
     "GET /guilds/:guildId/roles", "POST /guilds/:guildId/roles", "PATCH /guilds/:guildId/roles/:roleId",
     "DELETE /guilds/:guildId/roles/:roleId", "PUT /guilds/:guildId/members/:userId/roles/:roleId",

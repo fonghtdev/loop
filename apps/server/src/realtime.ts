@@ -6,7 +6,8 @@ import { Server } from "socket.io";
 import { z } from "zod";
 import { verifyAccessToken } from "./auth/tokens.js";
 import { HttpError } from "./http.js";
-import { hiddenChannels, requireChannelPermission } from "./guilds/access.js";
+import { hasPermission, Permission } from "@loop/shared";
+import { hiddenChannels, memberChannelPermissions, requireChannelPermission } from "./guilds/access.js";
 import type { Limits } from "./limiter.js";
 import { friendIds } from "./social/access.js";
 import type { Voice } from "./voice/enforce.js";
@@ -26,6 +27,8 @@ declare module "fastify" {
  * `dm:message:new|update` (message JSON), `dm:message:delete` {id, dmChannelId}, `dm:new` {id, user},
  * `friend:request` {from}, `friend:accepted` {user}, `friend:removed` {userId}, `presence:update` {userId, online},
  * `call:incoming` {dmChannelId, from, video}, `call:declined` {dmChannelId, by}, `call:ended` {dmChannelId}.
+ * Guild layout events go to the members' `user:<id>` rooms: `channel:created` (channel JSON), `category:created|updated`
+ * (category JSON), `category:deleted`, `layout:updated` (payloads in packages/shared); channel data is filtered per member by VIEW_CHANNEL.
  * Rooms span instances through the Redis adapter.
  */
 export type MessageEvent = "message:new" | "message:update" | "message:delete";
@@ -138,6 +141,16 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
       io.to(channelRoom(channelId)).emit(event, payload);
     },
     emitToUsers,
+    /**
+     * Guild-level event to every member's user room (members do not join a guild room). `payload` builds each
+     * member's copy from `canSee(channelId)` (VIEW_CHANNEL) so hidden channels never leak; null = skip that member.
+     */
+    emitToGuild: async (guildId: string, event: string, payload: (canSee: (channelId: string) => boolean) => object | null) => {
+      for (const { userId, perms } of await memberChannelPermissions(guildId)) {
+        const body = payload((id) => hasPermission(perms.get(id) ?? 0, Permission.VIEW_CHANNEL));
+        if (body) emitToUsers([userId], event, body);
+      }
+    },
     /** Liveness probe of the shared Redis connection (used by GET /health). */
     ping: () => pub.ping(),
     /** Both participants' user rooms; no subscribe step. */

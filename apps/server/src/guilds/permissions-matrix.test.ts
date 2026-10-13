@@ -34,6 +34,10 @@ const MATRIX: Row[] = [
   { route: "POST /guilds/:guildId/channels", need: P.MANAGE_CHANNELS, ok: 201, url: (f) => `${f.base}/channels`, body: { name: "new", type: "TEXT" } },
   { route: "DELETE /guilds/:guildId/channels/:channelId", need: P.MANAGE_CHANNELS, ok: 204, url: (f) => `${f.base}/channels/${f.extra.id}` },
   { route: "DELETE /guilds/:guildId/channels/:channelId", need: P.VIEW_CHANNEL, ok: 204, url: (f) => `${f.base}/channels/${f.extra.id}` },
+  { route: "POST /guilds/:guildId/categories", need: P.MANAGE_CHANNELS, ok: 201, url: (f) => `${f.base}/categories`, body: { name: "cat" } },
+  { route: "PATCH /guilds/:guildId/categories/:categoryId", need: P.MANAGE_CHANNELS, ok: 200, url: (f) => `${f.base}/categories/${f.category.id}`, body: { name: "renamed" } },
+  { route: "DELETE /guilds/:guildId/categories/:categoryId", need: P.MANAGE_CHANNELS, ok: 204, url: (f) => `${f.base}/categories/${f.category.id}` },
+  { route: "PUT /guilds/:guildId/layout", need: P.MANAGE_CHANNELS, ok: 200, url: (f) => `${f.base}/layout`, body: {} },
   { route: "POST /guilds/:guildId/invites", need: P.CREATE_INVITE, ok: 201, url: (f) => `${f.base}/invites`, body: {} },
   { route: "DELETE /guilds/:guildId/members/:userId", need: P.KICK_MEMBERS, ok: 204, url: (f) => `${f.base}/members/${f.victim.id}` },
   { route: "POST /guilds/:guildId/roles", need: P.MANAGE_ROLES, ok: 201, url: (f) => `${f.base}/roles`, body: { name: "new" } },
@@ -65,9 +69,15 @@ async function fixture() {
   await setEveryone(guild.id, 0);
   const actorRole = await makeRole(guild.id, 10, 0, [actor.id]);
   const low = await makeRole(guild.id, 1);
+  const categories = await prisma.category.findMany({ where: { guildId: guild.id }, orderBy: { position: "asc" } });
+  const category = categories[0]!;
+  const layout = {
+    categories: categories.map((c) => c.id),
+    channels: [general, extra].map((c) => ({ id: c.id, categoryId: category.id })),
+  };
   const msg = (authorId: string) => prisma.message.create({ data: { channelId: general.id, authorId, content: "m" } });
   return {
-    owner, actor, victim, outsider, guild, general, extra, base, actorRole, low,
+    owner, actor, victim, outsider, guild, general, extra, base, actorRole, low, category, layout,
     messages: `/channels/${general.id}/messages`,
     ownMsg: await msg(actor.id),
     victimMsg: await msg(victim.id),
@@ -78,7 +88,7 @@ const setActor = (f: Fixture, permissions: number) => prisma.role.update({ where
 const name = (n: Need) => (typeof n === "number" ? Object.entries(P).find(([, bit]) => bit === n)![0] : n);
 const send = (row: Row, f: Fixture, token: string) => {
   const [method] = row.route.split(" ") as [Method];
-  const body = row.route.endsWith("/transfer") ? { userId: f.victim.id } : row.body;
+  const body = row.route.endsWith("/transfer") ? { userId: f.victim.id } : row.route.endsWith("/layout") ? f.layout : row.body;
   return call(method, row.url(f), token, body);
 };
 

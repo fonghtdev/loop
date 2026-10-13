@@ -111,12 +111,17 @@ export function guildRoutes(app: FastifyInstance) {
     try {
       const channel = await prisma.$transaction(async (tx) => {
         await lockGuild(tx, guild.id);
-        // position is per category; new channels are uncategorised (categoryId null) until the API says otherwise
-        const last = await tx.channel.aggregate({ where: { guildId: guild.id, categoryId: null }, _max: { position: true } });
+        const categoryId = body.categoryId ?? null;
+        if (categoryId && !(await tx.category.findFirst({ where: { id: categoryId, guildId: guild.id } }))) {
+          throw new HttpError(400, "Unknown category");
+        }
+        // position is per category (or per the uncategorised area): the new channel goes last
+        const last = await tx.channel.aggregate({ where: { guildId: guild.id, categoryId }, _max: { position: true } });
         return tx.channel.create({
-          data: { guildId: guild.id, ...body, position: (last._max.position ?? -1) + 1 },
+          data: { guildId: guild.id, ...body, categoryId, position: (last._max.position ?? -1) + 1 },
         });
       });
+      await app.realtime.emitToGuild(guild.id, "channel:created", (canSee) => (canSee(channel.id) ? channel : null));
       return reply.code(201).send(channel);
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {

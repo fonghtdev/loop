@@ -61,7 +61,43 @@ export const createChannelSchema = z.object({
     .max(100)
     .regex(/^[a-z0-9_-]+$/, "chỉ gồm chữ thường, số, - và _"),
   type: channelTypeSchema,
+  categoryId: z.string().uuid().optional(),
 });
+
+export const categoryNameSchema = z.object({ name: z.string().trim().min(1).max(100) });
+
+/** PUT /guilds/:id/layout: the complete order. Ids must be unique; the server also checks them against the guild. */
+export const layoutSchema = z
+  .object({
+    categories: z.array(z.string().uuid()),
+    channels: z.array(z.object({ id: z.string().uuid(), categoryId: z.string().uuid().nullable() })),
+  })
+  .refine((l) => new Set(l.categories).size === l.categories.length, { message: "duplicate category id" })
+  .refine((l) => new Set(l.channels.map((c) => c.id)).size === l.channels.length, { message: "duplicate channel id" })
+  .refine((l) => l.channels.every((c) => c.categoryId === null || l.categories.includes(c.categoryId)), {
+    message: "channel targets a category missing from `categories`",
+  });
+export type Layout = z.infer<typeof layoutSchema>;
+
+/** Realtime payloads (user rooms; see apps/server/CLAUDE.md). A channel's position is its order inside categoryId. */
+export const channelPlacementSchema = z.object({
+  id: z.string().uuid(),
+  categoryId: z.string().uuid().nullable(),
+  position: z.number().int().min(0),
+});
+export const categoryDeletedEventSchema = z.object({
+  guildId: z.string().uuid(),
+  categoryId: z.string().uuid(),
+  channels: z.array(channelPlacementSchema), // the channels that became uncategorised (categoryId null)
+});
+export const layoutUpdatedEventSchema = z.object({
+  guildId: z.string().uuid(),
+  categories: z.array(z.object({ id: z.string().uuid(), position: z.number().int().min(0) })),
+  channels: z.array(channelPlacementSchema),
+});
+export type CategoryDeletedEvent = z.infer<typeof categoryDeletedEventSchema>;
+export type LayoutUpdatedEvent = z.infer<typeof layoutUpdatedEventSchema>;
+// category:created and category:updated carry the Category JSON as in REST; channel:created carries the Channel JSON.
 
 export const createInviteSchema = z.object({
   expiresInSeconds: z
