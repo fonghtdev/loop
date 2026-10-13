@@ -1,5 +1,5 @@
 import { Gear, SignOut, X } from "@phosphor-icons/react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useStore } from "zustand";
 import type { Settings } from "../../../shared/settings";
 import type { UpdateStatus } from "../../../shared/update";
@@ -7,9 +7,10 @@ import { t } from "../i18n/t";
 import type { MessageKey } from "../i18n/vi";
 import { appearance, MOTIONS, useAppearance, type Appearance } from "../lib/appearance";
 import { density, DENSITIES, useDensity, type Density } from "../lib/density";
-import { appSettings, devices, session, unlockDeviceLabels } from "../lib/app";
+import { appSettings, devices, session, sounds, unlockDeviceLabels } from "../lib/app";
 import { DEVICE_KINDS, labelsAvailable, optionsFor, type DeviceKind } from "../lib/devices";
 import { useNav } from "../lib/nav";
+import { soundPrefs, useSoundPrefs } from "../lib/sound-prefs";
 import { toast } from "../lib/toast";
 import { Button } from "./Button";
 import { Segmented } from "./Segmented";
@@ -71,6 +72,9 @@ export function UserSettings() {
           </Group>
           <Group id="update" title="userSettings.update">
             <UpdateSection />
+          </Group>
+          <Group id="sounds" title="userSettings.sounds">
+            <SoundsSection />
           </Group>
           <Group id="media" title="userSettings.media">
             <DevicePickers />
@@ -137,6 +141,31 @@ function PerformanceSection() {
         <p className="mt-0.5 mb-2 text-[13px] leading-relaxed text-ink-muted">{t("userSettings.motionHint")}</p>
         <Segmented name="motion" value={a.motion} onChange={(m) => appearance.set({ motion: m })} options={MOTIONS.map((m) => ({ value: m, label: t(MOTION_LABEL[m]) }))} />
       </fieldset>
+    </>
+  );
+}
+
+/** Per-ACCOUNT voice-room sounds: on/off, volume, and a test of the join tone (lib/sound-prefs, lib/sounds). */
+function SoundsSection() {
+  const prefs = useSoundPrefs();
+  const id = useId();
+  return (
+    <>
+      <Switch label={t("userSettings.soundsToggle")} description={t("userSettings.soundsToggleHint")} checked={prefs.enabled} onChange={(enabled) => soundPrefs.set({ enabled })} />
+      <div className="flex flex-col gap-1.5 px-3 py-2">
+        <label htmlFor={id} className="text-[15px] font-medium">
+          {t("userSettings.soundsVolume")}
+        </label>
+        <div className="flex items-center gap-3">
+          <input id={id} type="range" min={0} max={100} step={5} value={prefs.volume} onChange={(e) => soundPrefs.set({ volume: Number(e.target.value) })} className="h-11 min-w-0 flex-1 accent-moss-400" />
+          <span aria-hidden="true" className="w-10 shrink-0 text-right text-[13px] text-ink-muted tabular-nums">
+            {prefs.volume}
+          </span>
+          <Button variant="ghost" onClick={() => (sounds.unlock(), sounds.preview())}>
+            {t("userSettings.soundsTest")}
+          </Button>
+        </div>
+      </div>
     </>
   );
 }

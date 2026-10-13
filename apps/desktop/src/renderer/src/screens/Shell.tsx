@@ -25,6 +25,7 @@ import { queryClient, realtime, revalidateGuild, session, unread, voice, voicePr
 import { buildTree, displayOrder } from "../lib/categories";
 import { collapse } from "../lib/category-collapse";
 import { density } from "../lib/density";
+import { soundPrefs } from "../lib/sound-prefs";
 import { move, reducedNow } from "../lib/motion";
 import { goHome, readLastPlace, useNav } from "../lib/nav";
 import { stageShift, type StagePlace } from "../lib/stage";
@@ -132,9 +133,11 @@ export function Shell() {
   useLayoutEffect(() => {
     density.load(user?.id ?? null);
     collapse.load(user?.id ?? null);
+    soundPrefs.load(user?.id ?? null);
     return () => {
       density.load(null);
       collapse.load(null);
+      soundPrefs.load(null);
     };
   }, [user?.id]);
 

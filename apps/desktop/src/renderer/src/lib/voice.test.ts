@@ -308,8 +308,9 @@ describe("switchDevice (settings change while in a session)", () => {
 
 describe("what others show", () => {
   const remote = (r: FakeRoom, identity: string, extra: object) => {
-    r.remoteParticipants.set(identity, { identity, name: identity, getTrackPublication: () => undefined, ...extra });
-    r.fire("participantConnected");
+    const p = { identity, name: identity, getTrackPublication: () => undefined, ...extra };
+    r.remoteParticipants.set(identity, p);
+    r.fire("participantConnected", p);
   };
   const of = (s: Awaited<ReturnType<typeof joined>>, id: string) => s.state().participants.find((p) => p.userId === id);
 
@@ -330,5 +331,63 @@ describe("what others show", () => {
     await s.voice.toggleDeafen();
     await s.voice.toggleDeafen();
     expect(s.room().metadata).toEqual(['{"deafened":true}', ""]);
+  });
+});
+
+describe("join/leave sounds", () => {
+  const kinds = (s: { sounds: [string, boolean][] }) => s.sounds.map(([k]) => k);
+  const joinedWith = async (...present: string[]) => {
+    const s = setupVoice({}, (r) => present.forEach((id) => r.remoteParticipants.set(id, { identity: id, getTrackPublication: () => undefined })));
+    await s.voice.joinChannel("c1", "Phòng họp");
+    return s;
+  };
+
+  it("our own connect is a selfJoin and the people already there are silent", async () => {
+    const s = await joinedWith("a", "b");
+    expect(kinds(s)).toEqual(["selfJoin"]);
+  });
+
+  it("others joining or leaving afterwards sound once each; a repeated announcement does not", async () => {
+    const s = await joinedWith("a");
+    s.room().addRemote("n");
+    s.room().addRemote("n");
+    s.room().removeRemote("a");
+    s.room().removeRemote("a");
+    expect(kinds(s)).toEqual(["selfJoin", "join", "leave"]);
+  });
+
+  it("a reconnect replays nothing: the re-announced people are silent, later changes sound again", async () => {
+    const s = await joinedWith("a");
+    const r = s.room();
+    r.fire("reconnecting");
+    r.removeRemote("a");
+    r.addRemote("a");
+    r.addRemote("z"); // joined during the outage: silent, no one knew
+    r.fire("reconnected");
+    expect(kinds(s)).toEqual(["selfJoin"]);
+    r.addRemote("y");
+    expect(kinds(s)).toEqual(["selfJoin", "join"]);
+  });
+
+  it("leaving is a selfLeave once; a failed join and an idle leave are silent; a server-forced end is a selfLeave", async () => {
+    const s = await joinedWith();
+    s.voice.leave();
+    s.voice.leave();
+    expect(kinds(s)).toEqual(["selfJoin", "selfLeave"]);
+    const f = setupVoice({}, (r) => (r.connectError = new Error("x")));
+    await f.voice.joinChannel("c1", "x");
+    f.voice.leave();
+    expect(f.sounds).toEqual([]);
+    const g = await joinedWith();
+    g.room().fire("disconnected", DisconnectReason.PARTICIPANT_REMOVED);
+    expect(kinds(g)).toEqual(["selfJoin", "selfLeave"]);
+  });
+
+  it("passes whether we are deafened at that moment (also on our own leave)", async () => {
+    const s = await joinedWith();
+    await s.voice.toggleDeafen();
+    s.room().addRemote("n");
+    s.voice.leave();
+    expect(s.sounds).toEqual([["selfJoin", false], ["join", true], ["selfLeave", true]]);
   });
 });

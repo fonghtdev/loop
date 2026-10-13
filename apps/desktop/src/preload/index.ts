@@ -37,6 +37,7 @@ const api: LoopApi = {
   openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
   version: () => ipcRenderer.invoke("app:version"),
   platform: process.platform,
+  e2e: process.argv.includes("--loop-e2e"),
 };
 
 contextBridge.exposeInMainWorld("loop", api);

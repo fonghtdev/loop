@@ -43,8 +43,13 @@ export class FakeRoom implements RoomLike {
     this.switched.push([kind, id]);
   }
   addRemote(identity: string, name = identity) {
-    this.remoteParticipants.set(identity, { identity, name, getTrackPublication: () => undefined });
-    this.fire("participantConnected");
+    const p = { identity, name, getTrackPublication: () => undefined };
+    this.remoteParticipants.set(identity, p);
+    this.fire("participantConnected", p);
+  }
+  removeRemote(identity: string) {
+    this.remoteParticipants.delete(identity);
+    this.fire("participantDisconnected", { identity });
   }
 }
 
@@ -77,6 +82,7 @@ export function setupVoice(token: Partial<{ canSpeak: boolean; canVideo: boolean
   const sink = new FakeSink();
   const request = vi.fn(async (_m: "POST", _p: string, _b?: unknown): Promise<unknown> => ({ token: "tok", url: "ws://lk", canSpeak: true, canVideo: true, ...token }));
   const ensureMedia = vi.fn(async (_k: string) => true);
+  const sounds: [string, boolean][] = [];
   let clock = 1000;
   const voice = createVoice({
     request: request as never,
@@ -90,6 +96,7 @@ export function setupVoice(token: Partial<{ canSpeak: boolean; canVideo: boolean
     ensureMedia,
     livekitOrigin: "ws://lk",
     now: () => clock,
+    onSound: (kind, deafened) => void sounds.push([kind, deafened]),
   });
-  return { voice, rooms, room: () => rooms[rooms.length - 1], sink, request, ensureMedia, state: () => voice.store.getState(), tick: (ms: number) => (clock += ms) };
+  return { voice, rooms, room: () => rooms[rooms.length - 1], sink, request, ensureMedia, sounds, state: () => voice.store.getState(), tick: (ms: number) => (clock += ms) };
 }

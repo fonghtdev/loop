@@ -29,6 +29,7 @@ test("register, restore the session after a relaunch, logout, wrong password", a
   expect(await page.evaluate(() => typeof (globalThis as { require?: unknown }).require)).toBe("undefined");
   expect(await page.evaluate(() => Object.keys(window.loop).sort())).toEqual([
     "closeNotification",
+    "e2e",
     "media",
     "notify",
     "onFocusChange",

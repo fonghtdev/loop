@@ -16,6 +16,8 @@ import { createFirstRun } from "./firstrun";
 import { createUnread, titleWith, total } from "./unread";
 import { windowFocus } from "./window-focus";
 import { createUploader } from "./upload-client";
+import { soundPrefs } from "./sound-prefs";
+import { createSounds, createTonePlayer, type SoundKind } from "./sounds";
 import { createVoice, type RoomLike } from "./voice";
 import { createVoicePresence } from "./voice-presence";
 import { dmKey, type ConvKey } from "./conversation";
@@ -109,6 +111,17 @@ export const voicePresence = createVoicePresence();
 
 const sink = createAudioSink();
 
+// e2e only (the preload flag is false in a real build): a counter per sound kind the test can read
+const soundCounts: Record<string, number> = {};
+if (window.loop.e2e) (window as unknown as { __loopSounds: Record<string, number> }).__loopSounds = soundCounts;
+const tonePlayer = createTonePlayer();
+/** Join/leave sounds of the voice session (lib/sounds); settings per account in lib/sound-prefs. */
+export const sounds = createSounds({
+  player: tonePlayer,
+  prefs: soundPrefs.get,
+  onPlay: window.loop.e2e ? (kind: SoundKind) => void (soundCounts[kind] = (soundCounts[kind] ?? 0) + 1) : undefined,
+});
+
 /** The one voice session. A real livekit Room is only ever created here. */
 export const voice = createVoice({
   request: session.client.request,
@@ -124,13 +137,16 @@ export const voice = createVoice({
   sink,
   ensureMedia: (kind) => window.loop.media.ensureAccess(kind).catch(() => false),
   livekitOrigin: LIVEKIT_ORIGIN,
+  onSound: sounds.handle,
 });
+// joining is a click: the audio context is created / resumed right then (the autoplay policy of the window already allows it)
+voice.store.subscribe((s, prev) => s.status === "requestingToken" && prev.status !== "requestingToken" && sounds.unlock());
 
 /** Microphone / speaker / camera choices (settings), applied to the live session and to every new one. */
 export const devices = createDevices({
   storage: { read: () => localStorage.getItem("loop.devices"), write: (v) => localStorage.setItem("loop.devices", v) },
   enumerate: async () => (await navigator.mediaDevices.enumerateDevices()).map(({ kind, deviceId, label }) => ({ kind, deviceId, label })),
-  apply: (kind, id) => (kind === "audiooutput" ? sink.setOutput(id ?? null) : void voice.switchDevice(kind, id ?? "default")),
+  apply: (kind, id) => (kind === "audiooutput" ? (sink.setOutput(id ?? null), tonePlayer.setOutput(id ?? null)) : void voice.switchDevice(kind, id ?? "default")),
 });
 navigator.mediaDevices?.addEventListener("devicechange", () => void devices.refresh());
 void devices.refresh();

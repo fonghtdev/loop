@@ -136,6 +136,7 @@ function createWindow(hidden: boolean) {
       // Remote voice plays without a click on the page itself (a call is answered from a dialog, a channel joined from
       // a list; the chosen alternative, room.startAudio() per join, would break when audio arrives after the gesture).
       autoplayPolicy: "no-user-gesture-required",
+      additionalArguments: e2e ? ["--loop-e2e"] : [],
     },
   });
   const w = win;

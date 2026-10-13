@@ -4,6 +4,7 @@ import { t } from "../i18n/t";
 import { isAllowedLivekitUrl } from "../../../shared/url";
 import type { AudioSink, AudioTrackLike } from "./audio-sink";
 import { errorMessage } from "./errors";
+import type { SoundKind } from "./sounds";
 import { encodeDeafened, parseDeafened } from "./voice-flags";
 import type { Participant } from "./voice-presence";
 
@@ -68,6 +69,8 @@ type Deps = {
   /** The one LiveKit origin the CSP allows. */
   livekitOrigin: string;
   now?: () => number;
+  /** A voice-room sound to consider (we only emit changes after the first list; whether it plays is the sounds module's call). */
+  onSound?: (kind: SoundKind, deafened: boolean) => void;
 };
 
 // LiveKit's TrackSource numbers in a ParticipantPermission
@@ -122,13 +125,21 @@ const RESET: Omit<VoiceState, "sessionId" | "notice"> = {
  * Publishing: a participant without SPEAK/VIDEO that tries to publish gets no error, the publish just hangs, so
  * the microphone/camera are only ever started through `setMic`/`setCamera`, which check `canSpeak`/`canVideo`.
  */
-export function createVoice({ request, createRoom, sink, ensureMedia, livekitOrigin, now = Date.now }: Deps) {
+export function createVoice({ request, createRoom, sink, ensureMedia, livekitOrigin, now = Date.now, onSound }: Deps) {
   const store = createStore<VoiceState>(() => ({ ...RESET, sessionId: 0, notice: null }));
   const get = store.getState;
   const set = store.setState;
   let room: RoomLike | null = null;
   let speaking = new Set<string>();
   let session = 0;
+  // Who is in the room, for join/leave sounds. null = not listening: while connecting (the initial list is silent) and
+  // while reconnecting (LiveKit re-announces everyone); on (re)connect it is re-read, so nobody there already sounds.
+  let known: Set<string> | null = null;
+  const sound = (kind: SoundKind) => onSound?.(kind, get().deafened);
+  const sessionEnding = () => {
+    const { status } = get();
+    if (status === "connected" || status === "reconnecting") sound("selfLeave");
+  };
   const active = (id: number) => id === session;
 
   const toParticipant = (p: ParticipantLike, isLocal: boolean): Participant => {
@@ -148,6 +159,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
     const r = room;
     room = null;
     speaking = new Set();
+    known = null;
     sink.clear();
     if (r) void Promise.resolve(r.disconnect()).catch(() => undefined);
   }
@@ -201,14 +213,19 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
 
   function wire(r: RoomLike, id: number) {
     const on = (event: string, fn: (...args: never[]) => void) => r.on(event, ((...args: never[]) => active(id) && fn(...args)) as never);
-    on("reconnecting", () => set({ status: "reconnecting" }));
+    on("reconnecting", () => {
+      known = null;
+      set({ status: "reconnecting" });
+    });
     on("reconnected", () => {
+      known = new Set(r.remoteParticipants.keys());
       set({ status: "connected" });
       refresh();
     });
     on("disconnected", (reason?: DisconnectReason) => {
       if (reason === DisconnectReason.CLIENT_INITIATED) return;
       const kind = get().target?.kind ?? "channel";
+      sessionEnding();
       release();
       set({ ...RESET, status: "disconnected", reason: reason ?? DisconnectReason.UNKNOWN_REASON, notice: disconnectMessage(reason, kind) });
     });
@@ -227,7 +244,18 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
     on("participantPermissionsChanged", (_prev: unknown, p: { identity: string }) => {
       if (p.identity === r.localParticipant.identity) applyRights(rightsOf(r.localParticipant.permissions));
     });
-    for (const e of ["participantMetadataChanged", "participantConnected", "participantDisconnected", "trackMuted", "trackUnmuted", "localTrackPublished", "localTrackUnpublished", "trackPublished", "trackUnpublished"])
+    on("participantConnected", (p: { identity: string }) => {
+      refresh();
+      if (known && !known.has(p.identity)) {
+        known.add(p.identity);
+        sound("join");
+      }
+    });
+    on("participantDisconnected", (p: { identity: string }) => {
+      refresh();
+      if (known?.delete(p.identity)) sound("leave");
+    });
+    for (const e of ["participantMetadataChanged", "trackMuted", "trackUnmuted", "localTrackPublished", "localTrackUnpublished", "trackPublished", "trackUnpublished"])
       on(e, refresh);
   }
 
@@ -236,6 +264,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
 
   function leave() {
     if (get().status === "idle") return;
+    sessionEnding();
     session++;
     release();
     set({ ...RESET });
@@ -279,6 +308,8 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
     }
     if (!active(id)) return false;
     set({ status: "connected", startedAt: now() });
+    known = new Set(r.remoteParticipants.keys());
+    sound("selfJoin");
     refresh();
     await setMic(true);
     if (video) await setCamera(true);

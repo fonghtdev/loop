@@ -41,6 +41,8 @@ export type LoopApi = {
   openExternal(url: string): Promise<void>;
   version(): Promise<string>;
   platform: string;
+  /** True only in an e2e run (LOOP_E2E=1): the renderer may then expose test counters. */
+  e2e: boolean;
 };
 
 declare global {
