@@ -7,6 +7,8 @@ import { describe, expect, it, vi } from "vitest";
 import { assertSafeToDelete, bundlePathFromExe, removableParent, removalHelper, runUninstall, uninstallRefusal, windowsUninstallerPath, type UninstallDeps } from "./uninstall";
 
 const mac = { root: "/Users/ann/Library/Application Support", home: "/Users/ann", name: "@loop/desktop", lib: posix };
+/** A fixed, deep temp root: the real os.tmpdir() is `/tmp` (too shallow for the safety check) on Linux CI but deep on macOS. These tests inject every side effect, so nothing here touches the disk. */
+const FAKE_TMP = "/var/folders/ab/cd/T";
 const winOpts = { root: "C:\\Users\\Ann\\AppData\\Roaming", home: "C:\\Users\\Ann", name: "Loop", lib: win32 };
 
 describe("assertSafeToDelete", () => {
@@ -175,7 +177,7 @@ describe("runUninstall", () => {
     const spawned: string[][] = [];
     await runUninstall(deps({ spawnDetached: (c) => void spawned.push(c.args) }).d);
     expect(spawned[0].slice(2)).toEqual(["sh", "/Users/ann/Library/Application Support/@loop/desktop", "99", "/Users/ann/Library/Application Support/@loop"]);
-    const temp = { e2e: true, isPackaged: false, userDataOverridden: true, deleteInE2e: true, userData: join(tmpdir(), "loop-e2e-x"), tmpdir: tmpdir() };
+    const temp = { e2e: true, isPackaged: false, userDataOverridden: true, deleteInE2e: true, userData: join(FAKE_TMP, "loop-e2e-x"), tmpdir: FAKE_TMP };
     await runUninstall(deps({ ...temp, spawnDetached: (c) => void spawned.push(c.args) }).d);
     expect(spawned[1].slice(2)).toEqual(["sh", temp.userData, "99"]);
   });
@@ -215,7 +217,7 @@ describe("runUninstall", () => {
     expect(calls).toEqual(["confirm", "revoke", "loginItem", "teardown", "warn Không chuyển", "spawn /bin/sh", "exit"]);
   });
   describe("under e2e", () => {
-    const e2e = { e2e: true, isPackaged: false, userDataOverridden: true, userData: join(tmpdir(), "loop-e2e-x"), tmpdir: tmpdir(), home: "/Users/ann" };
+    const e2e = { e2e: true, isPackaged: false, userDataOverridden: true, userData: join(FAKE_TMP, "loop-e2e-x"), tmpdir: FAKE_TMP, home: "/Users/ann" };
     it("records but neither trashes, touches the login item nor spawns", async () => {
       const entries: Record<string, unknown>[] = [];
       const { d, calls } = deps({ ...e2e, record: (e) => void entries.push(e) });
