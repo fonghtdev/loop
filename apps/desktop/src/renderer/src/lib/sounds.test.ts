@@ -9,22 +9,30 @@ describe("tone table", () => {
       const end = Math.max(...tone.notes.map((n) => n.at + n.dur));
       expect(end).toBeLessThan(MAX_MS);
       expect(tone.gain).toBeGreaterThan(0);
-      expect(tone.gain).toBeLessThanOrEqual(0.5);
+      expect(tone.gain).toBeLessThanOrEqual(0.3); // the layers add up to ~2.25x this, still under full scale
       for (const n of tone.notes) {
-        expect(n.freq).toBeGreaterThanOrEqual(200);
-        expect(n.freq).toBeLessThanOrEqual(2000);
+        for (const hz of [n.from, n.to]) {
+          expect(hz).toBeGreaterThanOrEqual(100); // bass-friendly: the sub layer is half of this
+          expect(hz).toBeLessThanOrEqual(1000);
+        }
         expect(n.dur).toBeGreaterThanOrEqual(40);
         expect(n.at).toBeGreaterThanOrEqual(0);
       }
-      expect(["sine", "triangle"]).toContain(tone.wave);
     });
   }
   it("join rises, leave falls", () => {
-    const f = (k: SoundKind) => TONES[k].notes.map((n) => n.freq);
-    expect(f("join")[1]).toBeGreaterThan(f("join")[0]);
-    expect(f("leave")[1]).toBeLessThan(f("leave")[0]);
-    expect(f("selfJoin")).toEqual([...f("selfJoin")].sort((a, b) => a - b));
-    expect(f("selfLeave")).toEqual([...f("selfLeave")].sort((a, b) => b - a));
+    const rises = (k: SoundKind) => TONES[k].notes.every((n) => n.to > n.from);
+    const falls = (k: SoundKind) => TONES[k].notes.every((n) => n.to < n.from);
+    expect([rises("join"), rises("selfJoin")]).toEqual([true, true]);
+    expect([falls("leave"), falls("selfLeave")]).toEqual([true, true]);
+    for (const k of ["join", "selfJoin"] as const) {
+      const f = TONES[k].notes.map((n) => n.to);
+      expect(f).toEqual([...f].sort((a, b) => a - b)); // the whole phrase climbs
+    }
+    for (const k of ["leave", "selfLeave"] as const) {
+      const f = TONES[k].notes.map((n) => n.to);
+      expect(f).toEqual([...f].sort((a, b) => b - a)); // and falls
+    }
   });
 });
 
@@ -81,15 +89,16 @@ describe("createTonePlayer", () => {
   const fakeContext = (state = "running") => {
     const param = () => ({ value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() });
     const node = () => ({ connect: (n: unknown) => n, gain: param(), frequency: param(), start: vi.fn(), stop: vi.fn(), type: "" });
-    return { state, currentTime: 0, destination: {}, resume: vi.fn(async () => undefined), setSinkId: vi.fn(async () => undefined), createGain: vi.fn(node), createOscillator: vi.fn(node) };
+    return { state, currentTime: 0, destination: {}, resume: vi.fn(async () => undefined), setSinkId: vi.fn(async () => undefined), createGain: vi.fn(node), createOscillator: vi.fn(node), createBiquadFilter: vi.fn(node) };
   };
 
-  it("one oscillator per note, resumes a suspended context, routes to the chosen output", () => {
+  it("three layered oscillators per note through one low-pass, resumes a suspended context, routes to the chosen output", () => {
     const c = fakeContext("suspended");
     const p = createTonePlayer(() => c as never);
     p.setOutput("spk");
     p.play("selfJoin", 0.5);
-    expect(c.createOscillator).toHaveBeenCalledTimes(TONES.selfJoin.notes.length);
+    expect(c.createOscillator).toHaveBeenCalledTimes(TONES.selfJoin.notes.length * 3);
+    expect(c.createBiquadFilter).toHaveBeenCalledTimes(1);
     expect(c.resume).toHaveBeenCalled();
     expect(c.setSinkId).toHaveBeenLastCalledWith("spk");
     p.setOutput(null);
