@@ -1,0 +1,14 @@
+# Render blueprint: Loop music bot on a free web service in its OWN workspace (docs/DEPLOY.md, "Bot nhạc trên Render").
+# Secrets are sync: false (typed in the Render dashboard).
+services:
+  - type: web
+    name: loop-music-bot
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./deploy/render-bot/Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      - { key: LOOP_API_URL, sync: false } # https://<loop-server>.onrender.com
+      - { key: LOOP_BOT_TOKEN, sync: false } # shown once by POST /bots
