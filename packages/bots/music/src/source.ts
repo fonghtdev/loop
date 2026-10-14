@@ -25,6 +25,7 @@ const clip = (s: string) => (s.length > MAX_TITLE ? `${s.slice(0, MAX_TITLE - 1)
 
 /** What yt-dlp said on stderr, as a sentence for the user. */
 function explain(stderr: string) {
+  console.error("[music] yt-dlp:", stderr.trim().slice(-500)); // the user gets a short sentence; the host's log gets the real reason
   return /unavailable|private|removed|sign in|confirm your age|copyright|blocked/i.test(stderr) ? "Video không khả dụng." : "Không tìm thấy hoặc không tải được video.";
 }
 
