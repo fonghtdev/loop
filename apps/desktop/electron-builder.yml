@@ -19,6 +19,7 @@ afterPack: scripts/adhoc-sign.cjs
 mac:
   category: public.app-category.social-networking
   target: [dmg, zip]
+  artifactName: Loop-${version}-${arch}.${ext} # no spaces: GitHub renames spaces in asset names, which would break the names inside latest*.yml
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
@@ -32,6 +33,7 @@ win:
     - target: nsis
       arch: x64
 nsis:
+  artifactName: Loop-Setup-${version}.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
   perMachine: false

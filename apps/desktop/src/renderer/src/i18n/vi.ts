@@ -167,6 +167,8 @@ export const vi = {
   "userSettings.updateIdle": "Bạn đang dùng bản mới nhất, hoặc chưa kiểm tra.",
   "userSettings.updateChecking": "Đang kiểm tra cập nhật...",
   "userSettings.updateAvailable": "Có bản {version}, đang chuẩn bị tải.",
+  "userSettings.updateManual": "Có bản {version}. Tải về rồi mở file để cài đè lên bản hiện tại.",
+  "userSettings.updateDownload": "Tải bản mới",
   "userSettings.updateDownloading": "Đang tải bản {version} ở nền.",
   "userSettings.updateDownloaded": "Bản {version} đã sẵn sàng. Loop sẽ tự cập nhật khi bạn thoát, hoặc khởi động lại ngay.",
   "userSettings.updateError": "Không kiểm tra được cập nhật: {error}",

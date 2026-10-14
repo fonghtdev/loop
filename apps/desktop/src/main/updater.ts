@@ -16,9 +16,10 @@ export type AutoUpdater = {
 /**
  * Background updates: check shortly after start and every 6 h, download in the background, install when the app quits
  * (never a forced restart; `install()` is the user's explicit "restart now"). With `feedUrl` null nothing is wired and
- * no request is ever made.
+ * no request is ever made. `download: false` (unsigned macOS apps cannot install an update by themselves) only reports
+ * that a newer version exists; the user downloads it.
  */
-export function createUpdater({ getAutoUpdater, feedUrl, send }: { getAutoUpdater: () => AutoUpdater; feedUrl: string | null; send: (s: UpdateStatus) => void }) {
+export function createUpdater({ getAutoUpdater, feedUrl, send, download = true }: { getAutoUpdater: () => AutoUpdater; feedUrl: string | null; send: (s: UpdateStatus) => void; download?: boolean }) {
   let status: UpdateStatus = { state: feedUrl ? "idle" : "disabled" };
   const set = (next: unknown) => {
     status = parseUpdateStatus(next);
@@ -42,8 +43,8 @@ export function createUpdater({ getAutoUpdater, feedUrl, send }: { getAutoUpdate
     start() {
       if (!feedUrl) return () => {};
       const autoUpdater = getAutoUpdater();
-      autoUpdater.autoDownload = true;
-      autoUpdater.autoInstallOnAppQuit = true;
+      autoUpdater.autoDownload = download;
+      autoUpdater.autoInstallOnAppQuit = download;
       autoUpdater.setFeedURL({ provider: "generic", url: feedUrl });
       autoUpdater.on("update-available", (info: { version?: string }) => set({ state: "available", version: info?.version }));
       autoUpdater.on("download-progress", () => status.state !== "downloading" && set({ state: "downloading", version: status.version }));

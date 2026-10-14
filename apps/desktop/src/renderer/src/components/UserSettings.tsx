@@ -1,6 +1,7 @@
 import { Gear, SignOut, Trash, X } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useStore } from "zustand";
+import { RELEASES_URL } from "../../../shared/config";
 import type { BooleanSetting, Settings } from "../../../shared/settings";
 import { acceleratorFromEvent, formatAccelerator, type ShortcutAction } from "../../../shared/shortcut";
 import type { UpdateStatus } from "../../../shared/update";
@@ -256,7 +257,8 @@ function UpdateSection() {
   }, []);
 
   const state = status?.state;
-  const text = state ? t(UPDATE_TEXT[state], { version: status?.version ?? "", error: status?.error ?? "" }) : "";
+  const manual = window.loop.platform === "darwin"; // unsigned macOS app: told about the new version, downloads it by hand
+  const text = state ? t(manual && state === "available" ? "userSettings.updateManual" : UPDATE_TEXT[state], { version: status?.version ?? "", error: status?.error ?? "" }) : "";
   return (
     <div className="flex flex-col gap-3 px-3 py-2">
       <p className="text-[15px]">
@@ -268,6 +270,7 @@ function UpdateSection() {
       </p>
       {state && state !== "disabled" && (
         <div className="flex flex-wrap gap-2">
+          {manual && state === "available" && <Button onClick={() => void window.loop.openExternal(RELEASES_URL)}>{t("userSettings.updateDownload")}</Button>}
           {state === "downloaded" && <Button onClick={() => void window.loop.update.install()}>{t("userSettings.updateInstall")}</Button>}
           <Button variant="ghost" loading={state === "checking"} disabled={state !== "idle" && state !== "error"} onClick={() => void window.loop.update.check().then(setStatus)}>
             {t("userSettings.updateCheck")}

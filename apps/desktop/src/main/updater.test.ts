@@ -85,6 +85,18 @@ describe("createUpdater", () => {
     expect(f.au.checkForUpdates).toHaveBeenCalledTimes(2);
   });
 
+  it("download: false (unsigned macOS) only reports the new version: nothing is downloaded or installed", () => {
+    const f = fake();
+    const u = createUpdater({ getAutoUpdater: () => f.au, feedUrl: "https://u.example.com/loop", send: f.send, download: false });
+    u.start();
+    expect(f.au).toMatchObject({ autoDownload: false, autoInstallOnAppQuit: false });
+    u.check();
+    f.emit("update-available", { version: "1.1.0" });
+    expect(u.status()).toEqual({ state: "available", version: "1.1.0" });
+    u.install();
+    expect(f.au.quitAndInstall).not.toHaveBeenCalled();
+  });
+
   it("walks idle > checking > available > downloading > downloaded; install only then, and never starts a check meanwhile", () => {
     const f = fake();
     const u = createUpdater({ getAutoUpdater: () => f.au, feedUrl: "https://u.example.com/loop", send: f.send });

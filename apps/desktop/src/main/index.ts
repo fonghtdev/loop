@@ -263,6 +263,7 @@ function startUpdater() {
   updater = createUpdater({
     getAutoUpdater: () => autoUpdater,
     feedUrl: enabled ? UPDATE_URL : null,
+    download: process.platform !== "darwin", // ponytail: an unsigned macOS app cannot install an update itself; sign it (Apple Developer) to lift this
     send: (status) => win && !win.isDestroyed() && win.webContents.send("update:status", status),
   });
   updater.start();

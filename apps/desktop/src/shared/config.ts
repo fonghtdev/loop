@@ -18,3 +18,5 @@ export const LIVEKIT_ORIGIN = new URL(import.meta.env.VITE_LIVEKIT_ORIGIN || "ws
  * latest-mac.yml and the artifacts). Build time: `VITE_UPDATE_URL`. Empty = automatic updates are off and the app makes no update request.
  */
 export const UPDATE_URL = import.meta.env.VITE_UPDATE_URL || "";
+/** Where a person downloads a new version by hand (macOS, where the app only says that one exists). */
+export const RELEASES_URL = "https://github.com/fonghtdev/loop/releases/latest";

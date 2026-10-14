@@ -1,14 +1,10 @@
-# UNSIGNED desktop installers, built by hand or on a version tag. NOTHING is published: the installers are uploaded
-# as workflow artifacts (Actions run page -> Artifacts, kept 14 days) and no GitHub Release is created.
-#
-# !!! This workflow has NEVER RUN. The runner labels, the macOS x64 cross-build and the artifact paths are unverified. !!!
+# UNSIGNED desktop installers, built by hand or on a version tag. The installers are uploaded as workflow artifacts
+# (Actions run page -> Artifacts, kept 14 days). On a tag, the `draft-release` job also puts them, plus latest*.yml
+# (the update feed, see LOOP_UPDATE_URL), into a DRAFT GitHub Release: nothing is public until a person publishes it.
 #
 # Setup: Settings -> Secrets and variables -> Actions -> Variables: LOOP_API_URL, LOOP_STORAGE_ORIGIN,
 # LOOP_LIVEKIT_ORIGIN (and optionally LOOP_UPDATE_URL). They are public addresses baked into the app, not secrets.
 #
-# To publish later: download the artifacts and attach them to a Release of a separate PUBLIC repository
-# (this one is private, so testers could not download from it), e.g.
-#   gh release create v0.1.0 --repo <you>/loop-releases --title v0.1.0 *.exe *.dmg *.zip
 # docs/DEPLOY.md explains the whole flow.
 name: release
 on:
@@ -59,3 +55,20 @@ jobs:
             apps/desktop/release/latest*.yml
           if-no-files-found: error
           retention-days: 14
+
+  # A tag makes a DRAFT Release holding every installer and the update feed files. Both Mac builds write latest-mac.yml;
+  # one is kept (the Mac app only reads the version from it: it cannot install updates itself while unsigned).
+  draft-release:
+    needs: installers
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist }
+      - run: |
+          rm dist/loop-macos-x64/latest-mac.yml
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --title "Loop ${GITHUB_REF_NAME#v}" dist/*/*
+        env:
+          GH_TOKEN: ${{ github.token }}
