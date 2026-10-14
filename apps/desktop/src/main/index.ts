@@ -8,7 +8,7 @@ import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, n
 import { APP_ID } from "../shared/app-id";
 import { API_URL, LIVEKIT_ORIGIN, STORAGE_ORIGIN, UPDATE_URL, WS_URL } from "../shared/config";
 import type { Settings } from "../shared/settings";
-import { updatesEnabled } from "../shared/update";
+import { updatesEnabled, type UpdateStatus } from "../shared/update";
 import { APP_ORIGIN, buildCsp, ensureMediaAccess, isMediaKind, isPermissionAllowed, isSafeExternalUrl, isTrustedSender, isValidRefreshToken, resolveAppFile } from "./security";
 import { installE2eHook, newRecorder } from "./e2e-hook";
 import { createNotifier } from "./notifications";
@@ -18,6 +18,7 @@ import { createSettingsStore } from "./settings";
 import { createShortcuts } from "./shortcuts";
 import { createTokenStore } from "./token-store";
 import { createTray, type TrayHandle } from "./tray";
+import { createMacUpdater } from "./mac-updater";
 import { createUpdater } from "./updater";
 import { runUninstall } from "./uninstall";
 
@@ -44,7 +45,7 @@ let uninstallAnswer = false; // e2e only: stands in for the click on the native 
 const screenShare = createScreenShare({ getSources: (o) => desktopCapturer.getSources(o), trusted: (url) => isTrustedSender(url, devServerUrl), platform: process.platform });
 let settings: ReturnType<typeof createSettingsStore>;
 const shortcuts = createShortcuts({ globalShortcut, onPress: (action) => win?.webContents.send("shortcut:fire", action) });
-let updater: ReturnType<typeof createUpdater>;
+let updater: Pick<ReturnType<typeof createUpdater>, "status" | "check" | "install" | "start">;
 
 // A standard + secure scheme gives the renderer a real origin (app://loop) for CORS, unlike file://.
 protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
@@ -108,7 +109,7 @@ function registerIpc() {
     updater.check();
     return updater.status();
   });
-  handle("update:install", () => updater.install());
+  handle("update:install", () => void updater.install()); // the renderer asked after its confirm dialog; main still acts only when an update is available
   handle("app:uninstall", () => uninstallApp(() => revokeSession(store.get())));
   handle("notify:show", (payload) => notifier.show(payload));
   handle("notify:close", (key) => notifier.close(key));
@@ -257,15 +258,27 @@ function startTray() {
   });
 }
 
-/** Automatic updates: only for the installed app with a baked https feed; otherwise inert (no network). */
+/**
+ * Automatic updates: only for the installed app with a baked https feed; otherwise inert (no network). macOS builds are
+ * unsigned, which Squirrel.Mac (electron-updater) refuses to install, so macOS uses its own verified swap (mac-updater.ts).
+ */
 function startUpdater() {
-  const enabled = updatesEnabled({ isPackaged: app.isPackaged, feedUrl: UPDATE_URL });
-  updater = createUpdater({
-    getAutoUpdater: () => autoUpdater,
-    feedUrl: enabled ? UPDATE_URL : null,
-    download: process.platform !== "darwin", // ponytail: an unsigned macOS app cannot install an update itself; sign it (Apple Developer) to lift this
-    send: (status) => win && !win.isDestroyed() && win.webContents.send("update:status", status),
-  });
+  const feedUrl = updatesEnabled({ isPackaged: app.isPackaged, feedUrl: UPDATE_URL }) ? UPDATE_URL : null;
+  const send = (status: UpdateStatus) => win && !win.isDestroyed() && win.webContents.send("update:status", status);
+  updater =
+    process.platform === "darwin"
+      ? createMacUpdater({
+          feedUrl,
+          send,
+          version: app.getVersion(),
+          arch: process.arch,
+          execPath: process.execPath,
+          tempRoot: app.getPath("temp"),
+          pid: process.pid,
+          spawnDetached: (cmd, args) => spawn(cmd, args, { detached: true, stdio: "ignore" }).unref(),
+          quit: () => app.quit(), // before-quit sets `quitting`, so the window closes instead of hiding to the tray
+        })
+      : createUpdater({ getAutoUpdater: () => autoUpdater, feedUrl, send });
   updater.start();
 }
 

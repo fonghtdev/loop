@@ -1,7 +1,11 @@
 /** The auto-update state machine's vocabulary, shared by main (sends), preload (validates) and the settings screen. */
-export const UPDATE_STATES = ["disabled", "idle", "checking", "available", "downloading", "downloaded", "error"] as const;
+export const UPDATE_STATES = ["disabled", "idle", "checking", "available", "downloading", "downloaded", "installing", "error"] as const;
 export type UpdateState = (typeof UPDATE_STATES)[number];
-export type UpdateStatus = { state: UpdateState; version?: string; error?: string };
+/** `percent` (0..100) only while the macOS updater downloads. */
+export type UpdateStatus = { state: UpdateState; version?: string; percent?: number; error?: string };
+
+/** The `error` the macOS updater sends when the app runs from somewhere it cannot replace itself (the settings screen explains it). */
+export const UPDATE_ERROR_APP_LOCATION = "app-location";
 
 const MAX_ERROR = 200;
 const MAX_VERSION = 64;
@@ -26,6 +30,7 @@ export function parseUpdateStatus(raw: unknown): UpdateStatus {
   const state = UPDATE_STATES.find((s) => s === r.state) ?? "error";
   const out: UpdateStatus = { state };
   if (typeof r.version === "string") out.version = r.version.slice(0, MAX_VERSION);
+  if (Number.isInteger(r.percent) && (r.percent as number) >= 0 && (r.percent as number) <= 100) out.percent = r.percent as number;
   if (state === "error") out.error = (typeof r.error === "string" ? r.error : "").replace(/\s+/g, " ").trim().slice(0, MAX_ERROR);
   return out;
 }

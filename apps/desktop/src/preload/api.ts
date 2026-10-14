@@ -34,7 +34,7 @@ export type LoopApi = {
     get(): Promise<UpdateStatus>;
     /** Starts a check when one makes sense; resolves to the status now in force. */
     check(): Promise<UpdateStatus>;
-    /** Quit and install; only acts once an update is downloaded. */
+    /** Windows: quit and install once downloaded. macOS: download, verify and install the available version (after the user confirmed). */
     install(): Promise<void>;
     /** Status changes pushed by the main process (already validated); returns the unsubscribe. */
     onStatus(cb: (status: UpdateStatus) => void): () => void;

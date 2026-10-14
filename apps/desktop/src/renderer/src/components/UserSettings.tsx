@@ -1,10 +1,9 @@
 import { Gear, SignOut, Trash, X } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useStore } from "zustand";
-import { RELEASES_URL } from "../../../shared/config";
 import type { BooleanSetting, Settings } from "../../../shared/settings";
 import { acceleratorFromEvent, formatAccelerator, type ShortcutAction } from "../../../shared/shortcut";
-import type { UpdateStatus } from "../../../shared/update";
+import { UPDATE_ERROR_APP_LOCATION, type UpdateStatus } from "../../../shared/update";
 import { t } from "../i18n/t";
 import type { MessageKey } from "../i18n/vi";
 import { appearance, MOTIONS, useAppearance, type Appearance } from "../lib/appearance";
@@ -16,6 +15,7 @@ import { NOISE_LABEL, NOISE_LEVELS } from "../lib/noise";
 import { soundPrefs, useSoundPrefs } from "../lib/sound-prefs";
 import { toast } from "../lib/toast";
 import { Button } from "./Button";
+import { ConfirmBody } from "./Confirm";
 import { Dialog, DialogActions } from "./Dialog";
 import { Segmented } from "./Segmented";
 import { Switch } from "./Switch";
@@ -242,8 +242,17 @@ const UPDATE_TEXT: Record<UpdateStatus["state"], MessageKey> = {
   available: "userSettings.updateAvailable",
   downloading: "userSettings.updateDownloading",
   downloaded: "userSettings.updateDownloaded",
+  installing: "userSettings.updateInstalling",
   error: "userSettings.updateError",
 };
+
+/** macOS installs only after the user confirms here (unsigned builds: the main process downloads, verifies and swaps the app). */
+function updateTextKey({ state, error }: UpdateStatus, mac: boolean): MessageKey {
+  if (mac && state === "available") return "userSettings.updateAvailableMac";
+  if (mac && state === "downloading") return "userSettings.updateDownloadingMac";
+  if (state === "error" && error === UPDATE_ERROR_APP_LOCATION) return "userSettings.updateMoveApp";
+  return UPDATE_TEXT[state];
+}
 
 /** Current version, the updater's state (live region) and its two actions. The main process owns the state; this only shows it. */
 function UpdateSection() {
@@ -256,9 +265,10 @@ function UpdateSection() {
     return window.loop.update.onStatus(setStatus);
   }, []);
 
+  const [confirm, setConfirm] = useState(false);
   const state = status?.state;
-  const manual = window.loop.platform === "darwin"; // unsigned macOS app: told about the new version, downloads it by hand
-  const text = state ? t(manual && state === "available" ? "userSettings.updateManual" : UPDATE_TEXT[state], { version: status?.version ?? "", error: status?.error ?? "" }) : "";
+  const mac = window.loop.platform === "darwin";
+  const text = status ? t(updateTextKey(status, mac), { version: status.version ?? "", percent: String(status.percent ?? 0), error: status.error ?? "" }) : "";
   return (
     <div className="flex flex-col gap-3 px-3 py-2">
       <p className="text-[15px]">
@@ -270,13 +280,23 @@ function UpdateSection() {
       </p>
       {state && state !== "disabled" && (
         <div className="flex flex-wrap gap-2">
-          {manual && state === "available" && <Button onClick={() => void window.loop.openExternal(RELEASES_URL)}>{t("userSettings.updateDownload")}</Button>}
+          {mac && state === "available" && <Button onClick={() => setConfirm(true)}>{t("userSettings.updateNow")}</Button>}
           {state === "downloaded" && <Button onClick={() => void window.loop.update.install()}>{t("userSettings.updateInstall")}</Button>}
           <Button variant="ghost" loading={state === "checking"} disabled={state !== "idle" && state !== "error"} onClick={() => void window.loop.update.check().then(setStatus)}>
             {t("userSettings.updateCheck")}
           </Button>
         </div>
       )}
+      <Dialog open={confirm} onClose={() => setConfirm(false)} title={t("userSettings.updateConfirmTitle")}>
+        {confirm && (
+          <ConfirmBody
+            body={t("userSettings.updateConfirmBody", { version: status?.version ?? "" })}
+            submit={t("userSettings.updateNow")}
+            onDone={() => setConfirm(false)}
+            action={() => window.loop.update.install()}
+          />
+        )}
+      </Dialog>
     </div>
   );
 }

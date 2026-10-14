@@ -241,9 +241,9 @@ Nếu `dist` báo `spawn ENOEXEC` khi "searching for node modules": file `pnpm` 
 
 ### Cập nhật tự động
 
-Dùng `electron-updater` (provider `generic`). Chỉ bật khi app đã cài (`app.isPackaged`) VÀ lúc build có `VITE_UPDATE_URL` (https). Kiểm tra sau khi mở 30 giây rồi mỗi 6 giờ, tải nền, tự cài khi thoát app, không bao giờ ép khởi động lại (nút "Khởi động lại để cập nhật" ở Cài đặt > Cập nhật).
+Windows dùng `electron-updater` (provider `generic`); macOS dùng `src/main/mac-updater.ts` (xem dưới). Chỉ bật khi app đã cài (`app.isPackaged`) VÀ lúc build có `VITE_UPDATE_URL` (https). Kiểm tra sau khi mở 30 giây rồi mỗi 6 giờ, tải nền, tự cài khi thoát app, không bao giờ ép khởi động lại (nút "Khởi động lại để cập nhật" ở Cài đặt > Cập nhật).
 
-Phát hành bản mới: tăng `version` trong `apps/desktop/package.json`, build với cùng các biến `VITE_*`, rồi tải lên `VITE_UPDATE_URL` (S3/R2 công khai, GitHub Pages hay web tĩnh bất kỳ) các file trong `release/`: `latest.yml`, `latest-mac.yml`, `.exe`, `.zip`, `.dmg` và các `.blockmap`. Lưu ý: **macOS chỉ tự cập nhật được với app đã ký** (Squirrel.Mac), bản chưa ký sẽ báo lỗi; Windows NSIS cập nhật được cả khi chưa ký. Luồng cập nhật thật chưa được thử vì chưa có feed.
+Phát hành bản mới: tăng `version` trong `apps/desktop/package.json`, build với cùng các biến `VITE_*`, rồi tải lên `VITE_UPDATE_URL` (S3/R2 công khai, GitHub Pages hay web tĩnh bất kỳ) các file trong `release/`: `latest.yml`, `latest-mac.yml`, `.exe`, `.zip`, `.dmg` và các `.blockmap`. macOS chưa ký nên không dùng Squirrel.Mac: app đọc `latest-mac.yml` (Intel: `latest-mac-x64.yml`), báo "Có bản X", và CHỈ khi người dùng bấm "Cập nhật ngay" rồi xác nhận mới tải zip, kiểm SHA-512, thay `Loop.app` và mở lại (chi tiết: `apps/desktop/src/main/CLAUDE.md`); Windows NSIS cập nhật được cả khi chưa ký. Luồng cập nhật thật chưa được thử vì chưa có feed.
 
 ### Danh sách kiểm tra khi đưa server lên production
 

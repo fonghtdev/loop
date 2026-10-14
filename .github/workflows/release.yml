@@ -56,8 +56,9 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # A tag makes a DRAFT Release holding every installer and the update feed files. Both Mac builds write latest-mac.yml;
-  # one is kept (the Mac app only reads the version from it: it cannot install updates itself while unsigned).
+  # A tag makes a DRAFT Release holding every installer and the update feed files. Both Mac builds write latest-mac.yml:
+  # the arm64 one keeps that name, the Intel one is renamed latest-mac-x64.yml (src/main/mac-updater.ts reads the file
+  # for its own architecture and installs the zip it names after checking its SHA-512).
   draft-release:
     needs: installers
     if: startsWith(github.ref, 'refs/tags/')
@@ -68,7 +69,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { path: dist }
       - run: |
-          rm dist/loop-macos-x64/latest-mac.yml
+          mv dist/loop-macos-x64/latest-mac.yml dist/loop-macos-x64/latest-mac-x64.yml
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --title "Loop ${GITHUB_REF_NAME#v}" dist/*/*
         env:
           GH_TOKEN: ${{ github.token }}

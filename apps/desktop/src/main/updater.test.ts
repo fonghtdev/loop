@@ -30,6 +30,9 @@ describe("parseUpdateStatus", () => {
     expect(parseUpdateStatus({ state: "hacked" }).state).toBe("error");
     expect(parseUpdateStatus(null).state).toBe("error");
     expect(parseUpdateStatus({ state: "idle", version: "9".repeat(300) }).version).toHaveLength(64);
+    expect(parseUpdateStatus({ state: "downloading", percent: 42 })).toEqual({ state: "downloading", percent: 42 });
+    for (const percent of [-1, 101, 4.5, "42", NaN]) expect(parseUpdateStatus({ state: "downloading", percent })).toEqual({ state: "downloading" });
+    expect(parseUpdateStatus({ state: "installing", version: "1.1.0" })).toEqual({ state: "installing", version: "1.1.0" });
   });
 });
 
@@ -83,18 +86,6 @@ describe("createUpdater", () => {
     f.emit("update-not-available");
     vi.advanceTimersByTime(CHECK_INTERVAL_MS * 2);
     expect(f.au.checkForUpdates).toHaveBeenCalledTimes(2);
-  });
-
-  it("download: false (unsigned macOS) only reports the new version: nothing is downloaded or installed", () => {
-    const f = fake();
-    const u = createUpdater({ getAutoUpdater: () => f.au, feedUrl: "https://u.example.com/loop", send: f.send, download: false });
-    u.start();
-    expect(f.au).toMatchObject({ autoDownload: false, autoInstallOnAppQuit: false });
-    u.check();
-    f.emit("update-available", { version: "1.1.0" });
-    expect(u.status()).toEqual({ state: "available", version: "1.1.0" });
-    u.install();
-    expect(f.au.quitAndInstall).not.toHaveBeenCalled();
   });
 
   it("walks idle > checking > available > downloading > downloaded; install only then, and never starts a check meanwhile", () => {
