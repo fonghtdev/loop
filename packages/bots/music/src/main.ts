@@ -24,6 +24,16 @@ for (;;) {
   }
 }
 console.log("[music] ready");
+// What the bot can see, so a silent bot can be told apart from a bot that is not in the right place.
+const describe = async () => {
+  for (const g of await bot.listGuilds()) {
+    const channels = await bot.listChannels(g.id);
+    console.log(`[music] guild "${g.name}": ${channels.map((c) => `${c.type}:${c.name}`).join(", ")}`);
+  }
+};
+bot.on("ready", () => void describe().catch((e) => console.error("[music]", e.message)));
+bot.on("message", (m) => console.log(`[music] message in ${m.channelId} from ${m.author.username}: ${m.content.slice(0, 40)}`));
+void describe().catch((e) => console.error("[music]", e.message));
 const shutdown = () => {
   health?.close();
   bot.stop();
