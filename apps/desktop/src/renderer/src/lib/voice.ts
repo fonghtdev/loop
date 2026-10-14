@@ -6,6 +6,7 @@ import type { AudioSink, AudioTrackLike } from "./audio-sink";
 import { errorMessage } from "./errors";
 import type { ShareChoice, StreamProfile } from "./golive";
 import { streamProfile } from "./golive";
+import { clampVolume, effectiveVolume, pruneWatching, subscriptionChanges } from "./stream-watch";
 import { noiseConfig, type NoiseLevel } from "./noise";
 import type { SoundKind } from "./sounds";
 import { encodeDeafened, parseDeafened } from "./voice-flags";
@@ -49,10 +50,15 @@ export type VoiceState = {
   /** Why the mic, camera or screen share could not start (permission denied), shown in the bar. */
   mediaNote: string | null;
   participants: Participant[];
+  /** Whose screen share we chose to watch (nothing is downloaded or played for the others). Per session, not persisted. */
+  watching: string[];
+  /** Per sharer, the viewer's own slider (0..1, default 1) and mute for that stream's sound; kept while the session lasts. */
+  streamVolume: Record<string, number>;
+  streamMuted: Record<string, boolean>;
 };
 
 // ---- the slice of livekit-client's Room that is used (tests pass a fake) ----
-type TrackPublicationLike = { track?: (Participant["video"] & Partial<AudioTrackLike>) | undefined; isMuted: boolean };
+type TrackPublicationLike = { track?: (Participant["video"] & Partial<AudioTrackLike>) | undefined; isMuted: boolean; /** Remote publications only. */ isSubscribed?: boolean; setSubscribed?(subscribed: boolean): void };
 export type ParticipantLike = { identity: string; name?: string; metadata?: string; permissions?: { canPublish: boolean; canPublishSources: number[] }; getTrackPublication(source: string): TrackPublicationLike | undefined };
 export type LocalParticipantLike = ParticipantLike & {
   setMetadata(metadata: string): Promise<unknown>;
@@ -75,7 +81,7 @@ export type RoomLike = {
 type MicTrackLike = { mediaStreamTrack: Pick<MediaStreamTrack, "applyConstraints">; setProcessor(p: NoiseProcessor): Promise<void>; stopProcessor(): Promise<void> };
 export type NoiseProcessor = TrackProcessor<Track.Kind.Audio, AudioProcessorOptions>;
 /** The microphone cleaning: the chosen level, and the processor for it (null = none; `onFail` is told when it cannot start). */
-export type NoiseDeps = { level: () => NoiseLevel; processor: (level: NoiseLevel, onFail: () => void) => NoiseProcessor | null };
+export type NoiseDeps = { level: () => NoiseLevel; processor: (level: NoiseLevel, onFail: (reason?: string) => void) => NoiseProcessor | null };
 
 type TokenResponse = { token: string; url: string; canSpeak: boolean; canVideo: boolean; canStream: boolean };
 type Deps = {
@@ -143,6 +149,9 @@ const RESET: Omit<VoiceState, "sessionId" | "notice"> = {
   micBeforeDeafen: false,
   mediaNote: null,
   participants: [],
+  watching: [],
+  streamVolume: {},
+  streamMuted: {},
 };
 
 /**
@@ -180,7 +189,35 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
   };
   const refresh = () => {
     if (!room) return;
-    set({ participants: [toParticipant(room.localParticipant, true), ...[...room.remoteParticipants.values()].map((p) => toParticipant(p, false))] });
+    const remotes = [...room.remoteParticipants.values()];
+    const participants = [toParticipant(room.localParticipant, true), ...remotes.map((p) => toParticipant(p, false))];
+    const sharers = new Set(participants.filter((p) => !p.isLocal && p.sharing).map((p) => p.userId));
+    set({ participants, watching: pruneWatching(get().watching, sharers) });
+  };
+
+  // ---- watching screen shares: the ONE place that decides what is subscribed ----
+  // A stream's picture and sound are subscribed only while its owner is in `watching`; mic and camera stay on LiveKit's
+  // auto-subscribe. A fresh publication may be auto-subscribed for a moment before the next sync drops it.
+  const streamAudio = new Map<string, AudioTrackLike>();
+  const streamGain = (userId: string) => {
+    const s = get();
+    return s.watching.includes(userId) ? effectiveVolume(s.deafened, !!s.streamMuted[userId], s.streamVolume[userId] ?? 1) : 0;
+  };
+  const applyStreamAudio = () => streamAudio.forEach((track, userId) => sink.setVolume(track, streamGain(userId)));
+  const syncStreams = () => {
+    if (!room) return;
+    const pubs = [...room.remoteParticipants.values()].flatMap((p) =>
+      [Track.Source.ScreenShare, Track.Source.ScreenShareAudio].flatMap((source) => {
+        const pub = p.getTrackPublication(source);
+        return pub?.setSubscribed ? [{ userId: p.identity, source: source as string, subscribed: !!pub.isSubscribed, pub }] : [];
+      }),
+    );
+    for (const { pub, subscribe } of subscriptionChanges(get().watching, pubs)) pub.setSubscribed?.(subscribe);
+    applyStreamAudio();
+  };
+  const publicationsChanged = () => {
+    refresh();
+    syncStreams();
   };
 
   /** Drops the room and everything hanging off it; the caller sets the next state. */
@@ -190,6 +227,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     speaking = new Set();
     known = null;
     sink.clear();
+    streamAudio.clear();
     stopShared();
     if (r) void Promise.resolve(r.disconnect()).catch(() => undefined);
   }
@@ -201,7 +239,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
   const serial = (job: () => Promise<void>) => (queue = queue.then(job).catch(() => undefined));
 
   type Device = { key: "micEnabled" | "camEnabled"; allowed: "canSpeak" | "canVideo"; kind: "microphone" | "camera"; osDenied: Parameters<typeof t>[0]; denied: Parameters<typeof t>[0]; apply: (r: RoomLike, on: boolean) => Promise<unknown> };
-  const noiseFailed = () => set({ mediaNote: t("voice.media.noiseFailed") });
+  const noiseFailed = (reason?: string) => set({ mediaNote: t("voice.media.noiseFailed") + (reason ? ` (${reason})` : "") });
   /** How a NEW microphone track is captured at the current level (an existing one keeps what it has; `applyNoise` moves it). */
   const micCapture = (): AudioCaptureOptions => {
     const level = noise.level();
@@ -337,7 +375,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     on("reconnected", () => {
       known = new Set(r.remoteParticipants.keys());
       set({ status: "connected" });
-      refresh();
+      publicationsChanged();
     });
     on("disconnected", (reason?: DisconnectReason) => {
       if (reason === DisconnectReason.CLIENT_INITIATED) return;
@@ -350,19 +388,28 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
       speaking = new Set(list.map((p) => p.identity));
       refresh();
     });
-    on("trackSubscribed", (track: { kind: string } & AudioTrackLike) => {
-      if (track.kind === "audio") sink.add(track);
+    on("trackSubscribed", (track: { kind: string; source?: string } & AudioTrackLike, _pub: unknown, p?: { identity: string }) => {
+      if (track.kind === "audio") {
+        sink.add(track);
+        if (track.source === Track.Source.ScreenShareAudio && p) {
+          streamAudio.set(p.identity, track);
+          sink.setVolume(track, streamGain(p.identity));
+        }
+      }
       refresh();
     });
-    on("trackUnsubscribed", (track: { kind: string } & AudioTrackLike) => {
-      if (track.kind === "audio") sink.remove(track);
+    on("trackUnsubscribed", (track: { kind: string; source?: string } & AudioTrackLike, _pub: unknown, p?: { identity: string }) => {
+      if (track.kind === "audio") {
+        sink.remove(track);
+        if (p && streamAudio.get(p.identity) === track) streamAudio.delete(p.identity);
+      }
       refresh();
     });
     on("participantPermissionsChanged", (_prev: unknown, p: { identity: string }) => {
       if (p.identity === r.localParticipant.identity) applyRights(rightsOf(r.localParticipant.permissions));
     });
     on("participantConnected", (p: { identity: string }) => {
-      refresh();
+      publicationsChanged();
       if (known && !known.has(p.identity)) {
         known.add(p.identity);
         sound("join");
@@ -380,8 +427,8 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
       }
       refresh();
     });
-    for (const e of ["participantMetadataChanged", "trackMuted", "trackUnmuted", "localTrackPublished", "trackPublished", "trackUnpublished"])
-      on(e, refresh);
+    for (const e of ["participantMetadataChanged", "trackMuted", "trackUnmuted", "localTrackPublished"]) on(e, refresh);
+    for (const e of ["trackPublished", "trackUnpublished"]) on(e, publicationsChanged);
   }
 
   /** Tells the others (cosmetically, see voice-flags) whether we are deafened; a refusal (older server) is harmless. */
@@ -435,7 +482,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     set({ status: "connected", startedAt: now() });
     known = new Set(r.remoteParticipants.keys());
     sound("selfJoin");
-    refresh();
+    publicationsChanged();
     await setMic(true);
     if (video) await setCamera(true);
     return active(id);
@@ -455,6 +502,26 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     startScreen,
     stopScreen,
     toggleScreen: () => (get().screenEnabled ? stopScreen() : startScreen()),
+    /** Start watching someone's screen share (only a person who is sharing right now); subscribes picture and sound. */
+    watch(userId: string) {
+      const sharing = get().participants.some((p) => p.userId === userId && !p.isLocal && p.sharing);
+      if (!sharing || get().watching.includes(userId)) return;
+      set({ watching: [...get().watching, userId] });
+      syncStreams();
+    },
+    unwatch(userId: string) {
+      set({ watching: get().watching.filter((id) => id !== userId) });
+      syncStreams();
+    },
+    /** The viewer's slider for one stream's sound (clamped); the microphone of that person is untouched. */
+    setStreamVolume(userId: string, volume: number) {
+      set({ streamVolume: { ...get().streamVolume, [userId]: clampVolume(volume) } });
+      applyStreamAudio();
+    },
+    setStreamMuted(userId: string, muted: boolean) {
+      set({ streamMuted: { ...get().streamMuted, [userId]: muted } });
+      applyStreamAudio();
+    },
     /** Deafen silences every remote <audio> (nothing is unsubscribed) and the mic; undeafen restores the mic as it was. */
     async toggleDeafen() {
       const s = get();
@@ -463,12 +530,14 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
         sink.setMuted(true);
         set({ deafened: true, micBeforeDeafen: s.micEnabled });
         publishDeafened(true);
+        applyStreamAudio();
         if (s.micEnabled) await setMic(false);
       } else {
         sink.setMuted(false);
         publishDeafened(false);
         const restore = s.micBeforeDeafen;
         set({ deafened: false, micBeforeDeafen: false });
+        applyStreamAudio();
         if (restore) await setMic(true);
       }
     },

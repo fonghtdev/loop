@@ -13,8 +13,8 @@ const REQUEST_TIMEOUT_SECONDS = 5;
 export type Rights = { speak: boolean; video: boolean; stream: boolean };
 // No participant count: LiveKit refreshes Room.numParticipants only every few seconds; `participants()` is live.
 export type RoomInfo = { name: string; maxParticipants: number };
-export type Seat = Rights & { userId: string; username: string };
-export type RoomEvent = { type: string; room: string | undefined; userId: string | undefined };
+export type Seat = Rights & { userId: string; username: string; sharing: boolean };
+export type RoomEvent = { type: string; room: string | undefined; userId: string | undefined; screenShare: boolean };
 
 const isNotFound = (e: unknown) => (e as { status?: number })?.status === 404;
 /** Publishing sources a set of rights allows; screen share (with its audio) only with stream. */
@@ -66,6 +66,7 @@ export function createLivekit({ url, apiUrl, apiKey, apiSecret }: Env["livekit"]
           speak: allows(TrackSource.MICROPHONE),
           video: allows(TrackSource.CAMERA),
           stream: allows(TrackSource.SCREEN_SHARE),
+          sharing: p.tracks.some((t) => t.source === TrackSource.SCREEN_SHARE),
         };
       });
     },
@@ -109,7 +110,7 @@ export function createLivekit({ url, apiUrl, apiKey, apiSecret }: Env["livekit"]
     async verifyWebhook(rawBody: string, authorization: string | undefined): Promise<RoomEvent> {
       if (!authorization) throw new Error("missing signature");
       const event = await receiver.receive(rawBody, authorization);
-      return { type: event.event, room: event.room?.name, userId: event.participant?.identity };
+      return { type: event.event, room: event.room?.name, userId: event.participant?.identity, screenShare: event.track?.source === TrackSource.SCREEN_SHARE };
     },
   };
 }

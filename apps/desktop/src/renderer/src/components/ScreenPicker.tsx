@@ -16,7 +16,7 @@ type Tab = "apps" | "screens" | "devices";
 export function ScreenPicker() {
   const open = useStore(screenPicker.store, (s) => s.open);
   return (
-    <Dialog open={!!open} onClose={screenPicker.cancel} title={t("golive.title")}>
+    <Dialog open={!!open} onClose={screenPicker.cancel} title={t("golive.title")} wide hideTitle>
       {open && <GoLiveForm sources={open.sources} devices={open.devices} />}
     </Dialog>
   );
@@ -43,7 +43,7 @@ function GoLiveForm({ sources, devices }: { sources: ScreenSource[]; devices: Sh
     list.length === 0 ? (
       <p className="text-small text-ink-muted">{empty}</p>
     ) : (
-      <ul className="m-0 grid max-h-[30vh] list-none grid-cols-2 gap-3 overflow-y-auto p-0">
+      <ul className="m-0 grid max-h-[30vh] list-none grid-cols-3 gap-3 overflow-y-auto p-0">
         {list.map((s, i) => (
           <li key={s.id} className="min-w-0">
             <button type="button" aria-pressed={selected === s.id} onClick={() => setSelected(s.id)} className={pick}>

@@ -10,7 +10,7 @@ import { isActive, useVoiceParticipants } from "../lib/voice-hooks";
 import { Button } from "./Button";
 import { VoiceArt } from "./Illustrations";
 import { ParticipantTile } from "./ParticipantTile";
-import { ScreenStage } from "./ScreenStage";
+import { ScreenStage, StreamCard } from "./ScreenStage";
 import { ColumnHeader, EmptyState } from "./States";
 import { Tooltip } from "./Tooltip";
 
@@ -58,7 +58,9 @@ export function VoiceRoom({ guildId, channelId }: { guildId: string; channelId: 
   const busyElsewhere = isActive(status) && !here;
   const [box, size] = useContentSize<HTMLDivElement>();
   const [tiles, drop] = useTiles(people);
-  const shared = people.filter((p): p is typeof p & { screen: NonNullable<typeof p.screen> } => !!p.screen);
+  const watching = useStore(voice.store, (s) => s.watching);
+  // our own share shows as soon as it has a picture; someone else's only after Watch (and only in the room we are in)
+  const shared = people.filter((p) => (p.isLocal ? !!p.screen : here && !!p.sharing));
   const layout = tileLayout(tiles.length, size.w, size.h);
 
   return (
@@ -83,9 +85,7 @@ export function VoiceRoom({ guildId, channelId }: { guildId: string; channelId: 
         )}
         {shared.length > 0 && (
           <div className="flex min-h-0 flex-[3] flex-col gap-3 px-5 pt-5">
-            {shared.map((p) => (
-              <ScreenStage key={p.userId} p={p} />
-            ))}
+            {shared.map((p) => (p.isLocal || watching.includes(p.userId) ? <ScreenStage key={p.userId} p={p} /> : <StreamCard key={p.userId} p={p} />))}
           </div>
         )}
         <div ref={box} className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5">
@@ -94,7 +94,7 @@ export function VoiceRoom({ guildId, channelId }: { guildId: string; channelId: 
           ) : (
             <ul aria-label={t("voice.room.people")} data-cols={layout.cols} style={{ gridTemplateColumns: `repeat(${layout.cols}, ${layout.width}px)`, gap: TILE_GAP }} className="m-auto grid">
               {tiles.map((tile) => (
-                <ParticipantTile key={tile.p.userId} tile={tile} onGone={drop} />
+                <ParticipantTile key={tile.p.userId} tile={tile} guildId={guildId} onGone={drop} />
               ))}
             </ul>
           )}

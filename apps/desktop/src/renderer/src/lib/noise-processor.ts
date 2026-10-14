@@ -8,7 +8,7 @@ export type BuildGraph = (input: MediaStreamTrack, gate: NoiseConfig["gate"]) =>
  * LiveKit's view of the graph. It never throws: when the worklet or the wasm cannot start, there is no processed
  * track (LiveKit then keeps sending the raw one), the browser's filter is switched back on, and `onFail` tells the user.
  */
-export function createNoiseProcessor(config: NoiseConfig, onFail: () => void, build: BuildGraph): TrackProcessor<Track.Kind.Audio, AudioProcessorOptions> {
+export function createNoiseProcessor(config: NoiseConfig, onFail: (reason?: string) => void, build: BuildGraph): TrackProcessor<Track.Kind.Audio, AudioProcessorOptions> {
   let graph: Graph | undefined;
   const proc: TrackProcessor<Track.Kind.Audio, AudioProcessorOptions> = {
     name: "loop-noise",
@@ -16,10 +16,11 @@ export function createNoiseProcessor(config: NoiseConfig, onFail: () => void, bu
       try {
         graph = await build(track, config.gate);
         proc.processedTrack = graph.output;
-      } catch {
+      } catch (e) {
+        console.error("[noise] graph failed:", e);
         proc.processedTrack = undefined;
         await track.applyConstraints({ noiseSuppression: true }).catch(() => undefined);
-        onFail();
+        onFail(e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 120) : undefined); // the reason is for whoever reports it
       }
     },
     async restart(opts) {

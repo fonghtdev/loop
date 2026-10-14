@@ -100,13 +100,15 @@ describe("isPermissionAllowed", () => {
     expect(isPermissionAllowed("media", "http://localhost:5173/", dev)).toBe(true);
     expect(isPermissionAllowed("clipboard-sanitized-write", "app://loop/index.html")).toBe(true);
     expect(isPermissionAllowed("display-capture", "app://loop/index.html")).toBe(true);
+    expect(isPermissionAllowed("fullscreen", "app://loop/index.html")).toBe(true);
   });
-  it.each(["notifications", "geolocation", "clipboard-read", "midi", "openExternal", "fullscreen", "unknown"])("refuses %s even from the app origin", (p) => {
+  it.each(["notifications", "geolocation", "clipboard-read", "midi", "openExternal", "unknown"])("refuses %s even from the app origin", (p) => {
     expect(isPermissionAllowed(p, "app://loop/index.html", "http://localhost:5173")).toBe(false);
   });
   it.each(["https://evil.example/", "http://localhost:5173/", "app://other/", "file:///x.html", ""])("refuses media and screen capture for the foreign origin %s", (url) => {
     expect(isPermissionAllowed("media", url)).toBe(false);
     expect(isPermissionAllowed("display-capture", url)).toBe(false);
+    expect(isPermissionAllowed("fullscreen", url)).toBe(false);
   });
 });
 

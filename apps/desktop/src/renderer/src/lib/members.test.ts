@@ -5,7 +5,7 @@ import type { Member, Role } from "./permissions";
 const G = "g1";
 const role = (id: string, name: string, position: number): Role => ({ id, guildId: G, name, permissions: 0, position });
 const everyone = role(G, "@everyone", 0);
-const member = (userId: string, roleIds: string[] = []): Member => ({ userId, username: userId, joinedAt: "2026-01-01", roleIds });
+const member = (userId: string, roleIds: string[] = []): Member => ({ userId, username: userId, isBot: false, joinedAt: "2026-01-01", createdAt: "2025-01-01", roleIds });
 const roles = [everyone, role("mod", "Điều hành", 2), role("vip", "VIP", 1)];
 
 describe("groupMembers", () => {

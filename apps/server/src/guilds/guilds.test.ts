@@ -137,10 +137,10 @@ describe("channels", () => {
 });
 
 describe("members", () => {
-  it("lists userId, username, joinedAt, roleIds only", async () => {
+  it("lists userId, username, isBot, joinedAt, createdAt, roleIds only", async () => {
     const { owner, base } = await setup();
     const res = await call("GET", `${base}/members`, owner);
-    expect(res.json()).toEqual([{ userId: expect.any(String), username: "owner", isBot: false, joinedAt: expect.any(String), roleIds: [] }]);
+    expect(res.json()).toEqual([{ userId: expect.any(String), username: "owner", isBot: false, joinedAt: expect.any(String), createdAt: expect.any(String), roleIds: [] }]);
     expect(res.body).not.toMatch(/email|passwordHash/);
   });
 

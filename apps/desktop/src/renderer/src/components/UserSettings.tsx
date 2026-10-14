@@ -12,7 +12,7 @@ import { density, DENSITIES, useDensity, type Density } from "../lib/density";
 import { appSettings, devices, noiseLevel, session, sounds, unlockDeviceLabels } from "../lib/app";
 import { DEVICE_KINDS, labelsAvailable, optionsFor, type DeviceKind } from "../lib/devices";
 import { useNav } from "../lib/nav";
-import { NOISE_LEVELS, type NoiseLevel } from "../lib/noise";
+import { NOISE_LABEL, NOISE_LEVELS } from "../lib/noise";
 import { soundPrefs, useSoundPrefs } from "../lib/sound-prefs";
 import { toast } from "../lib/toast";
 import { Button } from "./Button";
@@ -345,8 +345,6 @@ function ShortcutsSection({ settings }: { settings: Settings }) {
 const DEVICE_LABELS: Record<DeviceKind, MessageKey> = { audioinput: "userSettings.microphone", audiooutput: "userSettings.speaker", videoinput: "userSettings.camera" };
 
 /** Microphone, speaker and camera selects. Names need media access, asked for when this opens (once the OS agrees). */
-const NOISE_LABEL: Record<NoiseLevel, MessageKey> = { off: "userSettings.noiseOff", standard: "userSettings.noiseStandard", strong: "userSettings.noiseStrong" };
-
 /** Microphone cleaning level (lib/noise); the live voice session follows at once. */
 function NoiseLevelPicker() {
   const [level, setLevel] = useState(noiseLevel.get());

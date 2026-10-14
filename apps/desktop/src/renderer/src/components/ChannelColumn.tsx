@@ -28,8 +28,10 @@ import { ConfirmBody } from "./Confirm";
 import { navRow } from "./navRow";
 import { MenuItem, RowMenu } from "./RowMenu";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
+import { LiveBadge } from "./LiveBadge";
 import { VoiceIndicators } from "./VoiceIndicators";
 import { Avatar } from "./Avatar";
+import { UserCardTrigger } from "./UserCard";
 import { CategoryNameForm, MoveChannelBody } from "./CategoryForms";
 import { dragClass } from "./dragRow";
 import { ChannelCategory } from "./ChannelCategory";
@@ -326,11 +328,14 @@ function VoiceMembers({ channel }: { channel: Channel }) {
     <ul aria-label={t("channels.voiceMembers", { name: channel.name })} className="mt-0.5 mb-1 flex flex-col gap-0.5 pl-6">
       {people.map((p) => (
         <li key={p.userId} data-user={p.userId} data-speaking={p.speaking ? "true" : undefined} className="flex h-10 items-center gap-2 rounded-sm px-1.5 text-small text-ink-muted hover:bg-white/[.04] hover:text-ink">
-          <Avatar id={p.userId} name={p.username} speaking={!!p.speaking} className="mx-1 size-6 rounded-full text-[10px]" />
-          <Tooltip label={p.username}>
-            <span className={`min-w-0 flex-1 truncate ${p.speaking ? "text-ink" : ""}`}>{p.username}</span>
-          </Tooltip>
+          <UserCardTrigger user={{ id: p.userId, username: p.username }} guildId={channel.guildId} className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-sm">
+            <Avatar id={p.userId} name={p.username} speaking={!!p.speaking} className="mx-1 size-6 rounded-full text-[10px]" />
+            <Tooltip label={p.username}>
+              <span className={`min-w-0 flex-1 truncate ${p.speaking ? "text-ink" : ""}`}>{p.username}</span>
+            </Tooltip>
+          </UserCardTrigger>
           {p.speaking && <span className="sr-only">{t("voice.speaking")}</span>}
+          {p.sharing && <LiveBadge />}
           <VoiceIndicators p={p} />
         </li>
       ))}

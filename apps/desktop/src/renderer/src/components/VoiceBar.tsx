@@ -1,12 +1,15 @@
 import { ArrowsClockwise, ArrowSquareOut, CellSignalFull, CellSignalLow, CellSignalMedium, CellSignalSlash, MonitorArrowUp, PhoneDisconnect, Stop, VideoCamera, VideoCameraSlash } from "@phosphor-icons/react";
-import type { ReactNode } from "react";
+import { CaretDown, Waveform } from "@phosphor-icons/react";
+import { useState, type ReactNode } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
-import { calls, voice } from "../lib/app";
+import { calls, noiseLevel, voice } from "../lib/app";
 import { openVoiceRoom } from "../lib/channel-open";
 import { useGuilds } from "../lib/queries";
 import { panelModel } from "../lib/panel-model";
+import { NOISE_LABEL, NOISE_LEVELS, toggledNoiseLevel, type NoiseLevel } from "../lib/noise";
 import { signalOf } from "../lib/signal";
+import { MenuItem, RowMenu } from "./RowMenu";
 import { Tooltip } from "./Tooltip";
 
 const SIGNAL_ICON = { full: CellSignalFull, medium: CellSignalMedium, low: CellSignalLow, lost: CellSignalSlash };
@@ -35,6 +38,44 @@ export function Control({ label, hint, pressed, tone = "off", disabled, wide, on
   );
 }
 
+/** Noise suppression: the icon toggles off / the last level that was on, the caret picks a level. The one setter is Settings'. */
+function NoiseControl() {
+  const [, rerender] = useState(0);
+  const [lastOn, setLastOn] = useState<NoiseLevel>(() => (noiseLevel.get() === "off" ? "standard" : noiseLevel.get()));
+  const level = noiseLevel.get();
+  const on = level !== "off";
+  const apply = (next: NoiseLevel) => {
+    if (next !== "off") setLastOn(next);
+    noiseLevel.set(next);
+    rerender((n) => n + 1);
+  };
+  // Settings may have changed the level meanwhile: remember it as the one to come back to
+  const back = on ? level : lastOn;
+  return (
+    <div className="flex shrink-0 items-center">
+      <Control label={t("voice.noise")} hint={`${t("voice.noise")}: ${t(NOISE_LABEL[level])}`} tone="on" pressed={on} onClick={() => apply(toggledNoiseLevel(level, back))}>
+        <Waveform aria-hidden="true" />
+      </Control>
+      <RowMenu id="noise-level" label={t("voice.noiseLevel")} align="left" width="w-44" size="h-10 w-5" trigger={<CaretDown aria-hidden="true" size={14} weight="bold" />}>
+        {(close) =>
+          NOISE_LEVELS.map((l) => (
+            <MenuItem
+              key={l}
+              icon={<span aria-hidden="true" className="size-4" />}
+              label={t(NOISE_LABEL[l])}
+              selected={level === l}
+              onClick={() => {
+                apply(l);
+                close();
+              }}
+            />
+          ))
+        }
+      </RowMenu>
+    </div>
+  );
+}
+
 /** The call header of the bottom panel: where we are connected, hang up, and the actions of the session. */
 export function VoiceBar() {
   const v = useStore(voice.store);
@@ -56,6 +97,11 @@ export function VoiceBar() {
   return (
     <section aria-label={t("voice.bar.label")} className="flex flex-col gap-2 p-3 pb-2">
       <div className="flex items-center gap-2">
+        <Tooltip label={t(signal.label)}>
+          <span role="img" aria-label={t(signal.label)} className={`inline-flex shrink-0 ${SIGNAL_TONE[signal.tone]}`}>
+            <SignalIcon aria-hidden="true" size={20} />
+          </span>
+        </Tooltip>
         <div className="min-w-0 flex-1">
           <p aria-live="polite" className={`flex items-center gap-2 truncate text-small font-semibold ${ready ? "text-moss-300" : "text-ink-muted"}`}>
             {ringing && (
@@ -69,11 +115,7 @@ export function VoiceBar() {
             <p className="truncate text-caption text-ink-muted">{where}</p>
           </Tooltip>
         </div>
-        <Tooltip label={t(signal.label)}>
-          <span role="img" aria-label={t(signal.label)} className={`inline-flex shrink-0 ${SIGNAL_TONE[signal.tone]}`}>
-            <SignalIcon aria-hidden="true" size={20} />
-          </span>
-        </Tooltip>
+        <NoiseControl />
         <span className="inline-flex">
           <Tooltip label={leaveLabel}>
             <button

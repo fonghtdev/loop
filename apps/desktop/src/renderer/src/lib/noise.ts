@@ -1,3 +1,5 @@
+import type { MessageKey } from "../i18n/vi";
+
 /** How hard the microphone is cleaned: off = the browser's own filter, standard = RNNoise, strong = RNNoise + noise gate. */
 export type NoiseLevel = "off" | "standard" | "strong";
 export const NOISE_LEVELS: NoiseLevel[] = ["off", "standard", "strong"];
@@ -45,3 +47,8 @@ export function createNoiseLevel({ storage, onChange }: Deps) {
     },
   };
 }
+
+export const NOISE_LABEL: Record<NoiseLevel, MessageKey> = { off: "userSettings.noiseOff", standard: "userSettings.noiseStandard", strong: "userSettings.noiseStrong" };
+
+/** The quick toggle of the voice panel: on -> off, off -> the last level that was on (so "strong" survives a toggle). */
+export const toggledNoiseLevel = (current: NoiseLevel, lastOn: NoiseLevel): NoiseLevel => (current === "off" ? lastOn : "off");

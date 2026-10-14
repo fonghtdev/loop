@@ -559,3 +559,107 @@ describe("join/leave sounds", () => {
     expect(s.sounds).toEqual([["selfJoin", false], ["join", true], ["selfLeave", true]]);
   });
 });
+
+describe("watching a screen share", () => {
+  type Pub = { track?: undefined; isMuted: boolean; isSubscribed: boolean; setSubscribed: ReturnType<typeof vi.fn<(on: boolean) => void>> };
+  const pub = (subscribed = true): Pub => {
+    const p: Pub = { isMuted: false, isSubscribed: subscribed, setSubscribed: vi.fn() };
+    p.setSubscribed.mockImplementation((on) => void (p.isSubscribed = on));
+    return p;
+  };
+  /** A remote who shares a screen (picture + sound) and has a microphone; LiveKit auto-subscribed all of it. */
+  const withSharer = async () => {
+    const s = await joined();
+    const pubs: Record<string, Pub | undefined> = { screen_share: pub(), screen_share_audio: pub(), microphone: pub() };
+    const sharer = { identity: "u2", name: "Lan", getTrackPublication: (source: string) => pubs[source] };
+    const room = s.room();
+    room.remoteParticipants.set("u2", sharer);
+    room.fire("participantConnected", sharer);
+    return { s, pubs, room, sharer };
+  };
+  const sound = () => ({ kind: "audio", source: "screen_share_audio", attach: () => document.createElement("audio"), detach: () => undefined }) as never;
+
+  it("is not watched by default: picture and sound are unsubscribed, the microphone is not touched", async () => {
+    const { s, pubs } = await withSharer();
+    expect(s.state().watching).toEqual([]);
+    expect(pubs.screen_share?.setSubscribed).toHaveBeenCalledWith(false);
+    expect(pubs.screen_share_audio?.setSubscribed).toHaveBeenCalledWith(false);
+    expect(pubs.microphone?.setSubscribed).not.toHaveBeenCalled();
+  });
+
+  it("watch subscribes picture and sound; unwatch drops them again", async () => {
+    const { s, pubs } = await withSharer();
+    s.voice.watch("u2");
+    expect(s.state().watching).toEqual(["u2"]);
+    expect(pubs.screen_share?.isSubscribed).toBe(true);
+    expect(pubs.screen_share_audio?.isSubscribed).toBe(true);
+    s.voice.unwatch("u2");
+    expect(s.state().watching).toEqual([]);
+    expect(pubs.screen_share?.isSubscribed).toBe(false);
+    expect(pubs.screen_share_audio?.isSubscribed).toBe(false);
+    expect(pubs.microphone?.setSubscribed).not.toHaveBeenCalled();
+  });
+
+  it("only someone who is sharing can be watched (not yourself, not a stranger)", async () => {
+    const { s } = await withSharer();
+    s.voice.watch("me");
+    s.voice.watch("nobody");
+    expect(s.state().watching).toEqual([]);
+  });
+
+  it("the sharer stopping clears the watching state; leaving the room does too", async () => {
+    const { s, pubs, room } = await withSharer();
+    s.voice.watch("u2");
+    pubs.screen_share = undefined;
+    room.fire("trackUnpublished");
+    expect(s.state().watching).toEqual([]);
+    const again = await withSharer();
+    again.s.voice.watch("u2");
+    again.s.voice.leave();
+    expect(again.s.state().watching).toEqual([]);
+  });
+
+  it("a sharer that disconnects is no longer watched", async () => {
+    const { s, room } = await withSharer();
+    s.voice.watch("u2");
+    room.removeRemote("u2");
+    expect(s.state().watching).toEqual([]);
+  });
+
+  it("the stream sound plays at the slider while watched, and the mic is never part of it", async () => {
+    const { s, room, sharer } = await withSharer();
+    const track = sound();
+    s.voice.watch("u2");
+    room.fire("trackSubscribed", track, undefined, sharer);
+    expect(s.sink.tracks.has(track)).toBe(true);
+    expect(s.sink.volumes.get(track)).toBe(1);
+    s.voice.setStreamVolume("u2", 0.4);
+    expect(s.sink.volumes.get(track)).toBe(0.4);
+    s.voice.setStreamVolume("u2", 5);
+    expect(s.sink.volumes.get(track)).toBe(1);
+    s.voice.setStreamMuted("u2", true);
+    expect(s.sink.volumes.get(track)).toBe(0);
+    s.voice.setStreamMuted("u2", false);
+    s.voice.setStreamVolume("u2", 0.4);
+    const mic = audioTrack();
+    room.fire("trackSubscribed", mic, undefined, sharer);
+    expect(s.sink.volumes.has(mic)).toBe(false);
+  });
+
+  it("deafen silences the stream sound and undeafen brings the slider back; the slider survives stop and watch again", async () => {
+    const { s, room, sharer } = await withSharer();
+    const track = sound();
+    s.voice.watch("u2");
+    room.fire("trackSubscribed", track, undefined, sharer);
+    s.voice.setStreamVolume("u2", 0.3);
+    await s.voice.toggleDeafen();
+    expect(s.sink.volumes.get(track)).toBe(0);
+    await s.voice.toggleDeafen();
+    expect(s.sink.volumes.get(track)).toBe(0.3);
+    s.voice.unwatch("u2");
+    expect(s.sink.volumes.get(track)).toBe(0);
+    s.voice.watch("u2");
+    expect(s.state().streamVolume.u2).toBe(0.3);
+    expect(s.sink.volumes.get(track)).toBe(0.3);
+  });
+});

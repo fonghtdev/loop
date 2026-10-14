@@ -8,14 +8,16 @@ import { EMPTY_CONV, type ConvChat, type Message, type Pending } from "../lib/ch
 import { shouldAnimateArrival } from "../lib/arrival";
 import { useCopy } from "../lib/clipboard";
 import { useComposerFiles } from "../lib/composer-files";
-import { channelKey, type ConvKey } from "../lib/conversation";
+import { channelKey, parseKey, type ConvKey } from "../lib/conversation";
 import { hasFiles } from "../lib/drop";
 import { errorMessage } from "../lib/errors";
 import { move, reducedNow } from "../lib/motion";
+import { useNav } from "../lib/nav";
 import { useGuild, usePermissions } from "../lib/queries";
 import { linkify } from "../lib/text";
 import { buildTimeline, fullTimestamp, timeOfDay } from "../lib/timeline";
 import { Avatar } from "./Avatar";
+import { UserCardTrigger } from "./UserCard";
 import { Button } from "./Button";
 import { Composer, submitKey } from "./Composer";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
@@ -344,6 +346,7 @@ type RowProps = {
 const MessageRow = memo(function MessageRow({ message, grouped, day, convKey, mine, canDelete, onDelete }: RowProps) {
   const [editing, setEditing] = useState(false);
   const { copied, copy } = useCopy();
+  const guildId = useNav((s) => (parseKey(convKey).kind === "channel" ? s.guildId : null));
   return (
     <>
       {day && (
@@ -367,13 +370,17 @@ const MessageRow = memo(function MessageRow({ message, grouped, day, convKey, mi
               {timeOfDay(message.createdAt)}
             </time>
           ) : (
-            <Avatar id={message.author.id} name={message.author.username} className="size-(--m-av) rounded-full text-[calc(var(--m-av)*.35)]" />
+            <UserCardTrigger user={message.author} guildId={guildId} decorative>
+              <Avatar id={message.author.id} name={message.author.username} className="size-(--m-av) rounded-full text-[calc(var(--m-av)*.35)]" />
+            </UserCardTrigger>
           )}
         </div>
         <div className="min-w-0">
           {!grouped && (
             <p className="flex min-w-0 items-baseline gap-2 leading-5">
-              <span className="min-w-0 truncate font-semibold tracking-[-0.005em] text-ink">{message.author.username}</span>
+              <UserCardTrigger user={message.author} guildId={guildId} className="min-w-0 truncate font-semibold tracking-[-0.005em] text-ink hover:underline">
+                {message.author.username}
+              </UserCardTrigger>
               <time dateTime={message.createdAt} title={fullTimestamp(message.createdAt)} className="numeric shrink-0 text-caption text-ink-faint">
                 {timeOfDay(message.createdAt)}
               </time>

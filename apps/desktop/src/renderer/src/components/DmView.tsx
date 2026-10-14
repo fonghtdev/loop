@@ -11,6 +11,7 @@ import { PresenceAvatar } from "./Avatar";
 import { Conversation } from "./ChatView";
 import { ColumnHeader, Skeleton } from "./States";
 import { Tooltip } from "./Tooltip";
+import { UserCardTrigger } from "./UserCard";
 
 /** Why writing is closed in a DM, in words (null = open). History stays readable in every case. */
 const closedReason = (state: DmComposerState, name: string) =>
@@ -45,8 +46,14 @@ export function DmView({ dmId }: { dmId: string }) {
       convKey={key}
       header={
         <>
-          <PresenceAvatar id={dm.user.id} name={name} online={online} ring={2} className="size-8 rounded-full text-xs" />
-          <h1 className="min-w-0 truncate">{name}</h1>
+          <UserCardTrigger user={dm.user} guildId={null} decorative>
+            <PresenceAvatar id={dm.user.id} name={name} online={online} ring={2} className="size-8 rounded-full text-xs" />
+          </UserCardTrigger>
+          <h1 className="min-w-0 truncate">
+            <UserCardTrigger user={dm.user} guildId={null} className="max-w-full truncate hover:underline">
+              {name}
+            </UserCardTrigger>
+          </h1>
           <span className="shrink-0 text-xs font-normal text-ink-muted">{online ? t("presence.online") : t("presence.offline")}</span>
           <span className="ml-auto flex shrink-0 gap-1">
             {[false, true].map((video) => (

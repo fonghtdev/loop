@@ -8,6 +8,7 @@ import { useGuild, useMembers, useRoles } from "../lib/queries";
 import { Avatar } from "./Avatar";
 import { ColumnHeader, LoadError, Skeleton } from "./States";
 import { Tooltip } from "./Tooltip";
+import { UserCardTrigger } from "./UserCard";
 
 /**
  * The member column: the owner, then one section per role (each member under their highest role), then everyone else.
@@ -32,23 +33,25 @@ export function MemberList({ guildId }: { guildId: string }) {
                   <span className="min-w-0 truncate">{g.key === "owner" ? t("members.owner") : (g.roleName ?? t("shell.members"))}</span>
                   <span className="numeric shrink-0">{g.members.length}</span>
                 </h2>
-                <MemberRows list={g.members} ownerId={ownerId} named={false} />
+                <MemberRows list={g.members} ownerId={ownerId} guildId={guildId} named={false} />
               </section>
             ))
-          : members.data && <MemberRows list={members.data} ownerId={ownerId} named />}
+          : members.data && <MemberRows list={members.data} ownerId={ownerId} guildId={guildId} named />}
       </div>
     </>
   );
 }
 
 /** `named`: the crown says "Chủ máy chủ" itself (the flat list); in a section the section title already does. */
-function MemberRows({ list, ownerId, named }: { list: Member[]; ownerId: string | undefined; named: boolean }) {
+function MemberRows({ list, ownerId, guildId, named }: { list: Member[]; ownerId: string | undefined; guildId: string; named: boolean }) {
   return (
     <ul className="flex flex-col gap-0.5">
       {list.map((m) => (
         <li key={m.userId} className="flex h-11 items-center gap-2.5 rounded-control px-2 hover:bg-white/[.045]">
-          <Avatar id={m.userId} name={m.username} className="size-8 rounded-full text-xs" />
-          <span className="min-w-0 flex-1 truncate text-ui text-ink-muted select-text">{m.username}</span>
+          <UserCardTrigger user={{ id: m.userId, username: m.username }} guildId={guildId} className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-control text-ui text-ink-muted">
+            <Avatar id={m.userId} name={m.username} className="size-8 rounded-full text-xs" />
+            <span className="min-w-0 flex-1 truncate">{m.username}</span>
+          </UserCardTrigger>
           {m.userId === ownerId &&
             (named ? (
               <Tooltip label={t("members.owner")}>

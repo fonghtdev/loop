@@ -151,7 +151,7 @@ describe("media", () => {
     const list = await call("GET", `/channels/${f.voice.id}/voice`, f.owner.token); // anyone who can see the channel
     expect(list.statusCode).toBe(200);
     expect(list.json().participants.map((p: { userId: string }) => p.userId).sort()).toEqual([f.alice.id, f.bob.id].sort());
-    expect(list.json().participants[0]).toEqual({ userId: expect.any(String), username: expect.stringMatching(/alice|bob/) });
+    expect(list.json().participants[0]).toEqual({ userId: expect.any(String), username: expect.stringMatching(/alice|bob/), sharing: false });
 
     let received = "";
     bob.on(RoomEvent.TrackSubscribed, (_t, _p, participant) => (received = participant.identity));

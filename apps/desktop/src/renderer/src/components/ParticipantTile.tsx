@@ -3,7 +3,9 @@ import { t } from "../i18n/t";
 import { move, spring } from "../lib/motion";
 import type { Tile } from "../lib/voice-grid";
 import { Avatar } from "./Avatar";
+import { LiveBadge } from "./LiveBadge";
 import { Tooltip } from "./Tooltip";
+import { UserCardTrigger } from "./UserCard";
 import { VoiceIndicators } from "./VoiceIndicators";
 
 /** A track on a <video>; `fit` is how the picture sits in its box (a camera fills it, a shared screen is never cropped). */
@@ -24,7 +26,7 @@ export function Video({ source, fit = "cover" }: { source: NonNullable<Tile["p"]
  * there is no per-person audio level; the ring is driven by --lv so a level could drive it later). A tile that joins
  * springs in, one that leaves springs out (opacity + transform; instant under reduced motion) and then asks to be dropped.
  */
-export function ParticipantTile({ tile, onGone }: { tile: Tile; onGone: (userId: string) => void }) {
+export function ParticipantTile({ tile, guildId, onGone }: { tile: Tile; guildId: string | null; onGone: (userId: string) => void }) {
   const { p, state } = tile;
   const el = useRef<HTMLLIElement>(null);
   const entered = useRef(state === "enter");
@@ -62,12 +64,12 @@ export function ParticipantTile({ tile, onGone }: { tile: Tile; onGone: (userId:
       <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-1 rounded-panel opacity-(--lv) shadow-[inset_0_0_0_2px_var(--color-cosmic-300),inset_0_0_36px_-4px_var(--color-cosmic-glow)] transition-opacity duration-140 ease-(--ease-out-soft)" />
       <div className="absolute bottom-2 left-2 z-1 flex max-w-[calc(100%-16px)] items-center gap-1.5">
         <Tooltip label={p.username}>
-          <span className="min-w-0 truncate rounded-control bg-surface-0/80 px-2.5 py-1 text-caption font-medium text-ink">
+          <UserCardTrigger user={{ id: p.userId, username: p.username }} guildId={guildId} className="min-w-0 truncate rounded-control bg-surface-0/80 px-2.5 py-1 text-caption font-medium text-ink hover:bg-surface-0">
             {p.username}
             {p.isLocal && ` ${t("voice.you")}`}
-          </span>
+          </UserCardTrigger>
         </Tooltip>
-        {p.sharing && <span className="shrink-0 rounded-control bg-moss-900 px-2 py-1 text-caption font-medium text-moss-200">{t("voice.sharing")}</span>}
+        {p.sharing && <LiveBadge />}
         <VoiceIndicators p={p} className="rounded-control bg-danger-bg px-2 py-1" />
       </div>
       {p.speaking && <span className="sr-only">{t("voice.speaking")}</span>}

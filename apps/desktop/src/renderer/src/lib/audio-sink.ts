@@ -4,6 +4,8 @@ export type AudioSink = {
   remove(track: AudioTrackLike): void;
   /** Deafen: silences every element, now and for tracks that arrive later (nothing is unsubscribed). */
   setMuted(muted: boolean): void;
+  /** One track's own loudness 0..1 (a watched stream's slider); independent of the global deafen. */
+  setVolume(track: AudioTrackLike, volume: number): void;
   /** The speaker (an output device id from enumerateDevices, null = system default): now and for tracks that arrive later. */
   setOutput(deviceId: string | null): void;
   clear(): void;
@@ -39,6 +41,10 @@ export function createAudioSink(): AudioSink {
     setMuted(m) {
       muted = m;
       for (const el of elements.values()) el.muted = m;
+    },
+    setVolume(track, volume) {
+      const el = elements.get(track);
+      if (el) el.volume = volume;
     },
     setOutput(id) {
       output = id;

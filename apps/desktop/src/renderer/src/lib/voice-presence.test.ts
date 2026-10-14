@@ -12,6 +12,14 @@ describe("voice presence", () => {
     expect(p.store.getState().lists.v1.map((s) => s.userId)).toEqual(["b"]);
   });
 
+  it("keeps `sharing` through a push and a REST catch-up, and leaves it off for everyone else", () => {
+    const p = createVoicePresence();
+    p.update("v1", [{ ...seat("a"), sharing: true }, { ...seat("b"), sharing: false }, seat("c")]);
+    expect(p.store.getState().lists.v1.map((s) => s.sharing)).toEqual([true, undefined, undefined]);
+    p.applyFetched("v1", p.begin("v1"), [{ ...seat("b"), sharing: true }]);
+    expect(p.store.getState().lists.v1).toEqual([{ ...seat("b"), sharing: true }]);
+  });
+
   it("a REST catch-up fills an empty list", () => {
     const p = createVoicePresence();
     p.applyFetched("v1", p.begin("v1"), [seat("a")]);

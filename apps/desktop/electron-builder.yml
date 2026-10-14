@@ -28,6 +28,7 @@ mac:
   extendInfo:
     NSMicrophoneUsageDescription: Loop cần dùng micro để bạn trò chuyện thoại trong kênh và cuộc gọi.
     NSCameraUsageDescription: Loop cần dùng camera để bạn bật video trong kênh và cuộc gọi.
+    NSAudioCaptureUsageDescription: Loop cần ghi âm thanh hệ thống để chia sẻ tiếng của màn hình bạn đang phát (macOS 14.2 trở lên).
 win:
   target:
     - target: nsis

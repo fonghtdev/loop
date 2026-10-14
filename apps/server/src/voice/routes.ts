@@ -28,6 +28,6 @@ export function voiceRoutes(app: FastifyInstance) {
     const { channel } = await requireChannelPermission(req.params.channelId, req.userId);
     if (channel.type !== "VOICE") throw notVoice();
     const seats = await app.livekit.participants(voiceRoom(channel.id));
-    return { participants: seats.map(({ userId, username }) => ({ userId, username })) };
+    return { participants: seats.map(({ userId, username, sharing }) => ({ userId, username, sharing })) };
   });
 }

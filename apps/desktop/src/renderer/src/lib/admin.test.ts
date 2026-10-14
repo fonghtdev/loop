@@ -33,7 +33,7 @@ const helper = role("helper", 2, Permission.MANAGE_MESSAGES | Permission.KICK_ME
 const mod = role("mod", 3, Permission.MANAGE_ROLES | Permission.KICK_MEMBERS | Permission.MANAGE_MESSAGES);
 const boss = role("boss", 4, Permission.ADMINISTRATOR);
 const roles = [everyone, newbie, helper, mod, boss];
-const member = (userId: string, ...roleIds: string[]): Member => ({ userId, username: userId, joinedAt: "", roleIds });
+const member = (userId: string, ...roleIds: string[]): Member => ({ userId, username: userId, isBot: false, joinedAt: "", createdAt: "", roleIds });
 const members = [member("owner"), member("plain"), member("n", "newbie"), member("h", "helper"), member("m", "mod"), member("b", "boss"), member("k", "helper"), member("mm", "mod")];
 const guild = { id: G, name: "Nhóm", ownerId: "owner", createdAt: "" };
 const stand = (userId: string): Standing => standingFor({ userId, guild, roles, members })!;

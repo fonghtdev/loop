@@ -75,9 +75,9 @@ describe("createGoLivePrefs", () => {
 });
 
 describe("audioAllowed", () => {
-  it("only a screen or window on Windows can carry the system sound", () => {
-    expect(audioAllowed("display", "win32")).toBe(true);
-    for (const platform of ["darwin", "linux"]) expect(audioAllowed("display", platform)).toBe(false);
+  it("only a screen or window on Windows or macOS can carry the system sound", () => {
+    for (const platform of ["win32", "darwin"]) expect(audioAllowed("display", platform)).toBe(true);
+    expect(audioAllowed("display", "linux")).toBe(false);
     for (const platform of ["win32", "darwin", "linux"]) expect(audioAllowed("device", platform)).toBe(false);
   });
 });

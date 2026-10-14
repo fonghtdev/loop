@@ -72,10 +72,10 @@ export function resolveAppFile(rootDir: string, requestUrl: string): string | nu
 /**
  * Permissions the renderer may be granted, decided by one pure function for both the request and the check handler:
  * microphone/camera ("media"), screen capture ("display-capture"; which screen is still the main process's call, see
- * screen.ts) and writing text to the clipboard, and only for our own pages. Everything else is refused.
+ * screen.ts), HTML fullscreen (the stream's fullscreen button) and writing text to the clipboard, and only for our own pages. Everything else is refused.
  */
 export function isPermissionAllowed(permission: string, requestingUrl: string, devServerUrl?: string): boolean {
-  return (permission === "media" || permission === "display-capture" || permission === "clipboard-sanitized-write") && isTrustedSender(requestingUrl, devServerUrl);
+  return (permission === "media" || permission === "display-capture" || permission === "fullscreen" || permission === "clipboard-sanitized-write") && isTrustedSender(requestingUrl, devServerUrl);
 }
 
 export type MediaKind = "microphone" | "camera" | "screen";

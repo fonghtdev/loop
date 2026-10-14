@@ -4,9 +4,10 @@ import { Banner } from "./Banner";
 /**
  * A modal on the native <dialog>: showModal() gives the focus trap, Esc, the backdrop and inert background, and
  * focus returns to the opener on close. Content mounts only while open, so forms start fresh every time.
- * `hero` is a picture centred above a centred title (the call dialogs).
+ * `hero` is a picture centred above a centred title (the call dialogs). `wide` makes it roomier; `hideTitle` keeps the
+ * title as the accessible name only.
  */
-export function Dialog({ open, onClose, title, hero, children }: { open: boolean; onClose: () => void; title: string; hero?: ReactNode; children: ReactNode }) {
+export function Dialog({ open, onClose, title, hero, wide, hideTitle, children }: { open: boolean; onClose: () => void; title: string; hero?: ReactNode; wide?: boolean; hideTitle?: boolean; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -22,12 +23,12 @@ export function Dialog({ open, onClose, title, hero, children }: { open: boolean
       onClose={onClose}
       // a click on the backdrop lands on the dialog element itself
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      className="m-auto w-[min(440px,calc(100vw-48px))] glass rounded-glass p-0 text-ink"
+      className={`m-auto ${wide ? "w-[min(760px,calc(100vw-48px))]" : "w-[min(440px,calc(100vw-48px))]"} glass rounded-glass p-0 text-ink`}
     >
       {open && (
         <div className={`flex flex-col gap-4 p-6 ${hero ? "items-stretch text-center" : ""}`}>
           {hero}
-          <h2 id={titleId} className="font-display text-xl font-bold tracking-tight break-words">
+          <h2 id={titleId} className={`font-display text-xl font-bold tracking-tight break-words ${hideTitle ? "sr-only" : ""}`}>
             {title}
           </h2>
           {children}

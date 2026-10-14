@@ -1,11 +1,11 @@
 import { createStore } from "zustand/vanilla";
 
-export type Seat = { userId: string; username: string };
+export type Seat = { userId: string; username: string; sharing?: boolean };
 type VideoSource = { attach(el: HTMLVideoElement): unknown; detach(el: HTMLVideoElement): unknown };
 /** Someone in a voice room as the UI draws them (`video`/`screen` only for people in the room we are connected to; `sharing` = a screen share is published). */
 export type Participant = Seat & { isLocal?: boolean; sharing?: boolean; screen?: VideoSource; speaking?: boolean; /** Mic muted/absent, and deafened (their own cosmetic flag): undefined = unknown. */ micOff?: boolean; deafened?: boolean; video?: VideoSource };
 
-const dedupe = (seats: Seat[]): Seat[] => [...new Map(seats.map((s) => [s.userId, { userId: s.userId, username: s.username }])).values()];
+const dedupe = (seats: Seat[]): Seat[] => [...new Map(seats.map((s) => [s.userId, { userId: s.userId, username: s.username, ...(s.sharing && { sharing: true }) }])).values()];
 
 /**
  * Who is in each watched voice channel, from the REST catch-up and the `voice:update` pushes. A push is always the

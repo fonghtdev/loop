@@ -5,15 +5,16 @@ import { channelIdOfRoom, dmIdOfRoom } from "./rooms.js";
 import type { RoomEvent } from "./livekit.js";
 
 /** Tells subscribers of a voice channel who is in it now; a joiner is re-checked first (see below). */
-async function voiceEvent(app: FastifyInstance, { type, room, userId }: RoomEvent, channelId: string) {
-  if (type !== "participant_joined" && type !== "participant_left" && type !== "room_finished") return;
+async function voiceEvent(app: FastifyInstance, { type, room, userId, screenShare }: RoomEvent, channelId: string) {
+  const trackChange = (type === "track_published" || type === "track_unpublished") && screenShare; // mic/camera changes are not shown
+  if (type !== "participant_joined" && type !== "participant_left" && type !== "room_finished" && !trackChange) return;
   const channel = await prisma.channel.findFirst({ where: { id: channelId, type: "VOICE" } });
   if (!channel) return;
   // A token issued before a revocation still gets someone in; the join webhook is where that is noticed.
   // `userId` only picks whom to re-check: enforce() recomputes their rights from the database.
   if (type === "participant_joined" && userId) await app.voice.enforce(channel.guildId, [userId]);
   const seats = type === "room_finished" ? [] : await app.livekit.participants(room!);
-  app.realtime.emit(channelId, "voice:update", { channelId, participants: seats.map(({ userId, username }) => ({ userId, username })) });
+  app.realtime.emit(channelId, "voice:update", { channelId, participants: seats.map(({ userId, username, sharing }) => ({ userId, username, sharing })) });
 }
 
 /** A DM call is over when its room finishes or the last participant leaves; both may fire, clients treat it as idempotent. */

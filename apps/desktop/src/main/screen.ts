@@ -13,7 +13,7 @@ function parseAudio(opts: unknown): boolean {
  * the app's own dialog, and `choose` remembers it (and whether the sound was asked for) for exactly one
  * `getDisplayMedia`: `handler` (installed with setDisplayMediaRequestHandler) answers a request from our own page
  * with that source, and refuses everything else (no pick, a second request, another origin). System audio needs both
- * the request and Windows (Electron's `loopback`); elsewhere the share simply has no sound.
+ * the request and Windows or macOS 14.2+ (Electron's `loopback`, a CoreAudio tap on macOS); elsewhere the share simply has no sound.
  */
 export function createScreenShare({
   getSources,
@@ -40,7 +40,7 @@ export function createScreenShare({
       const pick = chosen;
       chosen = null;
       if (!pick || !trusted(request.frame?.url ?? "")) return callback({});
-      callback({ video: pick.source, ...(pick.audio && platform === "win32" ? { audio: "loopback" as const } : {}) });
+      callback({ video: pick.source, ...(pick.audio && (platform === "win32" || platform === "darwin") ? { audio: "loopback" as const } : {}) });
     },
   };
 }

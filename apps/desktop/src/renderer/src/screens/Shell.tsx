@@ -20,6 +20,7 @@ import { VoiceBar } from "../components/VoiceBar";
 import { VoiceRoom } from "../components/VoiceRoom";
 import { ColumnHeader, EmptyState } from "../components/States";
 import { ToastHost } from "../components/Toast";
+import { UserCardHost } from "../components/UserCard";
 import { t } from "../i18n/t";
 import { ApiError } from "../lib/auth-client";
 import { queryClient, realtime, revalidateGuild, session, unread, voice, voicePresence } from "../lib/app";
@@ -242,6 +243,7 @@ export function Shell() {
       <ImageViewer />
       <IncomingCall />
       <ScreenPicker />
+      <UserCardHost />
       <ToastHost />
     </div>
   );

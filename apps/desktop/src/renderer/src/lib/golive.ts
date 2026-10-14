@@ -33,8 +33,8 @@ export function streamProfile({ resolution, fps }: Quality) {
 }
 export type StreamProfile = ReturnType<typeof streamProfile>;
 
-/** System sound needs Electron's loopback capture, which exists on Windows only, and a screen / window (a camera has none). */
-export const audioAllowed = (kind: ShareSource["kind"], platform: string) => kind === "display" && platform === "win32";
+/** System sound needs Electron's loopback capture (Windows; macOS 14.2+ through a CoreAudio tap), and a screen / window (a camera has none). */
+export const audioAllowed = (kind: ShareSource["kind"], platform: string) => kind === "display" && (platform === "win32" || platform === "darwin");
 
 /** The stored value back into prefs; each field that is not one of the known values falls back on its own. */
 export function parseGoLive(raw: string | null): GoLivePrefs {

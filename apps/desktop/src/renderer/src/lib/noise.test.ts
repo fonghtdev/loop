@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createNoiseLevel, DEFAULT_NOISE_LEVEL, noiseConfig, parseNoiseLevel } from "./noise";
+import { createNoiseLevel, DEFAULT_NOISE_LEVEL, noiseConfig, parseNoiseLevel, toggledNoiseLevel } from "./noise";
 
 describe("noiseConfig", () => {
   it("off keeps the browser's filter and runs nothing", () => {
@@ -42,5 +42,14 @@ describe("stored level", () => {
     n.set("off");
     expect(n.get()).toBe("off");
     expect(onChange).toHaveBeenCalled();
+  });
+});
+
+describe("toggledNoiseLevel", () => {
+  it("turns a running level off", () => {
+    expect(toggledNoiseLevel("strong", "standard")).toBe("off");
+  });
+  it("turns it back on to the last level that was on, not always the default", () => {
+    expect(toggledNoiseLevel("off", "strong")).toBe("strong");
   });
 });

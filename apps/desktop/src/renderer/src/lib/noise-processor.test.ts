@@ -32,6 +32,7 @@ describe("createNoiseProcessor", () => {
     expect(p.processedTrack).toBeUndefined();
     expect(track.applyConstraints).toHaveBeenCalledWith({ noiseSuppression: true });
     expect(onFail).toHaveBeenCalledTimes(1);
+    expect(onFail).toHaveBeenCalledWith("Error: wasm blocked");
   });
 
   it("restart rebuilds on the new track and frees the old graph", async () => {

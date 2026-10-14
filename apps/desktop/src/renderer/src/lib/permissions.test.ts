@@ -7,9 +7,9 @@ const guild = { id: "g", name: "Nhóm", ownerId: "owner", createdAt: "2026-10-10
 const everyone = { id: "g", guildId: "g", name: "@everyone", permissions: 1811, position: 0 };
 const mod = { id: "r-mod", guildId: "g", name: "Mod", permissions: Permission.MANAGE_MESSAGES | Permission.MANAGE_CHANNELS, position: 1 };
 const members = [
-  { userId: "owner", username: "chu", joinedAt: "", roleIds: [] },
-  { userId: "plain", username: "an", joinedAt: "", roleIds: [] },
-  { userId: "moderator", username: "binh", joinedAt: "", roleIds: ["r-mod"] },
+  { userId: "owner", username: "chu", isBot: false, joinedAt: "", createdAt: "", roleIds: [] },
+  { userId: "plain", username: "an", isBot: false, joinedAt: "", createdAt: "", roleIds: [] },
+  { userId: "moderator", username: "binh", isBot: false, joinedAt: "", createdAt: "", roleIds: ["r-mod"] },
 ];
 const data = (userId: string): PermissionData => ({ userId, guild, roles: [everyone, mod], members });
 const channel = (overwrites: Channel["overwrites"]) => ({ overwrites });

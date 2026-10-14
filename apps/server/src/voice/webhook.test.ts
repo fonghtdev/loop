@@ -7,7 +7,7 @@ import { buildApp } from "../app.js";
 import { prisma } from "../db.js";
 import { caller, env, guildWith, resetDb, signUp } from "../../test/helpers.js";
 import { connect, listen, settle, until } from "../../test/sockets.js";
-import { addVoiceChannel, disconnectAll, joinAs, requestToken, signedWebhook, webhookHeaders } from "../../test/voice.js";
+import { addVoiceChannel, disconnectAll, eventually, joinAs, publishMic, publishScreen, requestToken, signedWebhook, webhookHeaders } from "../../test/voice.js";
 import { voiceRoom } from "./rooms.js";
 
 const app = buildApp(env);
@@ -86,9 +86,36 @@ describe("voice:update", () => {
     const res = await send({ event: "participant_joined", room: { name: f.room }, participant: { identity: f.alice.id, name: "alice" } });
     expect(res.statusCode).toBe(200);
     await until(() => watcher.got["voice:update"]!.length);
-    expect(watcher.got["voice:update"]![0]).toEqual({ channelId: f.voice.id, participants: [{ userId: f.alice.id, username: "alice" }] });
+    expect(watcher.got["voice:update"]![0]).toEqual({ channelId: f.voice.id, participants: [{ userId: f.alice.id, username: "alice", sharing: false }] });
     await settle();
     expect(outsider.got["voice:update"]).toEqual([]);
+  });
+
+  it("a screen-share track sets and clears `sharing` in the push and in the REST list; a mic track pushes nothing", async () => {
+    const f = await fixture();
+    const watcher = await f.sub(f.owner);
+    const aliceRoom = await joinAs((await requestToken(app, f.alice, f.voice.id)).json());
+    const track = (event: string, source: string) => send({ event, room: { name: f.room }, participant: { identity: f.alice.id }, track: { source } });
+    const listed = async () => (await call("GET", `/channels/${f.voice.id}/voice`, f.owner.token)).json().participants[0].sharing;
+    const last = () => watcher.got["voice:update"]!.at(-1).participants[0].sharing;
+
+    expect(await publishMic(aliceRoom)).toBe("published");
+    await track("track_published", "MICROPHONE");
+    await settle();
+    expect(watcher.got["voice:update"]).toEqual([]);
+
+    expect(await publishScreen(aliceRoom)).toBe("published");
+    await eventually(async () => expect(await listed()).toBe(true));
+    await track("track_published", "SCREEN_SHARE");
+    await until(() => watcher.got["voice:update"]!.length === 1);
+    expect(last()).toBe(true);
+
+    const pub = [...aliceRoom.localParticipant!.trackPublications.values()].find((p) => p.source === 3)!; // SOURCE_SCREENSHARE
+    await aliceRoom.localParticipant!.unpublishTrack(pub.sid!);
+    await eventually(async () => expect(await listed()).toBe(false));
+    await track("track_unpublished", "SCREEN_SHARE");
+    await until(() => watcher.got["voice:update"]!.length === 2);
+    expect(last()).toBe(false);
   });
 
   it("participant_left and room_finished send the new, shorter list", async () => {

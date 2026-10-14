@@ -92,12 +92,17 @@ export class FakeSink implements AudioSink {
   setMuted(m: boolean) {
     this.muted = m;
   }
+  volumes = new Map<AudioTrackLike, number>();
+  setVolume(t: AudioTrackLike, v: number) {
+    this.volumes.set(t, v);
+  }
   output: string | null = null;
   setOutput(id: string | null) {
     this.output = id;
   }
   clear() {
     this.tracks.clear();
+    this.volumes.clear();
     this.muted = false;
   }
 }
@@ -133,7 +138,7 @@ export function setupVoice(token: Partial<{ canSpeak: boolean; canVideo: boolean
   });
   const sounds: [string, boolean][] = [];
   let level: NoiseLevel = "off";
-  const processors: { level: NoiseLevel; onFail: () => void }[] = [];
+  const processors: { level: NoiseLevel; onFail: (reason?: string) => void }[] = [];
   let clock = 1000;
   const voice = createVoice({
     request: request as never,

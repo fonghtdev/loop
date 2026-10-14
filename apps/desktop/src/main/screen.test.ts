@@ -45,8 +45,8 @@ describe("createScreenShare", () => {
     for (const bad of ["screen:9", "", 1, null, undefined]) expect(() => share.choose(bad, { audio: false })).toThrow();
   });
 
-  it("system audio only when asked for AND on Windows; otherwise the share is silent", async () => {
-    for (const [platform, audio, expected] of [["win32", true, "loopback"], ["win32", false, undefined], ["darwin", true, undefined], ["linux", true, undefined]] as const) {
+  it("system audio only when asked for AND on Windows or macOS; otherwise the share is silent", async () => {
+    for (const [platform, audio, expected] of [["win32", true, "loopback"], ["win32", false, undefined], ["darwin", true, "loopback"], ["darwin", false, undefined], ["linux", true, undefined]] as const) {
       const { share } = make(platform);
       await share.list();
       share.choose("screen:1", { audio });
