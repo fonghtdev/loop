@@ -1,6 +1,18 @@
+import type { TrackPublishOptions } from "livekit-client";
 import { vi } from "vitest";
 import type { AudioSink, AudioTrackLike } from "./audio-sink";
+import type { ShareChoice } from "./golive";
+import type { NoiseLevel } from "./noise";
 import { createVoice, type LocalParticipantLike, type ParticipantLike, type RoomLike } from "./voice";
+
+/** A captured track: only what the voice session touches. */
+export class FakeTrack {
+  stopped = 0;
+  constructor(readonly kind: "video" | "audio") {}
+  stop() {
+    this.stopped++;
+  }
+}
 
 /** A stand-in for livekit-client's Room: an event emitter with the few members the voice session uses. */
 export class FakeRoom implements RoomLike {
@@ -10,8 +22,12 @@ export class FakeRoom implements RoomLike {
   connectError: Error | null = null;
   mic: boolean[] = [];
   cam: boolean[] = [];
+  published: { track: FakeTrack; options: TrackPublishOptions }[] = [];
+  unpublished: FakeTrack[] = [];
+  screenFails = false;
   micFails = false;
   micGate: Promise<void> | null = null;
+  micOptions: unknown[] = [];
   remoteParticipants = new Map<string, ParticipantLike>();
   metadata: string[] = [];
   localParticipant: LocalParticipantLike = {
@@ -19,12 +35,23 @@ export class FakeRoom implements RoomLike {
     name: "Me",
     permissions: { canPublish: true, canPublishSources: [] },
     getTrackPublication: () => undefined,
-    setMicrophoneEnabled: async (on) => {
+    setMicrophoneEnabled: async (on, options) => {
+      this.micOptions.push(options);
       await this.micGate;
       if (this.micFails) throw new Error("NotAllowedError");
       this.mic.push(on);
     },
     setCameraEnabled: async (on) => void this.cam.push(on),
+    publishTrack: async (track, options) => {
+      if (this.screenFails) throw new Error("NotAllowedError");
+      this.published.push({ track: track as unknown as FakeTrack, options });
+    },
+    // like LiveKit: the unpublish is announced with the source of the publication
+    unpublishTrack: async (track) => {
+      this.unpublished.push(track as unknown as FakeTrack);
+      const source = this.published.find((p) => p.track === (track as unknown))?.options.source;
+      if (source) this.fire("localTrackUnpublished", { source });
+    },
     setMetadata: async (m) => void this.metadata.push(m),
   };
   on(event: string, fn: (...a: never[]) => void) {
@@ -77,12 +104,36 @@ export class FakeSink implements AudioSink {
 
 export const audioTrack = () => ({ kind: "audio", attach: () => document.createElement("audio"), detach: () => undefined }) as never;
 
-export function setupVoice(token: Partial<{ canSpeak: boolean; canVideo: boolean; url: string }> = {}, onRoom?: (r: FakeRoom) => void) {
+/** A stand-in for LocalAudioTrack's processor handling: `processor` is what is attached now. */
+export class FakeMicTrack {
+  processor: unknown = null;
+  constraints: unknown[] = [];
+  setFails = false;
+  mediaStreamTrack = { applyConstraints: async (c: unknown) => void this.constraints.push(c) };
+  async setProcessor(p: unknown) {
+    if (this.setFails) throw new Error("worklet failed");
+    this.processor = p;
+  }
+  async stopProcessor() {
+    this.processor = null;
+  }
+}
+
+export function setupVoice(token: Partial<{ canSpeak: boolean; canVideo: boolean; canStream: boolean; url: string }> = {}, onRoom?: (r: FakeRoom) => void) {
   const rooms: FakeRoom[] = [];
   const sink = new FakeSink();
-  const request = vi.fn(async (_m: "POST", _p: string, _b?: unknown): Promise<unknown> => ({ token: "tok", url: "ws://lk", canSpeak: true, canVideo: true, ...token }));
+  const request = vi.fn(async (_m: "POST", _p: string, _b?: unknown): Promise<unknown> => ({ token: "tok", url: "ws://lk", canSpeak: true, canVideo: true, canStream: true, ...token }));
   const ensureMedia = vi.fn(async (_k: string) => true);
+  const pickScreen = vi.fn(async (): Promise<ShareChoice | null> => ({ source: { kind: "display", id: "screen:1" }, quality: { resolution: "720", fps: 60 }, audio: true }));
+  const captured: FakeTrack[] = [];
+  const capture = vi.fn(async (choice: ShareChoice, _profile: unknown) => {
+    const tracks = [new FakeTrack("video"), ...(choice.audio ? [new FakeTrack("audio")] : [])];
+    captured.push(...tracks);
+    return tracks as unknown as MediaStreamTrack[];
+  });
   const sounds: [string, boolean][] = [];
+  let level: NoiseLevel = "off";
+  const processors: { level: NoiseLevel; onFail: () => void }[] = [];
   let clock = 1000;
   const voice = createVoice({
     request: request as never,
@@ -94,9 +145,12 @@ export function setupVoice(token: Partial<{ canSpeak: boolean; canVideo: boolean
     },
     sink,
     ensureMedia,
+    pickScreen,
+    capture: capture as never,
+    noise: { level: () => level, processor: (l, onFail) => (l === "off" ? null : (processors.push({ level: l, onFail }), { name: l } as never)) },
     livekitOrigin: "ws://lk",
     now: () => clock,
     onSound: (kind, deafened) => void sounds.push([kind, deafened]),
   });
-  return { voice, rooms, room: () => rooms[rooms.length - 1], sink, request, ensureMedia, sounds, state: () => voice.store.getState(), tick: (ms: number) => (clock += ms) };
+  return { voice, rooms, processors, setLevel: (l: NoiseLevel) => (level = l), room: () => rooms[rooms.length - 1], sink, request, ensureMedia, pickScreen, capture, captured, sounds, state: () => voice.store.getState(), tick: (ms: number) => (clock += ms) };
 }

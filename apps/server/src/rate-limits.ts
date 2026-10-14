@@ -14,6 +14,9 @@ export const POLICIES = {
   "login-email": { max: 5, windowMs: 5 * MIN, by: "ip+email" },
   register: { max: 5, windowMs: HOUR, by: "ip" },
   refresh: { max: 30, windowMs: MIN, by: "ip" },
+  // A bot logs in again every 15 min; tight per IP so nobody can spray guesses (the secret is 256 bits anyway).
+  "bot-login": { max: 10, windowMs: MIN, by: "ip" },
+  "bot-manage": { max: 20, windowMs: HOUR, by: "user" },
   "message-send": { max: 60, windowMs: MIN, by: "user" },
   "message-burst": { max: 10, windowMs: 5_000, by: "user" },
   "message-edit": { max: 60, windowMs: MIN, by: "user" },
@@ -38,6 +41,10 @@ export const ROUTES: Record<string, PolicyName[]> = {
   "POST /auth/login": ["login-ip", "login-email"],
   "POST /auth/register": ["register"],
   "POST /auth/refresh": ["refresh"],
+  "POST /auth/bot-login": ["bot-login"],
+  "POST /bots": ["bot-manage"],
+  "POST /bots/:botId/token": ["bot-manage"],
+  "DELETE /bots/:botId": ["bot-manage"],
   "POST /channels/:channelId/messages": ["message-burst", "message-send"],
   "POST /dms/:dmId/messages": ["message-burst", "message-send"],
   "PATCH /messages/:messageId": ["message-edit"],
@@ -51,7 +58,7 @@ export const ROUTES: Record<string, PolicyName[]> = {
   "POST /dms/:dmId/call": ["voice-token"],
   // Global limit only: reads, and writes that need a membership/permission the caller can only get through the above.
   ...only(
-    "POST /auth/logout", "GET /me",
+    "POST /auth/logout", "GET /me", "GET /bots",
     "GET /guilds", "GET /guilds/:guildId", "DELETE /guilds/:guildId", "POST /guilds/:guildId/channels",
     "DELETE /guilds/:guildId/channels/:channelId",
     "POST /guilds/:guildId/categories", "PATCH /guilds/:guildId/categories/:categoryId",

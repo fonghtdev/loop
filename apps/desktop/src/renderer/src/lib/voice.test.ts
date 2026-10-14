@@ -2,6 +2,7 @@ import { DisconnectReason } from "livekit-client";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "./auth-client";
 import { audioTrack, FakeRoom, setupVoice } from "./voice-fakes";
+import { streamProfile, type ShareChoice } from "./golive";
 import { disconnectMessage, rightsOf } from "./voice";
 
 const joined = async (token = {}) => {
@@ -207,13 +208,169 @@ describe("mic, deafen and camera", () => {
   });
 });
 
+const display = (over: Partial<ShareChoice> = {}): ShareChoice => ({ source: { kind: "display", id: "screen:1" }, quality: { resolution: "720", fps: 60 }, audio: true, ...over });
+const camera = (over: Partial<ShareChoice> = {}): ShareChoice => ({ source: { kind: "device", deviceId: "cap1" }, quality: { resolution: "1080", fps: 30 }, audio: false, ...over });
+
+describe("screen share", () => {
+  it("picks, checks the OS, captures at the chosen profile and publishes the picture (with the sound) as the screen share; stops again", async () => {
+    const s = await joined();
+    await s.voice.toggleScreen();
+    expect(s.pickScreen).toHaveBeenCalledOnce();
+    expect(s.ensureMedia).toHaveBeenCalledWith("screen");
+    expect(s.capture).toHaveBeenCalledWith(display(), streamProfile({ resolution: "720", fps: 60 }));
+    expect(s.state()).toMatchObject({ screenEnabled: true, mediaNote: null });
+    const [video, audio] = s.room().published;
+    expect(video.options).toEqual({ source: "screen_share", screenShareEncoding: { maxBitrate: 4_000_000, maxFramerate: 60 }, simulcast: false });
+    expect(audio.options).toEqual({ source: "screen_share_audio" });
+    await s.voice.toggleScreen();
+    expect(s.state().screenEnabled).toBe(false);
+    expect(s.room().unpublished).toHaveLength(2);
+    expect(s.captured.map((t) => t.stopped)).toEqual([1, 1]);
+  });
+
+  it("a camera / capture card asks for camera access and is published as the screen share, without sound", async () => {
+    const s = await joined();
+    s.pickScreen.mockResolvedValueOnce(camera());
+    await s.voice.startScreen();
+    expect(s.ensureMedia).toHaveBeenCalledWith("camera");
+    expect(s.ensureMedia).not.toHaveBeenCalledWith("screen");
+    expect(s.room().published.map((p) => p.options.source)).toEqual(["screen_share"]);
+    expect(s.room().published[0].options.screenShareEncoding).toEqual({ maxBitrate: 5_000_000, maxFramerate: 30 });
+    expect(s.state().screenEnabled).toBe(true);
+    await s.voice.stopScreen();
+    expect(s.captured[0].stopped).toBe(1); // the device is released
+  });
+
+  it("a camera refused by the OS says so like the camera button and publishes nothing", async () => {
+    const s = await joined();
+    s.pickScreen.mockResolvedValueOnce(camera());
+    s.ensureMedia.mockImplementation(async (k) => k !== "camera");
+    await s.voice.startScreen();
+    expect(s.state()).toMatchObject({ screenEnabled: false });
+    expect(s.state().mediaNote).toContain("camera");
+    expect(s.capture).not.toHaveBeenCalled();
+  });
+
+  it("changing the source while live stops the old tracks, then publishes the new ones, in the same session", async () => {
+    const s = await joined();
+    await s.voice.startScreen();
+    const room = s.room();
+    const before = s.state().sessionId;
+    s.pickScreen.mockResolvedValueOnce(camera());
+    await s.voice.startScreen();
+    expect(s.captured.slice(0, 2).map((t) => t.stopped)).toEqual([1, 1]); // old picture and sound
+    expect(room.unpublished).toEqual(s.captured.slice(0, 2));
+    expect(room.published.map((p) => p.track)).toEqual(s.captured); // old two, then the camera
+    expect(s.captured[2].stopped).toBe(0);
+    expect(s.state()).toMatchObject({ status: "connected", screenEnabled: true, sessionId: before });
+    expect(s.rooms).toHaveLength(1);
+    expect(room.disconnected).toBe(0);
+  });
+
+  it("cancelling the dialog while live keeps the running share untouched", async () => {
+    const s = await joined();
+    await s.voice.startScreen();
+    s.pickScreen.mockResolvedValueOnce(null);
+    await s.voice.startScreen();
+    expect(s.state()).toMatchObject({ screenEnabled: true, mediaNote: null });
+    expect(s.room().unpublished).toEqual([]);
+    expect(s.captured.map((t) => t.stopped)).toEqual([0, 0]);
+    expect(s.capture).toHaveBeenCalledOnce();
+  });
+
+  it("a replacement that fails to capture leaves the share off and says so (the old one is already gone)", async () => {
+    const s = await joined();
+    await s.voice.startScreen();
+    s.capture.mockRejectedValueOnce(new Error("NotAllowedError"));
+    await s.voice.startScreen();
+    expect(s.state()).toMatchObject({ screenEnabled: false });
+    expect(s.state().mediaNote).toContain("chia sẻ màn hình");
+    expect(s.captured.map((t) => t.stopped)).toEqual([1, 1]);
+  });
+
+  it("cancelling the dialog is not an error and publishes nothing", async () => {
+    const s = await joined();
+    s.pickScreen.mockResolvedValueOnce(null);
+    await s.voice.toggleScreen();
+    expect(s.state()).toMatchObject({ screenEnabled: false, mediaNote: null });
+    expect(s.room().published).toEqual([]);
+    expect(s.ensureMedia).not.toHaveBeenCalledWith("screen");
+  });
+
+  it("an OS refusal (macOS Screen Recording) shows its message and captures nothing", async () => {
+    const s = await joined();
+    s.ensureMedia.mockImplementation(async (k) => k !== "screen");
+    await s.voice.toggleScreen();
+    expect(s.state().screenEnabled).toBe(false);
+    expect(s.state().mediaNote).toContain("Ghi màn hình");
+    expect(s.capture).not.toHaveBeenCalled();
+  });
+
+  it("a publish that fails says so, leaves the button off and releases what was captured", async () => {
+    const s = await joined();
+    s.room().screenFails = true;
+    await s.voice.toggleScreen();
+    expect(s.state()).toMatchObject({ screenEnabled: false });
+    expect(s.state().mediaNote).toContain("chia sẻ màn hình");
+    expect(s.captured.every((t) => t.stopped === 1)).toBe(true);
+  });
+
+  it("without canStream it cannot be turned on", async () => {
+    const s = await joined({ canStream: false });
+    await s.voice.toggleScreen();
+    expect(s.state().screenEnabled).toBe(false);
+    expect(s.pickScreen).not.toHaveBeenCalled();
+    expect(s.room().published).toEqual([]);
+  });
+
+  it("the OS 'Stop sharing' (track unpublished) turns the button off and releases the sound track too; a camera track ending does not", async () => {
+    const s = await joined();
+    await s.voice.toggleScreen();
+    s.room().fire("localTrackUnpublished", { source: "camera" });
+    expect(s.state().screenEnabled).toBe(true);
+    s.room().fire("localTrackUnpublished", { source: "screen_share" });
+    expect(s.state().screenEnabled).toBe(false);
+    await vi.waitFor(() => expect(s.captured.map((t) => t.stopped)).toEqual([1, 1]));
+    expect(s.room().unpublished).toContain(s.captured[1]);
+  });
+
+  it("losing STREAM turns the share off and disables the button", async () => {
+    const s = await joined();
+    await s.voice.toggleScreen();
+    s.room().localParticipant.permissions = { canPublish: true, canPublishSources: [1, 2] };
+    s.room().fire("participantPermissionsChanged", undefined, { identity: "me" });
+    expect(s.state()).toMatchObject({ canStream: false, screenEnabled: false, canSpeak: true });
+    expect(s.captured.map((t) => t.stopped)).toEqual([1, 1]);
+  });
+
+  it("leaving the room releases the capture", async () => {
+    const s = await joined();
+    await s.voice.toggleScreen();
+    s.voice.leave();
+    expect(s.captured.map((t) => t.stopped)).toEqual([1, 1]);
+  });
+
+  it("a remote share shows as `screen` (and `sharing`) on its owner; its audio goes to the sink", async () => {
+    const s = await joined();
+    const video = { attach: () => undefined, detach: () => undefined };
+    const room = s.room();
+    room.remoteParticipants.set("u2", { identity: "u2", name: "Lan", getTrackPublication: (src: string) => (src === "screen_share" ? { track: video, isMuted: false } : undefined) } as never);
+    room.fire("trackPublished");
+    expect(s.state().participants.find((p) => p.userId === "u2")).toMatchObject({ sharing: true, screen: video });
+    const audio = audioTrack();
+    room.fire("trackSubscribed", audio);
+    expect(s.sink.tracks.has(audio)).toBe(true);
+  });
+});
+
 describe("rights changes", () => {
   it("rightsOf reads LiveKit permissions", () => {
-    expect(rightsOf({ canPublish: true, canPublishSources: [] })).toEqual({ canSpeak: true, canVideo: true });
-    expect(rightsOf({ canPublish: true, canPublishSources: [2] })).toEqual({ canSpeak: true, canVideo: false });
-    expect(rightsOf({ canPublish: true, canPublishSources: [1] })).toEqual({ canSpeak: false, canVideo: true });
-    expect(rightsOf({ canPublish: false, canPublishSources: [1, 2] })).toEqual({ canSpeak: false, canVideo: false });
-    expect(rightsOf(undefined)).toEqual({ canSpeak: false, canVideo: false });
+    expect(rightsOf({ canPublish: true, canPublishSources: [] })).toEqual({ canSpeak: true, canVideo: true, canStream: true });
+    expect(rightsOf({ canPublish: true, canPublishSources: [2] })).toEqual({ canSpeak: true, canVideo: false, canStream: false });
+    expect(rightsOf({ canPublish: true, canPublishSources: [1] })).toEqual({ canSpeak: false, canVideo: true, canStream: false });
+    expect(rightsOf({ canPublish: true, canPublishSources: [3, 4] })).toEqual({ canSpeak: false, canVideo: false, canStream: true });
+    expect(rightsOf({ canPublish: false, canPublishSources: [1, 2, 3] })).toEqual({ canSpeak: false, canVideo: false, canStream: false });
+    expect(rightsOf(undefined)).toEqual({ canSpeak: false, canVideo: false, canStream: false });
   });
 
   it("losing SPEAK turns the mic off, disables it and forgets a pending restore; others' changes are ignored", async () => {
@@ -246,6 +403,17 @@ describe("connection events", () => {
     expect(s.state().status).toBe("reconnecting");
     s.room().fire("reconnected");
     expect(s.state().status).toBe("connected");
+  });
+
+  it("keeps LiveKit's quality rating of OUR connection only, and forgets it on leaving", async () => {
+    const s = await joined();
+    expect(s.state().quality).toBe("unknown");
+    s.room().fire("connectionQualityChanged", "poor", { identity: "me" });
+    expect(s.state().quality).toBe("poor");
+    s.room().fire("connectionQualityChanged", "excellent", { identity: "someone-else" });
+    expect(s.state().quality).toBe("poor");
+    await s.voice.leave();
+    expect(s.state().quality).toBe("unknown");
   });
 
   it.each([

@@ -15,6 +15,7 @@
     "dist:win": "node scripts/check-release-env.mjs && electron-vite build && electron-builder --publish never --win --x64"
   },
   "dependencies": {
+    "@sapphi-red/web-noise-suppressor": "0.4.1",
     "animejs": "4.4.1",
     "electron-updater": "6.8.9"
   },

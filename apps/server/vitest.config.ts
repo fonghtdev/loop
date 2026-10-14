@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 // Tests always use the separate loop_test database, never the dev one.
@@ -24,7 +25,11 @@ const livekit = {
   LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET ?? "loop-dev-livekit-secret-0123456789abcdef",
 };
 
+const pkg = (path: string) => fileURLToPath(new URL(`../../packages/${path}`, import.meta.url));
+
 export default defineConfig({
+  // the bot packages are tested against the real server from here, straight from source (no build needed)
+  resolve: { alias: { "@loop/bot-sdk": pkg("bot-sdk/src/index.ts"), "@loop/bot-welcome": pkg("bots/welcome/src/welcome.ts"), "@loop/bot-music": pkg("bots/music/src") } },
   test: {
     env: { DATABASE_URL: testDb, REDIS_URL: testRedis, ...s3, ...livekit },
     globalSetup: ["./test/global-setup.ts"],

@@ -383,7 +383,7 @@ test.describe("tray, close-to-tray, single instance, quit", () => {
   });
 });
 
-test("settings file holds only the four known keys", () => {
+test("settings file holds only the six known keys", () => {
   const file = JSON.parse(readFileSync(join(userData, "settings.json"), "utf8"));
-  expect(Object.keys(file).sort()).toEqual(["closeToTray", "notifications", "preview", "startAtLogin"]);
+  expect(Object.keys(file).sort()).toEqual(["closeToTray", "deafenShortcut", "micShortcut", "notifications", "preview", "startAtLogin"]);
 });

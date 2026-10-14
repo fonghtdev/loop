@@ -17,6 +17,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@sapphi-red/web-noise-suppressor':
+        specifier: 0.4.1
+        version: 0.4.1
       animejs:
         specifier: 4.4.1
         version: 4.4.1
@@ -157,6 +160,48 @@ importers:
       vitest:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@26.6.4)(lightningcss@1.32.0)(supports-color@7.2.0)
+
+  packages/bot-sdk:
+    dependencies:
+      '@livekit/rtc-node':
+        specifier: ^1.1.0
+        version: 1.1.0
+      '@loop/shared':
+        specifier: workspace:*
+        version: link:../shared
+      socket.io-client:
+        specifier: ^4.8.4
+        version: 4.8.4(supports-color@7.2.0)
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.4
+        version: 26.6.4
+
+  packages/bots/music:
+    dependencies:
+      '@loop/bot-sdk':
+        specifier: workspace:*
+        version: link:../../bot-sdk
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.4
+        version: 26.6.4
+
+  packages/bots/welcome:
+    dependencies:
+      '@loop/bot-sdk':
+        specifier: workspace:*
+        version: link:../../bot-sdk
+      '@loop/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.4
+        version: 26.6.4
 
   packages/shared:
     dependencies:
@@ -1170,6 +1215,9 @@ packages:
     resolution: {integrity: sha512-qTv4bG+eKJKifzxNJevMUh8L6CjJrz9/Kn1IbP2F5bo0tBzNIR7HMg4vni6XmDzcKUl00lHHY+J5ZgjbGiujOQ==}
     cpu: [x64]
     os: [win32]
+
+  '@sapphi-red/web-noise-suppressor@0.4.1':
+    resolution: {integrity: sha512-hy2GnF079+zi4n9BZUf+GGIQ1IofApAk6rgGMyMQ3soHfz/GKu1pcCsmePyIHVvUuv1LrFudw9BmmBqoOKay5w==}
 
   '@sindresorhus/is@4.6.0':
     resolution: {integrity: sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw==}
@@ -4178,6 +4226,8 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.64.3':
     optional: true
+
+  '@sapphi-red/web-noise-suppressor@0.4.1': {}
 
   '@sindresorhus/is@4.6.0': {}
 

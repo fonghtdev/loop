@@ -41,7 +41,7 @@ describe("starting and answering", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ url: env.livekit.url, room: f.room, expiresInSeconds: 600, canSpeak: true, canVideo: true });
     const claims = await decodeToken(res.json().token);
-    expect(claims.video).toMatchObject({ room: f.room, canPublish: true, canPublishSources: ["microphone", "camera"], canPublishData: false });
+    expect(claims.video).toMatchObject({ room: f.room, canPublish: true, canPublishSources: ["microphone", "camera", "screen_share", "screen_share_audio"], canPublishData: false });
     await until(() => f.benSock.got["call:incoming"]!.length);
     expect(f.benSock.got["call:incoming"]).toEqual([{ dmChannelId: f.dm.id, from: { id: f.ann.id, username: "ann" }, video: true }]);
     await settle();

@@ -10,6 +10,7 @@ import { isActive, useVoiceParticipants } from "../lib/voice-hooks";
 import { Button } from "./Button";
 import { VoiceArt } from "./Illustrations";
 import { ParticipantTile } from "./ParticipantTile";
+import { ScreenStage } from "./ScreenStage";
 import { ColumnHeader, EmptyState } from "./States";
 import { Tooltip } from "./Tooltip";
 
@@ -57,6 +58,7 @@ export function VoiceRoom({ guildId, channelId }: { guildId: string; channelId: 
   const busyElsewhere = isActive(status) && !here;
   const [box, size] = useContentSize<HTMLDivElement>();
   const [tiles, drop] = useTiles(people);
+  const shared = people.filter((p): p is typeof p & { screen: NonNullable<typeof p.screen> } => !!p.screen);
   const layout = tileLayout(tiles.length, size.w, size.h);
 
   return (
@@ -77,6 +79,13 @@ export function VoiceRoom({ guildId, channelId }: { guildId: string; channelId: 
             </Button>
             {busyElsewhere && <p className="text-small text-ink-muted">{t("voice.room.elsewhere")}</p>}
             {!canConnect && <p className="text-small text-ink-muted">{t("voice.room.joinNoConnect")}</p>}
+          </div>
+        )}
+        {shared.length > 0 && (
+          <div className="flex min-h-0 flex-[3] flex-col gap-3 px-5 pt-5">
+            {shared.map((p) => (
+              <ScreenStage key={p.userId} p={p} />
+            ))}
           </div>
         )}
         <div ref={box} className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5">

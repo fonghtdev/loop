@@ -1,0 +1,19 @@
+{
+  "name": "@loop/bot-welcome",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@loop/bot-sdk": "workspace:*",
+    "@loop/shared": "workspace:*",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4"
+  }
+}

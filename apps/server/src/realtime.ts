@@ -29,6 +29,7 @@ declare module "fastify" {
  * `call:incoming` {dmChannelId, from, video}, `call:declined` {dmChannelId, by}, `call:ended` {dmChannelId}.
  * Guild layout events go to the members' `user:<id>` rooms: `channel:created` (channel JSON), `category:created|updated`
  * (category JSON), `category:deleted`, `layout:updated` (payloads in packages/shared); channel data is filtered per member by VIEW_CHANNEL.
+ * `member:joined` {guildId, user:{id,username,isBot}} goes to every member (the newcomer included) when someone joins by invite.
  * Rooms span instances through the Redis adapter.
  */
 export type MessageEvent = "message:new" | "message:update" | "message:delete";
@@ -165,7 +166,7 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
     /**
      * Something may have taken VIEW_CHANNEL away (role/overwrite change, ownership transfer): recompute it for
      * these members (default: all) and drop their sockets from every room they can no longer see.
-     * Voice sessions are re-checked the same way (CONNECT, SPEAK, VIDEO too): removed or downgraded in LiveKit.
+     * Voice sessions are re-checked the same way (CONNECT, SPEAK, VIDEO, STREAM too): removed or downgraded in LiveKit.
      * Call after the change commits. A subscribe racing with the change can still slip in before this runs.
      */
     // ponytail: recomputes members x channels per call; fine for small guilds, upgrade = scope to the changed role's holders/channel
@@ -177,6 +178,11 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
     closeChannels: (channelIds: string[]) => {
       for (const id of channelIds) socketsLeave(channelRoom(id), [channelRoom(id)]);
       void voice.closeChannels(channelIds);
+    },
+    /** Every socket of the user on every instance (its credentials were revoked); local ones before this returns. */
+    disconnectUser: (userId: string) => {
+      io.local.in(userRoom(userId)).disconnectSockets(true);
+      io.in(userRoom(userId)).disconnectSockets(true);
     },
     // local: this instance's sockets only; other instances keep theirs
     disconnectAll: () => io.local.disconnectSockets(true),

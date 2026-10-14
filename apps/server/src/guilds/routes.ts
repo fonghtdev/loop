@@ -154,12 +154,13 @@ export function guildRoutes(app: FastifyInstance) {
     const { guild } = await requireMember(req.params.guildId, req.userId);
     const members = await prisma.member.findMany({
       where: { guildId: guild.id },
-      select: { userId: true, joinedAt: true, user: { select: { username: true } }, roles: { select: { roleId: true } } },
+      select: { userId: true, joinedAt: true, user: { select: { username: true, isBot: true } }, roles: { select: { roleId: true } } },
       orderBy: { joinedAt: "asc" },
     });
     return members.map((m) => ({
       userId: m.userId,
       username: m.user.username,
+      isBot: m.user.isBot,
       joinedAt: m.joinedAt,
       roleIds: m.roles.map((r) => r.roleId),
     }));

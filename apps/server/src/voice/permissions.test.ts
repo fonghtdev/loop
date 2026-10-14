@@ -17,11 +17,11 @@ afterAll(async () => {
 });
 
 describe("the voice bits", () => {
-  it("a new guild's @everyone gets CONNECT, SPEAK and VIDEO (1811)", async () => {
+  it("a new guild's @everyone gets CONNECT, SPEAK, VIDEO and STREAM (3859)", async () => {
     const owner = await signUp(app, "owner");
     const { guild } = await guildWith(app, owner);
-    expect((await prisma.role.findUniqueOrThrow({ where: { id: guild.id } })).permissions).toBe(1811);
-    expect(DEFAULT_EVERYONE_PERMISSIONS).toBe(1811);
+    expect((await prisma.role.findUniqueOrThrow({ where: { id: guild.id } })).permissions).toBe(3859);
+    expect(DEFAULT_EVERYONE_PERMISSIONS).toBe(3859);
   });
 
   it("the migration ORs the three bits into every @everyone and touches no other role", async () => {
@@ -34,10 +34,22 @@ describe("the voice bits", () => {
     const sql = readFileSync(new URL("../../prisma/migrations/20261010090000_voice_permissions/migration.sql", import.meta.url), "utf8");
     await prisma.$executeRawUnsafe(sql);
     const perms = async (id: string) => (await prisma.role.findUniqueOrThrow({ where: { id } })).permissions;
-    expect(await perms(plain.id)).toBe(1811);
+    expect(await perms(plain.id)).toBe(1811); // voice_permissions alone: no STREAM yet
     expect(await perms(custom.id)).toBe(P.VIEW_CHANNEL | P.MANAGE_ROLES | 1792); // customised roles gain the bits too
     expect(await perms(other.id)).toBe(P.KICK_MEMBERS);
   });
+});
+
+it("the stream migration ORs STREAM into every @everyone and touches no other role", async () => {
+  const owner = await signUp(app, "owner");
+  const { guild } = await guildWith(app, owner);
+  await setEveryone(guild.id, 1811);
+  const other = await makeRole(guild.id, 1, P.KICK_MEMBERS);
+  const sql = readFileSync(new URL("../../prisma/migrations/20261014000000_stream_permission/migration.sql", import.meta.url), "utf8");
+  await prisma.$executeRawUnsafe(sql);
+  const perms = async (id: string) => (await prisma.role.findUniqueOrThrow({ where: { id } })).permissions;
+  expect(await perms(guild.id)).toBe(3859);
+  expect(await perms(other.id)).toBe(P.KICK_MEMBERS);
 });
 
 /** Anti-escalation applies to the new bits through the existing code: a role manager cannot hand out what they lack. */

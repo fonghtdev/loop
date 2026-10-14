@@ -19,7 +19,7 @@ export const select = {
   content: true,
   createdAt: true,
   editedAt: true,
-  author: { select: { id: true, username: true } }, // never email/passwordHash
+  author: { select: { id: true, username: true, isBot: true } }, // never email/passwordHash
   attachments: { select: attachmentSelect, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }, // one extra query for a whole page
 } satisfies Prisma.MessageSelect;
 

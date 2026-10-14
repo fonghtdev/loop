@@ -1,4 +1,4 @@
-import { ArrowSquareOut, CellSignalFull, CellSignalLow, PhoneDisconnect, VideoCamera, VideoCameraSlash } from "@phosphor-icons/react";
+import { ArrowsClockwise, ArrowSquareOut, CellSignalFull, CellSignalLow, CellSignalMedium, CellSignalSlash, MonitorArrowUp, PhoneDisconnect, Stop, VideoCamera, VideoCameraSlash } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
@@ -6,7 +6,11 @@ import { calls, voice } from "../lib/app";
 import { openVoiceRoom } from "../lib/channel-open";
 import { useGuilds } from "../lib/queries";
 import { panelModel } from "../lib/panel-model";
+import { signalOf } from "../lib/signal";
 import { Tooltip } from "./Tooltip";
+
+const SIGNAL_ICON = { full: CellSignalFull, medium: CellSignalMedium, low: CellSignalLow, lost: CellSignalSlash };
+const SIGNAL_TONE = { good: "text-moss-300", warn: "text-warning", bad: "text-danger", idle: "text-ink-muted" };
 
 /** A 40 px control of the panel (`wide` = a square button that shares the row). */
 export function Control({ label, hint, pressed, tone = "off", disabled, wide, onClick, children }: { label: string; hint: string; pressed?: boolean; tone?: "off" | "on"; disabled?: boolean; wide?: boolean; onClick: () => void; children: ReactNode }) {
@@ -45,7 +49,9 @@ export function VoiceBar() {
   const status = m.status === "reconnecting" ? t("voice.status.reconnecting") : ready ? t(m.dm ? "voice.status.connectedCall" : "voice.status.connected") : t("voice.status.connecting");
   const leaveLabel = t(m.leave === "cancel" ? "voice.cancelCall" : m.leave === "hangup" ? "voice.hangup" : "voice.leave");
   const camTitle = v.canVideo ? t("voice.camera") : t("voice.cameraNoVideo");
-  const Signal = ready ? CellSignalFull : CellSignalLow;
+  const screenTitle = v.canStream ? t(v.screenEnabled ? "voice.screenStop" : "voice.screen") : t("voice.screenNoStream");
+  const signal = signalOf(m.status, v.quality);
+  const SignalIcon = SIGNAL_ICON[signal.level];
 
   return (
     <section aria-label={t("voice.bar.label")} className="flex flex-col gap-2 p-3 pb-2">
@@ -63,7 +69,11 @@ export function VoiceBar() {
             <p className="truncate text-caption text-ink-muted">{where}</p>
           </Tooltip>
         </div>
-        <Signal aria-hidden="true" size={20} className={`shrink-0 ${ready ? "text-moss-300" : "text-ink-muted"}`} />
+        <Tooltip label={t(signal.label)}>
+          <span role="img" aria-label={t(signal.label)} className={`inline-flex shrink-0 ${SIGNAL_TONE[signal.tone]}`}>
+            <SignalIcon aria-hidden="true" size={20} />
+          </span>
+        </Tooltip>
         <span className="inline-flex">
           <Tooltip label={leaveLabel}>
             <button
@@ -81,6 +91,14 @@ export function VoiceBar() {
         <Control wide label={t("voice.camera")} hint={camTitle} tone="on" pressed={v.camEnabled} disabled={!m.camera} onClick={() => void voice.toggleCamera()}>
           {v.camEnabled ? <VideoCamera aria-hidden="true" /> : <VideoCameraSlash aria-hidden="true" />}
         </Control>
+        <Control wide label={t(v.screenEnabled ? "voice.screenStop" : "voice.screen")} hint={screenTitle} tone="on" pressed={v.screenEnabled} disabled={!m.screen} onClick={() => void voice.toggleScreen()}>
+          {v.screenEnabled ? <Stop aria-hidden="true" /> : <MonitorArrowUp aria-hidden="true" />}
+        </Control>
+        {v.screenEnabled && (
+          <Control wide label={t("voice.screenChange")} hint={t("voice.screenChange")} disabled={!m.screen} onClick={() => void voice.startScreen()}>
+            <ArrowsClockwise aria-hidden="true" />
+          </Control>
+        )}
         {m.openRoom && (
           <Control wide label={t("voice.openRoom")} hint={t("voice.openRoom")} onClick={openVoiceRoom}>
             <ArrowSquareOut aria-hidden="true" />

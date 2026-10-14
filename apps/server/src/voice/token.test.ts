@@ -4,7 +4,7 @@ import { buildApp } from "../app.js";
 import { prisma } from "../db.js";
 import { caller, env, guildWith, makeRole, resetDb, setEveryone, signUp } from "../../test/helpers.js";
 import { connect, listen } from "../../test/sockets.js";
-import { addVoiceChannel, decodeToken, disconnectAll, eventually, expectInRoom, joinAs, publishMic, RoomEvent, requestToken, testLivekit } from "../../test/voice.js";
+import { addVoiceChannel, decodeToken, disconnectAll, eventually, expectInRoom, joinAs, publishMic, publishScreen, RoomEvent, requestToken, testLivekit } from "../../test/voice.js";
 import { voiceRoom } from "./rooms.js";
 import type { Socket } from "socket.io-client";
 
@@ -67,10 +67,10 @@ describe("token contents", () => {
     return { res: res.json(), claims: await decodeToken(res.json().token) };
   };
 
-  it("default member: identity, name, room, 10 minutes, microphone and camera, no data, no screen share", async () => {
+  it("default member: identity, name, room, 10 minutes, microphone, camera and screen share, no data", async () => {
     const f = await fixture();
     const { res, claims } = await grantsFor(f);
-    expect(res).toMatchObject({ url: env.livekit.url, room: f.room, expiresInSeconds: 600, canSpeak: true, canVideo: true });
+    expect(res).toMatchObject({ url: env.livekit.url, room: f.room, expiresInSeconds: 600, canSpeak: true, canVideo: true, canStream: true });
     expect(claims).toMatchObject({ sub: f.alice.id, name: "alice" });
     expect(claims.exp! - claims.nbf!).toBe(600);
     expect(claims.video).toMatchObject({
@@ -80,20 +80,20 @@ describe("token contents", () => {
       canPublishData: false,
       canUpdateOwnMetadata: true, // cosmetic deafen flag only (the client draws the headphones-off icon from it)
       canPublish: true,
-      canPublishSources: ["microphone", "camera"],
+      canPublishSources: ["microphone", "camera", "screen_share", "screen_share_audio"],
     });
-    expect(JSON.stringify(claims)).not.toMatch(/screen/);
   });
 
   it.each([
-    ["SPEAK only", P.SPEAK, true, ["microphone"], true, false],
-    ["VIDEO only", P.VIDEO, true, ["camera"], false, true],
-    ["neither", 0, false, undefined, false, false],
-  ])("%s", async (_name, bits, canPublish, sources, canSpeak, canVideo) => {
+    ["SPEAK only", P.SPEAK, true, ["microphone"], true, false, false],
+    ["VIDEO only", P.VIDEO, true, ["camera"], false, true, false],
+    ["STREAM only", P.STREAM, true, ["screen_share", "screen_share_audio"], false, false, true],
+    ["neither", 0, false, undefined, false, false, false],
+  ])("%s", async (_name, bits, canPublish, sources, canSpeak, canVideo, canStream) => {
     const f = await fixture();
     await setEveryone(f.guild.id, P.VIEW_CHANNEL | P.CONNECT | bits);
     const { res, claims } = await grantsFor(f);
-    expect(res).toMatchObject({ canSpeak, canVideo });
+    expect(res).toMatchObject({ canSpeak, canVideo, canStream });
     expect(claims.video?.canPublish).toBe(canPublish);
     expect(claims.video?.canPublishSources ?? undefined).toEqual(sources ?? []);
     expect(claims.video?.canPublishData).toBe(false);
@@ -103,7 +103,7 @@ describe("token contents", () => {
     const f = await fixture();
     await call("PUT", `/channels/${f.voice.id}/overwrites/${f.guild.id}`, f.owner.token, { allow: 0, deny: P.SPEAK });
     const { claims } = await grantsFor(f);
-    expect(claims.video?.canPublishSources).toEqual(["camera"]);
+    expect(claims.video?.canPublishSources).toEqual(["camera", "screen_share", "screen_share_audio"]);
   });
 
   it("creates the room with 25 seats", async () => {
@@ -169,6 +169,26 @@ describe("media", () => {
     expect(await publishMic(listener)).toBe("refused");
     expect(heard).toBe(false);
     expect(listener.localParticipant!.trackPublications.size).toBe(0);
+  });
+});
+
+describe("screen share", () => {
+  it("STREAM alone (no SPEAK) publishes a screen, and the other side receives it", async () => {
+    const f = await fixture();
+    await setEveryone(f.guild.id, P.VIEW_CHANNEL | P.CONNECT | P.STREAM);
+    const sharer = await joinAs((await requestToken(app, f.alice, f.voice.id)).json());
+    const viewer = await joinAs((await requestToken(app, f.bob, f.voice.id)).json());
+    let received = "";
+    viewer.on(RoomEvent.TrackSubscribed, (_t, _p, participant) => (received = participant.identity));
+    expect(await publishScreen(sharer)).toBe("published");
+    await eventually(() => expect(received).toBe(f.alice.id));
+  });
+
+  it("without STREAM the screen cannot be published", async () => {
+    const f = await fixture();
+    await setEveryone(f.guild.id, DEFAULT_EVERYONE_PERMISSIONS & ~P.STREAM);
+    const sharer = await joinAs((await requestToken(app, f.alice, f.voice.id)).json());
+    expect(await publishScreen(sharer)).toBe("refused");
   });
 });
 

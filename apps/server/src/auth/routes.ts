@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { loginSchema, refreshTokenBodySchema, registerSchema } from "@loop/shared";
+import { botLoginSchema, loginSchema, refreshTokenBodySchema, registerSchema } from "@loop/shared";
+import { botLogin } from "../bots/routes.js";
 import type { Env } from "../env.js";
 import { parse, requireUser } from "../http.js";
 import { findUser, login, logout, refresh, register } from "./service.js";
@@ -13,6 +14,11 @@ export function authRoutes(app: FastifyInstance, env: Env) {
   app.post("/auth/login", async (req, reply) => {
     const body = parse(loginSchema, req.body, reply);
     if (body) return login(body, env.jwtSecret);
+  });
+
+  app.post("/auth/bot-login", async (req, reply) => {
+    const body = parse(botLoginSchema, req.body, reply);
+    if (body) return botLogin(body.token, env.jwtSecret);
   });
 
   app.post("/auth/refresh", async (req, reply) => {

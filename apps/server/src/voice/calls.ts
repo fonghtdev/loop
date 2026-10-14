@@ -23,7 +23,7 @@ export function callRoutes(app: FastifyInstance) {
     const me = await requireUser({ id: req.userId });
     const { empty, body: join } = await joinRoom(app, me, dmRoom(dm.id), {
       max: MAX_DM_CALL_PARTICIPANTS,
-      rights: { speak: true, video: true },
+      rights: { speak: true, video: true, stream: true },
       timeouts: CALL_TIMEOUTS,
     });
     if (empty) app.realtime.emitToUsers([otherId], "call:incoming", { dmChannelId: dm.id, from: me, video: body.video });

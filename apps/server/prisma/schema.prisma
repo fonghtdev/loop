@@ -11,8 +11,15 @@ model User {
   id              String       @id @default(uuid()) @db.Uuid
   email           String       @unique // stored lowercase (normalized by the shared zod schema)
   username        String       @unique
-  passwordHash    String
+  passwordHash    String // "!" for bots: not an argon2 hash, so no password ever matches
   createdAt       DateTime     @default(now())
+  // Bot accounts (CHECK in the migration: isBot <=> ownerId set; only bots have a botTokenHash).
+  isBot           Boolean      @default(false)
+  ownerId         String?      @db.Uuid
+  owner           User?        @relation("BotOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  bots            User[]       @relation("BotOwner")
+  botTokenHash    String?      @unique // SHA-256 of the bot token's secret; null once the bot is deleted
+  deletedAt       DateTime? // bots are soft-deleted: their messages keep the author (Message.authorId is Restrict)
   sessions        Session[]
   ownedGuilds     Guild[]
   memberships     Member[]
@@ -26,6 +33,8 @@ model User {
   dmsLow          DmChannel[]  @relation("DmLow")
   dmsHigh         DmChannel[]  @relation("DmHigh")
   attachments     Attachment[]
+
+  @@index([ownerId])
 }
 
 model Session {

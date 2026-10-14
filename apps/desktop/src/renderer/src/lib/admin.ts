@@ -119,6 +119,7 @@ export const PERMISSION_GROUPS: { title: MessageKey; items: Info[] }[] = [
       { name: "CONNECT", label: "perm.CONNECT", desc: "perm.CONNECT.desc" },
       { name: "SPEAK", label: "perm.SPEAK", desc: "perm.SPEAK.desc" },
       { name: "VIDEO", label: "perm.VIDEO", desc: "perm.VIDEO.desc" },
+      { name: "STREAM", label: "perm.STREAM", desc: "perm.STREAM.desc" },
     ],
   },
 ];

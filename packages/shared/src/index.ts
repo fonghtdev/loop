@@ -26,6 +26,12 @@ export const loginSchema = z.object({
 
 export const refreshTokenBodySchema = z.object({ refreshToken: z.string().min(1).max(256) });
 
+/** Bots: a bot's name is its username (same rules, same uniqueness as people's). */
+export const MAX_BOTS_PER_USER = 5;
+export const createBotSchema = z.object({ name: usernameSchema });
+// `<botUserId>.<secret>`; the server parses it, a malformed one is the same 401 as a wrong one
+export const botLoginSchema = z.object({ token: z.string().min(1).max(256) });
+
 export const createGuildSchema = z.object({ name: z.string().trim().min(1).max(100) });
 
 export const channelTypeSchema = z.enum(["TEXT", "VOICE"]);

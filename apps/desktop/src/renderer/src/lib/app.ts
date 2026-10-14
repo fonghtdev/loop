@@ -6,7 +6,9 @@ import { ApiError } from "./auth-client";
 import { createAppSettings } from "./app-settings";
 import { createAudioSink } from "./audio-sink";
 import { createCalls } from "./calls";
-import { createDevices } from "./devices";
+import { t } from "../i18n/t";
+import { createDevices, optionsFor } from "./devices";
+import { captureShare, createGoLivePrefs } from "./golive";
 import { createChat, type Message } from "./chat";
 import { goHome, openConversation, placeForKey, useNav, writeLastPlace } from "./nav";
 import type { Guild } from "./permissions";
@@ -17,7 +19,12 @@ import { createUnread, titleWith, total } from "./unread";
 import { windowFocus } from "./window-focus";
 import { createUploader } from "./upload-client";
 import { soundPrefs } from "./sound-prefs";
+import { createShortcutHandler } from "./shortcut-handler";
 import { createSounds, createTonePlayer, type SoundKind } from "./sounds";
+import { createNoiseLevel, noiseConfig } from "./noise";
+import { buildGraph } from "./noise-graph";
+import { createNoiseProcessor } from "./noise-processor";
+import { createScreenPicker } from "./screen-picker";
 import { createVoice, type RoomLike } from "./voice";
 import { createVoicePresence } from "./voice-presence";
 import { dmKey, type ConvKey } from "./conversation";
@@ -122,6 +129,25 @@ export const sounds = createSounds({
   onPlay: window.loop.e2e ? (kind: SoundKind) => void (soundCounts[kind] = (soundCounts[kind] ?? 0) + 1) : undefined,
 });
 
+/** The last Go Live quality and sound choices (the dialog starts from them). */
+export const goLivePrefs = createGoLivePrefs({ storage: { read: () => localStorage.getItem("loop.golive"), write: (v) => localStorage.setItem("loop.golive", v) } });
+
+/** The Go Live dialog: which screen, window or camera to share, at what quality (rendered by components/ScreenPicker). */
+export const screenPicker = createScreenPicker({
+  list: () => window.loop.screen.sources(),
+  devices: async () => {
+    await devices.refresh();
+    return optionsFor(devices.store.getState().devices, "videoinput", t("golive.deviceFallback"));
+  },
+  save: goLivePrefs.set,
+});
+
+/** How hard the microphone is cleaned (settings); a live session follows at once. */
+export const noiseLevel = createNoiseLevel({
+  storage: { read: () => localStorage.getItem("loop.noise"), write: (v) => localStorage.setItem("loop.noise", v) },
+  onChange: () => void voice.applyNoise(),
+});
+
 /** The one voice session. A real livekit Room is only ever created here. */
 export const voice = createVoice({
   request: session.client.request,
@@ -136,9 +162,22 @@ export const voice = createVoice({
     }) as unknown as RoomLike,
   sink,
   ensureMedia: (kind) => window.loop.media.ensureAccess(kind).catch(() => false),
+  pickScreen: () => screenPicker.pick(),
+  capture: (choice, profile) => captureShare(navigator.mediaDevices, window.loop.screen.choose, choice, profile),
+  noise: {
+    level: noiseLevel.get,
+    processor: (level, onFail) => {
+      const config = noiseConfig(level);
+      return config.rnnoise ? createNoiseProcessor(config, onFail, buildGraph) : null;
+    },
+  },
   livekitOrigin: LIVEKIT_ORIGIN,
   onSound: sounds.handle,
 });
+// the global mic / deafen shortcuts (main process) act on the live session; "deafened" is false so the beep also confirms deafening
+window.loop.onShortcut(createShortcutHandler(voice, (kind) => sounds.handle(kind, false)));
+// a dialog left open by a session that is gone would only be answered into nothing
+voice.store.subscribe((s) => s.status === "idle" && screenPicker.cancel());
 // joining is a click: the audio context is created / resumed right then (the autoplay policy of the window already allows it)
 voice.store.subscribe((s, prev) => s.status === "requestingToken" && prev.status !== "requestingToken" && sounds.unlock());
 

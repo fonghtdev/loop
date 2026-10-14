@@ -11,6 +11,7 @@ export const Permission = {
   CONNECT: 1 << 8, // join a voice channel (DM calls are decided by friendship, not by this bit)
   SPEAK: 1 << 9, // publish the microphone
   VIDEO: 1 << 10, // publish the camera
+  STREAM: 1 << 11, // share the screen
 } as const;
 
 export type PermissionName = keyof typeof Permission;
@@ -23,7 +24,8 @@ export const DEFAULT_EVERYONE_PERMISSIONS =
   Permission.CREATE_INVITE |
   Permission.CONNECT |
   Permission.SPEAK |
-  Permission.VIDEO;
+  Permission.VIDEO |
+  Permission.STREAM;
 
 /** The only bits a channel overwrite may allow or deny; the others are guild-wide. */
 export const CHANNEL_PERMISSIONS =
@@ -32,7 +34,8 @@ export const CHANNEL_PERMISSIONS =
   Permission.MANAGE_MESSAGES |
   Permission.CONNECT |
   Permission.SPEAK |
-  Permission.VIDEO;
+  Permission.VIDEO |
+  Permission.STREAM;
 
 type RolePerms = { id: string; permissions: number };
 export type Overwrite = { roleId: string; allow: number; deny: number };

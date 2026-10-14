@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { autoUpdater } from "electron-updater";
-import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, safeStorage, session, shell, systemPreferences, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, net, Notification, protocol, safeStorage, session, shell, systemPreferences, type IpcMainInvokeEvent } from "electron";
 import { APP_ID } from "../shared/app-id";
 import { API_URL, LIVEKIT_ORIGIN, STORAGE_ORIGIN, UPDATE_URL, WS_URL } from "../shared/config";
 import type { Settings } from "../shared/settings";
@@ -13,7 +13,9 @@ import { APP_ORIGIN, buildCsp, ensureMediaAccess, isMediaKind, isPermissionAllow
 import { installE2eHook, newRecorder } from "./e2e-hook";
 import { createNotifier } from "./notifications";
 import { loginItemSettings, normalizeBadge, revealWindow, shouldHideOnClose, startsHidden, windowIsFocused } from "./policy";
+import { createScreenShare } from "./screen";
 import { createSettingsStore } from "./settings";
+import { createShortcuts } from "./shortcuts";
 import { createTokenStore } from "./token-store";
 import { createTray, type TrayHandle } from "./tray";
 import { createUpdater } from "./updater";
@@ -39,7 +41,9 @@ let tray: TrayHandle | null = null;
 let quitting = false; // a real quit is under way: closing windows must not be intercepted
 let focusOverride: boolean | null = null; // e2e only
 let uninstallAnswer = false; // e2e only: stands in for the click on the native confirmation
+const screenShare = createScreenShare({ getSources: (o) => desktopCapturer.getSources(o), trusted: (url) => isTrustedSender(url, devServerUrl), platform: process.platform });
 let settings: ReturnType<typeof createSettingsStore>;
+const shortcuts = createShortcuts({ globalShortcut, onPress: (action) => win?.webContents.send("shortcut:fire", action) });
 let updater: ReturnType<typeof createUpdater>;
 
 // A standard + secure scheme gives the renderer a real origin (app://loop) for CORS, unlike file://.
@@ -98,6 +102,7 @@ function registerIpc() {
     applySettings(next);
     return next;
   });
+  handle("shortcuts:failed", () => shortcuts.failed());
   handle("update:get", () => updater.status());
   handle("update:check", () => {
     updater.check();
@@ -112,6 +117,8 @@ function registerIpc() {
     if (n === null) throw new Error("invalid badge count");
     app.setBadgeCount(n); // macOS dock / Linux launcher; Windows has no equivalent here (ponytail: taskbar overlay icon)
   });
+  handle("screen:sources", () => screenShare.list());
+  handle("screen:choose", (id, opts) => screenShare.choose(id, opts));
   handle("media:ensureAccess", (kind) => {
     if (!isMediaKind(kind)) throw new Error("invalid media kind");
     return ensureMediaAccess(kind, process.platform, systemPreferences);
@@ -224,10 +231,11 @@ function createWindow(hidden: boolean) {
   w.loadURL(devServerUrl ?? `${APP_ORIGIN}/index.html`);
 }
 
-/** Applies what the settings say outside the renderer: the login item (installed app only) and the tray menu. */
+/** Applies what the settings say outside the renderer: the login item (installed app only), the global shortcuts and the tray menu. */
 function applySettings(s: Settings) {
   const item = loginItemSettings({ isPackaged: app.isPackaged, startAtLogin: s.startAtLogin });
   if (item) app.setLoginItemSettings(item);
+  shortcuts.apply(s);
   tray?.refresh();
 }
 
@@ -294,13 +302,16 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on("second-instance", showWindow);
   app.on("before-quit", () => (quitting = true));
+  app.on("will-quit", shortcuts.dispose);
   app.whenReady().then(() => {
-    // Microphone/camera (voice) and writing text to the clipboard, for our own pages only; everything else is refused.
+    // Microphone/camera/screen (voice) and writing text to the clipboard, for our own pages only; everything else is refused.
     // Notifications stay refused here on purpose: the renderer asks the main process (IPC `notify:show`) instead.
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) =>
       callback(isPermissionAllowed(permission, details.requestingUrl, devServerUrl)),
     );
     session.defaultSession.setPermissionCheckHandler((_wc, permission, requestingOrigin) => isPermissionAllowed(permission, requestingOrigin, devServerUrl));
+    // getDisplayMedia is answered with the source the user picked in the app's dialog (screen.ts), never with a system prompt.
+    session.defaultSession.setDisplayMediaRequestHandler((request, callback) => screenShare.handler(request, callback), { useSystemPicker: false });
     if (devServerUrl) {
       session.defaultSession.webRequest.onHeadersReceived({ urls: [`${devServerUrl}/*`] }, (details, callback) =>
         callback({ responseHeaders: { ...details.responseHeaders, "Content-Security-Policy": [csp] } }),

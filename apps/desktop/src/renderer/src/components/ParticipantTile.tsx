@@ -6,7 +6,8 @@ import { Avatar } from "./Avatar";
 import { Tooltip } from "./Tooltip";
 import { VoiceIndicators } from "./VoiceIndicators";
 
-function Video({ source }: { source: NonNullable<Tile["p"]["video"]> }) {
+/** A track on a <video>; `fit` is how the picture sits in its box (a camera fills it, a shared screen is never cropped). */
+export function Video({ source, fit = "cover" }: { source: NonNullable<Tile["p"]["video"]>; fit?: "cover" | "contain" }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -15,7 +16,7 @@ function Video({ source }: { source: NonNullable<Tile["p"]["video"]> }) {
     return () => void source.detach(el);
   }, [source]);
   // sound comes from the <audio> elements; this element only shows the picture
-  return <video ref={ref} autoPlay playsInline muted className="h-full w-full object-cover" />;
+  return <video ref={ref} autoPlay playsInline muted className={`h-full w-full ${fit === "cover" ? "object-cover" : "object-contain"}`} />;
 }
 
 /**
@@ -66,6 +67,7 @@ export function ParticipantTile({ tile, onGone }: { tile: Tile; onGone: (userId:
             {p.isLocal && ` ${t("voice.you")}`}
           </span>
         </Tooltip>
+        {p.sharing && <span className="shrink-0 rounded-control bg-moss-900 px-2 py-1 text-caption font-medium text-moss-200">{t("voice.sharing")}</span>}
         <VoiceIndicators p={p} className="rounded-control bg-danger-bg px-2 py-1" />
       </div>
       {p.speaking && <span className="sr-only">{t("voice.speaking")}</span>}

@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - packages/*
+  - packages/bots/*
 allowBuilds:
   esbuild: true
   argon2: true

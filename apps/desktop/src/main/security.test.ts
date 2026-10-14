@@ -46,9 +46,10 @@ describe("buildCsp", () => {
   const origins = { api: "http://localhost:3000", ws: "ws://localhost:3000", storage: "http://localhost:9000", livekit: "ws://127.0.0.1:7880" };
   it("production: no inline code, network limited to the API, its websocket and the storage origin", () => {
     const csp = buildCsp(origins);
-    expect(csp).not.toContain("unsafe");
+    expect(csp).not.toContain("'unsafe-inline'");
+    expect(csp).not.toContain("'unsafe-eval'"); // the wasm-only relaxation below is not this
+    expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval';");
     expect(csp).toContain("default-src 'none'");
-    expect(csp).toContain("script-src 'self';");
     expect(csp).toContain("connect-src 'self' http://localhost:3000 ws://localhost:3000 http://localhost:9000 ws://127.0.0.1:7880 http://127.0.0.1:7880;");
   });
   it("LiveKit origin (ws and its http twin) is the configured one in production and dev; unrelated origins are absent", () => {
@@ -71,7 +72,7 @@ describe("buildCsp", () => {
   });
   it("dev: allows the Vite dev server's inline preamble and HMR socket", () => {
     const csp = buildCsp(origins, "http://localhost:5173");
-    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline'");
     expect(csp).toContain("ws://localhost:5173");
     expect(csp).toContain("http://localhost:9000");
   });
@@ -98,12 +99,14 @@ describe("isPermissionAllowed", () => {
     expect(isPermissionAllowed("media", "app://loop")).toBe(true);
     expect(isPermissionAllowed("media", "http://localhost:5173/", dev)).toBe(true);
     expect(isPermissionAllowed("clipboard-sanitized-write", "app://loop/index.html")).toBe(true);
+    expect(isPermissionAllowed("display-capture", "app://loop/index.html")).toBe(true);
   });
-  it.each(["notifications", "geolocation", "clipboard-read", "display-capture", "midi", "openExternal", "fullscreen", "unknown"])("refuses %s even from the app origin", (p) => {
+  it.each(["notifications", "geolocation", "clipboard-read", "midi", "openExternal", "fullscreen", "unknown"])("refuses %s even from the app origin", (p) => {
     expect(isPermissionAllowed(p, "app://loop/index.html", "http://localhost:5173")).toBe(false);
   });
-  it.each(["https://evil.example/", "http://localhost:5173/", "app://other/", "file:///x.html", ""])("refuses media for the foreign origin %s", (url) => {
+  it.each(["https://evil.example/", "http://localhost:5173/", "app://other/", "file:///x.html", ""])("refuses media and screen capture for the foreign origin %s", (url) => {
     expect(isPermissionAllowed("media", url)).toBe(false);
+    expect(isPermissionAllowed("display-capture", url)).toBe(false);
   });
 });
 
@@ -129,9 +132,18 @@ describe("ensureMediaAccess", () => {
       expect(s.asked).toEqual([]);
     }
   });
-  it("only microphone and camera are valid kinds", () => {
-    expect(isMediaKind("microphone") && isMediaKind("camera")).toBe(true);
-    for (const bad of ["screen", "", 1, null, undefined]) expect(isMediaKind(bad)).toBe(false);
+  it("screen: macOS granted/not-determined pass without asking, denied/restricted fail; elsewhere true", async () => {
+    for (const status of ["granted", "not-determined"]) {
+      const s = sp(status);
+      expect(await ensureMediaAccess("screen", "darwin", s)).toBe(true);
+      expect(s.asked).toEqual([]);
+    }
+    for (const status of ["denied", "restricted"]) expect(await ensureMediaAccess("screen", "darwin", sp(status))).toBe(false);
+    expect(await ensureMediaAccess("screen", "win32", sp("denied"))).toBe(true);
+  });
+  it("only microphone, camera and screen are valid kinds", () => {
+    expect(isMediaKind("microphone") && isMediaKind("camera") && isMediaKind("screen")).toBe(true);
+    for (const bad of ["display", "", 1, null, undefined]) expect(isMediaKind(bad)).toBe(false);
   });
 });
 

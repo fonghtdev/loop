@@ -1,9 +1,12 @@
-import { DisconnectReason } from "livekit-client";
+import { DisconnectReason, Track, type AudioCaptureOptions, type AudioProcessorOptions, type TrackProcessor, type TrackPublishOptions } from "livekit-client";
 import { createStore } from "zustand/vanilla";
 import { t } from "../i18n/t";
 import { isAllowedLivekitUrl } from "../../../shared/url";
 import type { AudioSink, AudioTrackLike } from "./audio-sink";
 import { errorMessage } from "./errors";
+import type { ShareChoice, StreamProfile } from "./golive";
+import { streamProfile } from "./golive";
+import { noiseConfig, type NoiseLevel } from "./noise";
 import type { SoundKind } from "./sounds";
 import { encodeDeafened, parseDeafened } from "./voice-flags";
 import type { Participant } from "./voice-presence";
@@ -18,8 +21,12 @@ export type VoiceStatus = "idle" | "requestingToken" | "connecting" | "connected
 /** A session that holds (or is acquiring) a room; the voice panel shows for these. */
 export const isActive = (status: VoiceStatus) => status !== "idle" && status !== "disconnected";
 
+/** LiveKit's own rating of our connection (loss, RTT, jitter); `unknown` until it reports. */
+export type ConnectionQuality = "excellent" | "good" | "poor" | "lost" | "unknown";
+
 export type VoiceState = {
   status: VoiceStatus;
+  quality: ConnectionQuality;
   target: VoiceTarget | null;
   /** Bumps on every join; lets callers tell one session from the next. */
   sessionId: number;
@@ -30,13 +37,16 @@ export type VoiceState = {
   notice: string | null;
   canSpeak: boolean;
   canVideo: boolean;
+  canStream: boolean;
   /** THE source of truth for the microphone being on (never true unless canSpeak). */
   micEnabled: boolean;
   camEnabled: boolean;
+  /** We are sharing the screen (never true unless canStream; follows the OS "Stop sharing" too). */
+  screenEnabled: boolean;
   deafened: boolean;
   /** The microphone state to restore on undeafen. */
   micBeforeDeafen: boolean;
-  /** Why the mic or camera could not start (permission denied), shown in the bar. */
+  /** Why the mic, camera or screen share could not start (permission denied), shown in the bar. */
   mediaNote: string | null;
   participants: Participant[];
 };
@@ -46,8 +56,10 @@ type TrackPublicationLike = { track?: (Participant["video"] & Partial<AudioTrack
 export type ParticipantLike = { identity: string; name?: string; metadata?: string; permissions?: { canPublish: boolean; canPublishSources: number[] }; getTrackPublication(source: string): TrackPublicationLike | undefined };
 export type LocalParticipantLike = ParticipantLike & {
   setMetadata(metadata: string): Promise<unknown>;
-  setMicrophoneEnabled(on: boolean): Promise<unknown>;
+  setMicrophoneEnabled(on: boolean, options?: AudioCaptureOptions): Promise<unknown>;
   setCameraEnabled(on: boolean): Promise<unknown>;
+  publishTrack(track: MediaStreamTrack, options: TrackPublishOptions): Promise<unknown>;
+  unpublishTrack(track: MediaStreamTrack): Promise<unknown>;
 };
 export type RoomLike = {
   localParticipant: LocalParticipantLike;
@@ -59,13 +71,24 @@ export type RoomLike = {
   switchActiveDevice(kind: "audioinput" | "videoinput", deviceId: string): Promise<unknown>;
 };
 
-type TokenResponse = { token: string; url: string; canSpeak: boolean; canVideo: boolean };
+/** The slice of LiveKit's LocalAudioTrack the noise level touches. */
+type MicTrackLike = { mediaStreamTrack: Pick<MediaStreamTrack, "applyConstraints">; setProcessor(p: NoiseProcessor): Promise<void>; stopProcessor(): Promise<void> };
+export type NoiseProcessor = TrackProcessor<Track.Kind.Audio, AudioProcessorOptions>;
+/** The microphone cleaning: the chosen level, and the processor for it (null = none; `onFail` is told when it cannot start). */
+export type NoiseDeps = { level: () => NoiseLevel; processor: (level: NoiseLevel, onFail: () => void) => NoiseProcessor | null };
+
+type TokenResponse = { token: string; url: string; canSpeak: boolean; canVideo: boolean; canStream: boolean };
 type Deps = {
   request: <T>(method: "POST", path: string, body?: unknown) => Promise<T>;
   createRoom: () => RoomLike;
   sink: AudioSink;
-  /** The OS-level microphone/camera permission (macOS asks in the main process); false = denied. */
-  ensureMedia: (kind: "microphone" | "camera") => Promise<boolean>;
+  /** The OS-level microphone/camera/screen permission (macOS asks in the main process); false = denied. */
+  ensureMedia: (kind: "microphone" | "camera" | "screen") => Promise<boolean>;
+  /** The Go Live dialog (source, quality, sound); null = the user cancelled (not an error). */
+  pickScreen: () => Promise<ShareChoice | null>;
+  /** The tracks of a chosen source at a profile: the picture first, then the sound if there is any. */
+  capture: (choice: ShareChoice, profile: StreamProfile) => Promise<MediaStreamTrack[]>;
+  noise: NoiseDeps;
   /** The one LiveKit origin the CSP allows. */
   livekitOrigin: string;
   now?: () => number;
@@ -76,12 +99,14 @@ type Deps = {
 // LiveKit's TrackSource numbers in a ParticipantPermission
 const SOURCE_CAMERA = 1;
 const SOURCE_MICROPHONE = 2;
+const SOURCE_SCREEN_SHARE = 3;
 
 /** What a (changed) LiveKit permission lets this participant publish. An empty source list means every source. */
 export function rightsOf(p?: { canPublish: boolean; canPublishSources: number[] }) {
-  if (!p?.canPublish) return { canSpeak: false, canVideo: false };
+  if (!p?.canPublish) return { canSpeak: false, canVideo: false, canStream: false };
   const all = p.canPublishSources.length === 0;
-  return { canSpeak: all || p.canPublishSources.includes(SOURCE_MICROPHONE), canVideo: all || p.canPublishSources.includes(SOURCE_CAMERA) };
+  const may = (source: number) => all || p.canPublishSources.includes(source);
+  return { canSpeak: may(SOURCE_MICROPHONE), canVideo: may(SOURCE_CAMERA), canStream: may(SOURCE_SCREEN_SHARE) };
 }
 
 /** Why the server (or LiveKit) ended a session we did not end ourselves. */
@@ -104,13 +129,16 @@ const same = (a: VoiceTarget | null, b: VoiceTarget) => !!a && a.kind === b.kind
 
 const RESET: Omit<VoiceState, "sessionId" | "notice"> = {
   status: "idle",
+  quality: "unknown",
   target: null,
   startedAt: 0,
   reason: null,
   canSpeak: false,
   canVideo: false,
+  canStream: false,
   micEnabled: false,
   camEnabled: false,
+  screenEnabled: false,
   deafened: false,
   micBeforeDeafen: false,
   mediaNote: null,
@@ -123,9 +151,9 @@ const RESET: Omit<VoiceState, "sessionId" | "notice"> = {
  * joining something else) disconnects it and empties the audio sink.
  *
  * Publishing: a participant without SPEAK/VIDEO that tries to publish gets no error, the publish just hangs, so
- * the microphone/camera are only ever started through `setMic`/`setCamera`, which check `canSpeak`/`canVideo`.
+ * the microphone/camera/screen are only ever started through `setMic`/`setCamera`/`setScreen`, which check `canSpeak`/`canVideo`/`canStream`.
  */
-export function createVoice({ request, createRoom, sink, ensureMedia, livekitOrigin, now = Date.now, onSound }: Deps) {
+export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen, capture, noise, livekitOrigin, now = Date.now, onSound }: Deps) {
   const store = createStore<VoiceState>(() => ({ ...RESET, sessionId: 0, notice: null }));
   const get = store.getState;
   const set = store.setState;
@@ -145,9 +173,10 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
   const toParticipant = (p: ParticipantLike, isLocal: boolean): Participant => {
     const cam = p.getTrackPublication("camera");
     const mic = p.getTrackPublication("microphone");
+    const screen = p.getTrackPublication("screen_share");
     // someone who may not speak has no microphone state to show; for everyone else a missing or muted track is "mic off"
     const micOff = rightsOf(p.permissions ?? { canPublish: true, canPublishSources: [] }).canSpeak && (!mic || mic.isMuted);
-    return { userId: p.identity, username: p.name || p.identity, isLocal, speaking: speaking.has(p.identity), video: cam?.track && !cam.isMuted ? cam.track : undefined, micOff, deafened: parseDeafened(p.metadata) };
+    return { userId: p.identity, username: p.name || p.identity, isLocal, speaking: speaking.has(p.identity), video: cam?.track && !cam.isMuted ? cam.track : undefined, screen: screen?.track && !screen.isMuted ? screen.track : undefined, sharing: !!screen, micOff, deafened: parseDeafened(p.metadata) };
   };
   const refresh = () => {
     if (!room) return;
@@ -161,17 +190,24 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
     speaking = new Set();
     known = null;
     sink.clear();
+    stopShared();
     if (r) void Promise.resolve(r.disconnect()).catch(() => undefined);
   }
 
-  // Mic and camera changes run one after another: the intended state is set at once (so a quick second click
+  // Mic, camera and screen changes run one after another: the intended state is set at once (so a quick second click
   // toggles from what the user sees) and the queue brings LiveKit to the latest intention in order. Without it a
   // mute during the first publish finds nothing to mute yet and is lost.
   let queue: Promise<unknown> = Promise.resolve();
   const serial = (job: () => Promise<void>) => (queue = queue.then(job).catch(() => undefined));
 
   type Device = { key: "micEnabled" | "camEnabled"; allowed: "canSpeak" | "canVideo"; kind: "microphone" | "camera"; osDenied: Parameters<typeof t>[0]; denied: Parameters<typeof t>[0]; apply: (r: RoomLike, on: boolean) => Promise<unknown> };
-  const MIC: Device = { key: "micEnabled", allowed: "canSpeak", kind: "microphone", osDenied: "voice.media.micOsDenied", denied: "voice.media.micDenied", apply: (r, on) => r.localParticipant.setMicrophoneEnabled(on) };
+  const noiseFailed = () => set({ mediaNote: t("voice.media.noiseFailed") });
+  /** How a NEW microphone track is captured at the current level (an existing one keeps what it has; `applyNoise` moves it). */
+  const micCapture = (): AudioCaptureOptions => {
+    const level = noise.level();
+    return { noiseSuppression: noiseConfig(level).browserNoiseSuppression, processor: noise.processor(level, noiseFailed) ?? undefined };
+  };
+  const MIC: Device = { key: "micEnabled", allowed: "canSpeak", kind: "microphone", osDenied: "voice.media.micOsDenied", denied: "voice.media.micDenied", apply: (r, on) => r.localParticipant.setMicrophoneEnabled(on, on ? micCapture() : undefined) };
   const CAM: Device = { key: "camEnabled", allowed: "canVideo", kind: "camera", osDenied: "voice.media.camOsDenied", denied: "voice.media.camDenied", apply: (r, on) => r.localParticipant.setCameraEnabled(on) };
 
   function setDevice(d: Device, on: boolean) {
@@ -182,8 +218,8 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
       const r = room;
       if (!r || !active(id)) return;
       const want = get()[d.key];
-      const fail = (note: Parameters<typeof t>[0]) => {
-        if (active(id) && get()[d.key] === want) set({ [d.key]: false, mediaNote: t(note) });
+      const fail = (note?: Parameters<typeof t>[0]) => {
+        if (active(id) && get()[d.key] === want) set({ [d.key]: false, mediaNote: note ? t(note) : null });
       };
       if (want && !(await ensureMedia(d.kind))) return fail(d.osDenied);
       if (!active(id)) return;
@@ -198,21 +234,102 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
   const setMic = (on: boolean) => setDevice(MIC, on);
   const setCamera = (on: boolean) => setDevice(CAM, on);
 
+  // The tracks of the running screen share. They are ours (raw MediaStreamTracks), so LiveKit does not stop them: whoever
+  // ends the share must (otherwise the capture, and a camera's light, would stay on).
+  let shared: MediaStreamTrack[] = [];
+  const stopShared = () => shared.splice(0).forEach((track) => track.stop());
+  async function unshare(r: RoomLike) {
+    const old = shared.splice(0);
+    await Promise.all(old.map((track) => r.localParticipant.unpublishTrack(track).catch(() => undefined)));
+    old.forEach((track) => track.stop());
+  }
+
+  /**
+   * Go Live: asks which source, quality and sound, then publishes it as the screen share. One source at a time: with a
+   * share running, the old one is stopped only after the user confirmed a new one in the same session (cancelling
+   * keeps the running share). Cancelling is not an error.
+   */
+  function startScreen() {
+    if (!room || !get().canStream) return Promise.resolve(); // never publish without the right (the publish would hang)
+    const id = session;
+    set({ mediaNote: null });
+    return serial(async () => {
+      const r = room;
+      if (!r || !active(id)) return;
+      const choice = await pickScreen();
+      if (!choice || !active(id)) return;
+      const camera = choice.source.kind === "device";
+      const allowed = await ensureMedia(camera ? "camera" : "screen");
+      if (!active(id)) return;
+      if (!allowed) return set({ mediaNote: t(camera ? "voice.media.camOsDenied" : "voice.media.screenOsDenied") });
+      await unshare(r);
+      set({ screenEnabled: true });
+      try {
+        const profile = streamProfile(choice.quality);
+        const tracks = (shared = await capture(choice, profile));
+        for (const track of tracks) {
+          const video = track.kind === "video";
+          await r.localParticipant.publishTrack(track, video ? { source: Track.Source.ScreenShare, screenShareEncoding: profile.publish, simulcast: false } : { source: Track.Source.ScreenShareAudio });
+        }
+      } catch {
+        await unshare(r);
+        if (active(id)) set({ screenEnabled: false, mediaNote: t(camera ? "voice.media.camDenied" : "voice.media.screenDenied") });
+      }
+      if (active(id)) refresh();
+    });
+  }
+  function stopScreen() {
+    const id = session;
+    if (!room || !get().screenEnabled) return Promise.resolve();
+    set({ screenEnabled: false, mediaNote: null });
+    return serial(async () => {
+      if (room && active(id)) await unshare(room);
+    });
+  }
+
+  /**
+   * Brings the live microphone to the current noise level (processor on/off, the browser's filter off while RNNoise
+   * runs). Never touches `micEnabled`; a muted mic is moved too, and no mic yet = the next capture uses the level.
+   * A failure leaves the browser's filter on, unprocessed, with a note: the mic keeps working.
+   */
+  async function moveNoise() {
+    const track = room?.localParticipant.getTrackPublication("microphone")?.track as Partial<MicTrackLike> | undefined;
+    if (!track?.setProcessor || !track.stopProcessor || !track.mediaStreamTrack) return;
+    const id = session;
+    const level = noise.level();
+    try {
+      const p = noise.processor(level, noiseFailed);
+      if (p) await track.setProcessor(p);
+      else await track.stopProcessor();
+      await track.mediaStreamTrack.applyConstraints({ noiseSuppression: noiseConfig(level).browserNoiseSuppression });
+    } catch {
+      await track.stopProcessor().catch(() => undefined);
+      await track.mediaStreamTrack.applyConstraints({ noiseSuppression: true }).catch(() => undefined);
+      if (active(id)) noiseFailed();
+    }
+  }
+
   /** The server changed what we may publish (e.g. SPEAK revoked): controls follow, LiveKit already stopped the tracks. */
-  function applyRights({ canSpeak, canVideo }: { canSpeak: boolean; canVideo: boolean }) {
+  function applyRights({ canSpeak, canVideo, canStream }: { canSpeak: boolean; canVideo: boolean; canStream: boolean }) {
     const s = get();
     set({
       canSpeak,
       canVideo,
+      canStream,
       micEnabled: s.micEnabled && canSpeak,
       micBeforeDeafen: s.micBeforeDeafen && canSpeak,
       camEnabled: s.camEnabled && canVideo,
+      screenEnabled: s.screenEnabled && canStream,
     });
+    if (!canStream) stopShared();
     refresh();
   }
 
   function wire(r: RoomLike, id: number) {
     const on = (event: string, fn: (...args: never[]) => void) => r.on(event, ((...args: never[]) => active(id) && fn(...args)) as never);
+    on("connectionQualityChanged", (quality: ConnectionQuality, p: { identity: string }) => {
+      if (p.identity === r.localParticipant.identity) set({ quality });
+    });
     on("reconnecting", () => {
       known = null;
       set({ status: "reconnecting" });
@@ -255,7 +372,15 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
       refresh();
       if (known?.delete(p.identity)) sound("leave");
     });
-    for (const e of ["participantMetadataChanged", "trackMuted", "trackUnmuted", "localTrackPublished", "localTrackUnpublished", "trackPublished", "trackUnpublished"])
+    // the OS "Stop sharing" button (or a revoked right) ends the track without us asking: the button follows
+    on("localTrackUnpublished", (pub: { source: string }) => {
+      if (pub.source === "screen_share") {
+        set({ screenEnabled: false });
+        void unshare(r); // the picture ended on its own: the sound track of the share goes too
+      }
+      refresh();
+    });
+    for (const e of ["participantMetadataChanged", "trackMuted", "trackUnmuted", "localTrackPublished", "trackPublished", "trackUnpublished"])
       on(e, refresh);
   }
 
@@ -295,7 +420,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
       fail(id, t("voice.errors.origin"));
       return false;
     }
-    set({ status: "connecting", canSpeak: tok.canSpeak, canVideo: tok.canVideo });
+    set({ status: "connecting", canSpeak: tok.canSpeak, canVideo: tok.canVideo, canStream: tok.canStream });
     const r = createRoom();
     room = r;
     wire(r, id);
@@ -327,6 +452,9 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
       if (!s.deafened) await setMic(!s.micEnabled);
     },
     toggleCamera: () => setCamera(!get().camEnabled),
+    startScreen,
+    stopScreen,
+    toggleScreen: () => (get().screenEnabled ? stopScreen() : startScreen()),
     /** Deafen silences every remote <audio> (nothing is unsubscribed) and the mic; undeafen restores the mic as it was. */
     async toggleDeafen() {
       const s = get();
@@ -348,8 +476,13 @@ export function createVoice({ request, createRoom, sink, ensureMedia, livekitOri
     // queued behind the mic / camera jobs: switching while the first publish is still opening the old device would be lost
     switchDevice: (kind: "audioinput" | "videoinput", deviceId: string) => {
       const r = room;
-      return serial(async () => void (await r?.switchActiveDevice(kind, deviceId)));
+      return serial(async () => {
+        await r?.switchActiveDevice(kind, deviceId);
+        if (kind === "audioinput") await moveNoise(); // the new capture starts from the constraints of the first one
+      });
     },
+    /** The noise level changed in settings: the live session follows at once (queued behind mic jobs, like a device change). */
+    applyNoise: () => serial(moveNoise),
     notify: (notice: string) => set({ notice }),
     dismissNotice: () => set({ notice: null }),
   };

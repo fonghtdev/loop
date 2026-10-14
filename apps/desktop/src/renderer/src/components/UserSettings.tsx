@@ -1,15 +1,17 @@
 import { Gear, SignOut, Trash, X } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useStore } from "zustand";
-import type { Settings } from "../../../shared/settings";
+import type { BooleanSetting, Settings } from "../../../shared/settings";
+import { acceleratorFromEvent, formatAccelerator, type ShortcutAction } from "../../../shared/shortcut";
 import type { UpdateStatus } from "../../../shared/update";
 import { t } from "../i18n/t";
 import type { MessageKey } from "../i18n/vi";
 import { appearance, MOTIONS, useAppearance, type Appearance } from "../lib/appearance";
 import { density, DENSITIES, useDensity, type Density } from "../lib/density";
-import { appSettings, devices, session, sounds, unlockDeviceLabels } from "../lib/app";
+import { appSettings, devices, noiseLevel, session, sounds, unlockDeviceLabels } from "../lib/app";
 import { DEVICE_KINDS, labelsAvailable, optionsFor, type DeviceKind } from "../lib/devices";
 import { useNav } from "../lib/nav";
+import { NOISE_LEVELS, type NoiseLevel } from "../lib/noise";
 import { soundPrefs, useSoundPrefs } from "../lib/sound-prefs";
 import { toast } from "../lib/toast";
 import { Button } from "./Button";
@@ -33,7 +35,7 @@ export function UserSettings() {
     void appSettings.load(); // the tray can change a setting meanwhile
   }, []);
 
-  const save = (key: keyof Settings) => async (value: boolean) => {
+  const save = (key: BooleanSetting) => async (value: boolean) => {
     try {
       await appSettings.save({ [key]: value });
       toast.push(t("userSettings.saved"));
@@ -76,6 +78,9 @@ export function UserSettings() {
           </Group>
           <Group id="sounds" title="userSettings.sounds">
             <SoundsSection />
+          </Group>
+          <Group id="shortcuts" title="userSettings.shortcuts">
+            <ShortcutsSection settings={settings} />
           </Group>
           <Group id="media" title="userSettings.media">
             <DevicePickers />
@@ -273,9 +278,92 @@ function UpdateSection() {
   );
 }
 
+const SHORTCUT_ROWS: { action: ShortcutAction; key: "micShortcut" | "deafenShortcut"; label: MessageKey }[] = [
+  { action: "mic", key: "micShortcut", label: "userSettings.shortcutMic" },
+  { action: "deafen", key: "deafenShortcut", label: "userSettings.shortcutDeafen" },
+];
+
+/** Two global shortcuts (the main process registers them). Click a box, press the keys; Esc / Backspace / Xoá clears. */
+function ShortcutsSection({ settings }: { settings: Settings }) {
+  const [listening, setListening] = useState<ShortcutAction | null>(null);
+  const [failed, setFailed] = useState<ShortcutAction[]>([]);
+  const [clash, setClash] = useState(false);
+  const refreshFailed = () => void window.loop.failedShortcuts().then(setFailed, () => undefined);
+  useEffect(refreshFailed, [settings.micShortcut, settings.deafenShortcut]);
+
+  const assign = async (key: "micShortcut" | "deafenShortcut", value: string) => {
+    const other = key === "micShortcut" ? settings.deafenShortcut : settings.micShortcut;
+    setClash(!!value && value === other);
+    if (value && value === other) return;
+    try {
+      await appSettings.save({ [key]: value });
+    } catch {
+      toast.push(t("userSettings.saveFailed"), "error");
+    }
+  };
+  const onKeyDown = (key: "micShortcut" | "deafenShortcut") => (e: React.KeyboardEvent) => {
+    e.preventDefault();
+    e.stopPropagation(); // Esc here clears the shortcut, it must not close the settings page
+    const acc = e.key === "Escape" || e.key === "Backspace" ? "" : acceleratorFromEvent(e.nativeEvent, window.loop.platform);
+    if (acc === null) return; // only modifiers so far
+    setListening(null);
+    void assign(key, acc);
+  };
+
+  return (
+    <div className="flex flex-col gap-1 px-3 py-2">
+      <p className="mb-1 text-[13px] leading-relaxed text-ink-muted">{t("userSettings.shortcutsHint")}</p>
+      {SHORTCUT_ROWS.map(({ action, key, label }) => (
+        <div key={action} className="flex items-center gap-2 py-1">
+          <span className="min-w-0 flex-1 text-[15px] font-medium">{t(label)}</span>
+          <button
+            type="button"
+            aria-label={t(label)}
+            onClick={() => setListening(action)}
+            onBlur={() => setListening((l) => (l === action ? null : l))}
+            onKeyDown={listening === action ? onKeyDown(key) : undefined}
+            className="h-11 min-w-36 rounded-control bg-surface-4 px-3 text-[14px] text-ink hover:bg-surface-3 aria-pressed:outline-2"
+            aria-pressed={listening === action}
+          >
+            {listening === action ? t("userSettings.shortcutListening") : settings[key] ? formatAccelerator(settings[key], window.loop.platform) : t("userSettings.shortcutNone")}
+          </button>
+          <Button variant="ghost" disabled={!settings[key]} onClick={() => void assign(key, "")}>
+            {t("userSettings.shortcutClear")}
+          </Button>
+        </div>
+      ))}
+      <p role="alert" className="min-h-5 text-[13px] text-danger">
+        {clash ? t("userSettings.shortcutClash") : failed.length ? t("userSettings.shortcutTaken") : ""}
+      </p>
+    </div>
+  );
+}
+
 const DEVICE_LABELS: Record<DeviceKind, MessageKey> = { audioinput: "userSettings.microphone", audiooutput: "userSettings.speaker", videoinput: "userSettings.camera" };
 
 /** Microphone, speaker and camera selects. Names need media access, asked for when this opens (once the OS agrees). */
+const NOISE_LABEL: Record<NoiseLevel, MessageKey> = { off: "userSettings.noiseOff", standard: "userSettings.noiseStandard", strong: "userSettings.noiseStrong" };
+
+/** Microphone cleaning level (lib/noise); the live voice session follows at once. */
+function NoiseLevelPicker() {
+  const [level, setLevel] = useState(noiseLevel.get());
+  return (
+    <fieldset>
+      <legend className="text-[15px] font-medium">{t("userSettings.noise")}</legend>
+      <p className="mt-0.5 mb-2 text-[13px] leading-relaxed text-ink-muted">{t("userSettings.noiseHint")}</p>
+      <Segmented
+        name="noise"
+        value={level}
+        onChange={(l) => {
+          noiseLevel.set(l);
+          setLevel(l);
+        }}
+        options={NOISE_LEVELS.map((l) => ({ value: l, label: t(NOISE_LABEL[l]) }))}
+      />
+    </fieldset>
+  );
+}
+
 function DevicePickers() {
   const { choices, devices: list } = useStore(devices.store);
   const [denied, setDenied] = useState(false);
@@ -315,6 +403,7 @@ function DevicePickers() {
           </div>
         );
       })}
+      <NoiseLevelPicker />
       {!named && (
         <p role="status" className="text-[13px] leading-relaxed text-ink-muted">
           {denied ? t("userSettings.noLabelsDenied") : t("userSettings.noLabels")}

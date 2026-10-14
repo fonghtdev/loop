@@ -44,6 +44,10 @@ export function friendRoutes(app: FastifyInstance) {
     if (!body) return;
     const me = req.userId;
     const them = await requireReachableUser({ username: body.username }, me);
+    // Bots have no friends, so they never DM or DM-call either (both need a friendship).
+    if (await prisma.user.count({ where: { id: { in: [me, them.id] }, isBot: true } })) {
+      throw new HttpError(403, "Bots cannot have friends");
+    }
     const self = await requireUser({ id: me });
     const { count } = await prisma.friendship.createMany({
       data: [{ ...pair(me, them.id), requesterId: me, status: "PENDING" }],

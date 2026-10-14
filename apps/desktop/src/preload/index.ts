@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { isConversationKey } from "../shared/notify";
+import { SHORTCUT_ACTIONS, type ShortcutAction } from "../shared/shortcut";
 import { parseUpdateStatus } from "../shared/update";
 import type { LoopApi } from "./api";
 
@@ -10,7 +11,14 @@ const api: LoopApi = {
     clear: () => ipcRenderer.invoke("session:clear"),
   },
   media: { ensureAccess: (kind) => ipcRenderer.invoke("media:ensureAccess", kind) },
+  screen: { sources: () => ipcRenderer.invoke("screen:sources"), choose: (id, opts) => ipcRenderer.invoke("screen:choose", id, opts) },
   settings: { get: () => ipcRenderer.invoke("settings:get"), set: (patch) => ipcRenderer.invoke("settings:set", patch) },
+  failedShortcuts: () => ipcRenderer.invoke("shortcuts:failed"),
+  onShortcut: (cb) => {
+    const listener = (_e: unknown, action: unknown) => SHORTCUT_ACTIONS.includes(action as ShortcutAction) && cb(action as ShortcutAction);
+    ipcRenderer.on("shortcut:fire", listener);
+    return () => void ipcRenderer.removeListener("shortcut:fire", listener);
+  },
   update: {
     get: () => ipcRenderer.invoke("update:get"),
     check: () => ipcRenderer.invoke("update:check"),

@@ -1,5 +1,6 @@
 import type { NotifyPayload } from "../shared/notify";
 import type { Settings } from "../shared/settings";
+import type { ShortcutAction } from "../shared/shortcut";
 import type { UpdateStatus } from "../shared/update";
 
 /** Everything the renderer can ask of the main process. Nothing else crosses the bridge. */
@@ -11,14 +12,24 @@ export type LoopApi = {
     clear(): Promise<void>;
   };
   media: {
-    /** Asks the OS for microphone/camera access (macOS prompts once; elsewhere true). false = denied in System Settings. */
-    ensureAccess(kind: "microphone" | "camera"): Promise<boolean>;
+    /** Asks the OS for microphone/camera/screen access (macOS prompts once; elsewhere true). false = denied in System Settings. */
+    ensureAccess(kind: "microphone" | "camera" | "screen"): Promise<boolean>;
+  };
+  screen: {
+    /** The screens and windows that can be shared, with a thumbnail (data URL) each. */
+    sources(): Promise<{ id: string; name: string; thumbnail: string }[]>;
+    /** Picks the source the next getDisplayMedia is answered with (once), and whether it may carry the system sound (Windows only); rejects an id that was not listed. */
+    choose(id: string, opts: { audio: boolean }): Promise<void>;
   };
   settings: {
     get(): Promise<Settings>;
-    /** Known boolean keys only; rejects on an invalid patch. Resolves to the settings now in force. */
+    /** Known keys only (booleans; shortcuts: "" or a valid accelerator); rejects on an invalid patch. Resolves to the settings now in force. */
     set(patch: Partial<Settings>): Promise<Settings>;
   };
+  /** The global shortcuts the OS refused to register (another app owns the keys). */
+  failedShortcuts(): Promise<ShortcutAction[]>;
+  /** A global shortcut was pressed (action already validated); returns the unsubscribe. */
+  onShortcut(cb: (action: ShortcutAction) => void): () => void;
   update: {
     get(): Promise<UpdateStatus>;
     /** Starts a check when one makes sense; resolves to the status now in force. */

@@ -10,6 +10,7 @@ import { DmView } from "../components/DmView";
 import { ImageViewer } from "../components/ImageViewer";
 import { ChatArt, PeopleArt } from "../components/Illustrations";
 import { IncomingCall } from "../components/IncomingCall";
+import { ScreenPicker } from "../components/ScreenPicker";
 import { MemberList } from "../components/MemberList";
 import { QuickSwitcher } from "../components/QuickSwitcher";
 import { ServerRail } from "../components/ServerRail";
@@ -240,6 +241,7 @@ export function Shell() {
       <QuickSwitcher />
       <ImageViewer />
       <IncomingCall />
+      <ScreenPicker />
       <ToastHost />
     </div>
   );

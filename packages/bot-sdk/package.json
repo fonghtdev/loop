@@ -1,0 +1,19 @@
+{
+  "name": "@loop/bot-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@livekit/rtc-node": "^1.1.0",
+    "@loop/shared": "workspace:*",
+    "socket.io-client": "^4.8.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4"
+  }
+}

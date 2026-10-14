@@ -26,6 +26,7 @@ export async function joinRoom(
       expiresInSeconds: TOKEN_TTL_SECONDS,
       canSpeak: rights.speak,
       canVideo: rights.video,
+      canStream: rights.stream,
     },
   };
 }

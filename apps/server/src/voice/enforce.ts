@@ -16,6 +16,7 @@ export const voiceRights = (perms: number) => ({
   connect: hasPermission(perms, Permission.VIEW_CHANNEL | Permission.CONNECT),
   speak: hasPermission(perms, Permission.SPEAK),
   video: hasPermission(perms, Permission.VIDEO),
+  stream: hasPermission(perms, Permission.STREAM),
 });
 
 /**
@@ -54,7 +55,7 @@ export function createVoice(livekit: Livekit, log: FastifyBaseLogger) {
         const rights = voiceRights(perms.get(seat.userId)?.get(id) ?? 0);
         const room = voiceRoom(id);
         if (!rights.connect) jobs.push(guard("remove", () => livekit.removeParticipant(room, seat.userId)));
-        else if (rights.speak !== seat.speak || rights.video !== seat.video) {
+        else if (rights.speak !== seat.speak || rights.video !== seat.video || rights.stream !== seat.stream) {
           jobs.push(guard("downgrade", () => livekit.setRights(room, seat.userId, rights)));
         }
       }

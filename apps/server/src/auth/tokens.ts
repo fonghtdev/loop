@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { jwtVerify, SignJWT } from "jose";
+import { prisma } from "../db.js";
 
 const ACCESS_TTL = "15m";
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -8,8 +9,9 @@ export const REFRESH_GRACE_MS = 20 * 1000;
 
 const key = (secret: string) => new TextEncoder().encode(secret);
 
-export function signAccessToken(userId: string, secret: string) {
-  return new SignJWT({})
+/** `botTokenHash`: a bot's token, bound to the bot token it was issued for (see verifyAccessToken). */
+export function signAccessToken(userId: string, secret: string, botTokenHash?: string) {
+  return new SignJWT(botTokenHash ? { bot: botTokenHash } : {})
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(userId)
     .setIssuedAt()
@@ -21,11 +23,19 @@ export function signAccessToken(userId: string, secret: string) {
 export async function verifyAccessToken(token: string, secret: string): Promise<string | null> {
   try {
     const { payload } = await jwtVerify(token, key(secret), { algorithms: ["HS256"] });
-    return payload.sub ?? null;
+    if (!payload.sub) return null;
+    // A bot's access token dies with its bot token (rotation, deletion): checked against the DB on every use.
+    // ponytail: one query per bot request/handshake; upgrade = a short cache with pub/sub invalidation
+    if (payload.bot !== undefined && !(await isLiveBotToken(payload.sub, payload.bot))) return null;
+    return payload.sub;
   } catch {
     return null;
   }
 }
+
+const isLiveBotToken = async (userId: string, hash: unknown) =>
+  typeof hash === "string" &&
+  (await prisma.user.count({ where: { id: userId, isBot: true, deletedAt: null, botTokenHash: hash } })) > 0;
 
 export const newRefreshToken = () => randomBytes(32).toString("base64url");
 

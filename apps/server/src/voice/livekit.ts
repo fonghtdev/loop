@@ -10,17 +10,18 @@ declare module "fastify" {
 export const TOKEN_TTL_SECONDS = 600;
 const REQUEST_TIMEOUT_SECONDS = 5;
 
-export type Rights = { speak: boolean; video: boolean };
+export type Rights = { speak: boolean; video: boolean; stream: boolean };
 // No participant count: LiveKit refreshes Room.numParticipants only every few seconds; `participants()` is live.
 export type RoomInfo = { name: string; maxParticipants: number };
 export type Seat = Rights & { userId: string; username: string };
 export type RoomEvent = { type: string; room: string | undefined; userId: string | undefined };
 
 const isNotFound = (e: unknown) => (e as { status?: number })?.status === 404;
-/** Publishing sources a rights pair allows. Never screen share. */
-const sourcesOf = ({ speak, video }: Rights) => [
+/** Publishing sources a set of rights allows; screen share (with its audio) only with stream. */
+const sourcesOf = ({ speak, video, stream }: Rights) => [
   ...(speak ? [TrackSource.MICROPHONE] : []),
   ...(video ? [TrackSource.CAMERA] : []),
+  ...(stream ? [TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO] : []),
 ];
 
 /**
@@ -64,6 +65,7 @@ export function createLivekit({ url, apiUrl, apiKey, apiSecret }: Env["livekit"]
           username: p.name,
           speak: allows(TrackSource.MICROPHONE),
           video: allows(TrackSource.CAMERA),
+          stream: allows(TrackSource.SCREEN_SHARE),
         };
       });
     },
@@ -80,7 +82,7 @@ export function createLivekit({ url, apiUrl, apiKey, apiSecret }: Env["livekit"]
         // headphones-off icon; never use it for a decision (a client may lie about its own icon). Not part of
         // `Rights`, so setRights below repeats it (an update replaces the whole permission).
         canUpdateOwnMetadata: true,
-        canPublish: rights.speak || rights.video,
+        canPublish: sourcesOf(rights).length > 0,
         canPublishSources: sourcesOf(rights),
       });
       return token.toJwt();
@@ -94,7 +96,7 @@ export function createLivekit({ url, apiUrl, apiKey, apiSecret }: Env["livekit"]
             canSubscribe: true,
             canPublishData: false,
             canUpdateMetadata: true, // the permission-side name of the token's canUpdateOwnMetadata
-            canPublish: rights.speak || rights.video,
+            canPublish: sourcesOf(rights).length > 0,
             canPublishSources: sourcesOf(rights),
           },
         }),

@@ -64,7 +64,7 @@ describe("roles API", () => {
 
   it("validates bodies: unknown bits, bad names, empty patch", async () => {
     const s = await setup();
-    expect(await status("POST", `${s.base}/roles`, s.owner.token, { name: "x", permissions: 2048 })).toBe(400);
+    expect(await status("POST", `${s.base}/roles`, s.owner.token, { name: "x", permissions: 4096 })).toBe(400);
     expect(await status("POST", `${s.base}/roles`, s.owner.token, { name: "" })).toBe(400);
     expect(await status("POST", `${s.base}/roles`, s.owner.token, { name: "@everyone" })).toBe(400);
     expect(await status("PATCH", roleUrl(s, s.roles.below.id), s.owner.token, {})).toBe(400);

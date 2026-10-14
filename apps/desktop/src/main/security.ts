@@ -28,14 +28,16 @@ export const isValidRefreshToken = (t: unknown): t is string =>
  * websocket, the storage origin (upload PUTs) and LiveKit (its websocket, plus the http twin it fetches to explain a
  * failed connection; the media itself is WebRTC, which a CSP does not govern); images also from the storage origin (attachments) and
  * data:/blob: (local previews). Dev: the Vite dev server needs inline scripts/styles (React refresh preamble,
- * injected CSS) and its HMR websocket.
+ * injected CSS) and its HMR websocket. `'wasm-unsafe-eval'` (compiling WebAssembly, NOT eval of strings) is the one script
+ * relaxation, in both: the noise-suppression AudioWorklet inherits this policy and instantiates RNNoise's wasm. The
+ * worklet and wasm files are our own bundle (`'self'`, fetched under `connect-src 'self'`).
  */
 export function buildCsp({ api, ws, storage, livekit }: { api: string; ws: string; storage: string; livekit: string }, devServerUrl?: string) {
   const devWs = devServerUrl ? ` ${devServerUrl.replace(/^http/, "ws")}` : "";
   const inline = devServerUrl ? " 'unsafe-inline'" : "";
   return [
     "default-src 'none'",
-    `script-src 'self'${inline}`,
+    `script-src 'self' 'wasm-unsafe-eval'${inline}`,
     `style-src 'self'${inline}`,
     "font-src 'self'",
     `img-src 'self' data: blob: ${api} ${storage}`,
@@ -69,27 +71,30 @@ export function resolveAppFile(rootDir: string, requestUrl: string): string | nu
 
 /**
  * Permissions the renderer may be granted, decided by one pure function for both the request and the check handler:
- * microphone/camera ("media") and writing text to the clipboard, and only for our own pages. Everything else is refused.
+ * microphone/camera ("media"), screen capture ("display-capture"; which screen is still the main process's call, see
+ * screen.ts) and writing text to the clipboard, and only for our own pages. Everything else is refused.
  */
 export function isPermissionAllowed(permission: string, requestingUrl: string, devServerUrl?: string): boolean {
-  return (permission === "media" || permission === "clipboard-sanitized-write") && isTrustedSender(requestingUrl, devServerUrl);
+  return (permission === "media" || permission === "display-capture" || permission === "clipboard-sanitized-write") && isTrustedSender(requestingUrl, devServerUrl);
 }
 
-export type MediaKind = "microphone" | "camera";
-export const isMediaKind = (k: unknown): k is MediaKind => k === "microphone" || k === "camera";
+export type MediaKind = "microphone" | "camera" | "screen";
+export const isMediaKind = (k: unknown): k is MediaKind => k === "microphone" || k === "camera" || k === "screen";
 
 /**
  * macOS gates the microphone and camera per app at the OS level, and only the main process can ask. Elsewhere
  * (Windows asks no app-level question through Electron) there is nothing to do. false = denied / restricted:
- * the user has to enable it in System Settings.
+ * the user has to enable it in System Settings. The screen cannot be asked for: macOS prompts by itself when the
+ * first capture starts, so "not-determined" lets it through.
  */
 export async function ensureMediaAccess(
   kind: MediaKind,
   platform: string,
-  sp: { getMediaAccessStatus(k: MediaKind): string; askForMediaAccess(k: MediaKind): Promise<boolean> },
+  sp: { getMediaAccessStatus(k: MediaKind): string; askForMediaAccess(k: "microphone" | "camera"): Promise<boolean> },
 ): Promise<boolean> {
   if (platform !== "darwin") return true;
   const status = sp.getMediaAccessStatus(kind);
   if (status === "granted") return true;
-  return status === "not-determined" ? sp.askForMediaAccess(kind) : false;
+  if (status !== "not-determined") return false;
+  return kind === "screen" ? true : sp.askForMediaAccess(kind);
 }

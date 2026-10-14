@@ -85,9 +85,11 @@ export async function register(
 
 export async function login(input: { email: string; password: string }, jwtSecret: string) {
   const user = await prisma.user.findUnique({ where: { email: input.email } });
-  const ok = await argon2.verify(user?.passwordHash ?? (await dummyHash), input.password);
-  if (!user || !ok) throw INVALID_CREDENTIALS;
-  return issueTokens(user, jwtSecret);
+  // Bots have no password (their hash is "!"): checked against the dummy, so they fail like an unknown email.
+  const human = user && !user.isBot ? user : null;
+  const ok = await argon2.verify(human?.passwordHash ?? (await dummyHash), input.password);
+  if (!human || !ok) throw INVALID_CREDENTIALS;
+  return issueTokens(human, jwtSecret);
 }
 
 /**

@@ -17,7 +17,11 @@ const PUBLIC: Record<string, string> = {
   "POST /guilds": "creates a new guild; the caller becomes its owner",
   "GET /guilds": "lists only the caller's own guilds",
   "POST /invites/:code/join": "the invite code is the capability",
-  "OPTIONS *": "CORS preflight from @fastify/cors: headers only, no data (cors.test.ts)",
+  "POST /bots": "creates a bot owned by the caller; people only (bots.test.ts)",
+  "GET /bots": "lists only the caller's own bots",
+  "POST /bots/:botId/token": "owner of the bot only, others get 404 (bots.test.ts)",
+  "DELETE /bots/:botId": "owner of the bot only, others get 404 (bots.test.ts)",
+  "OPTIONS *":"CORS preflight from @fastify/cors: headers only, no data (cors.test.ts)",
 };
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;

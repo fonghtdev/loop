@@ -89,7 +89,7 @@ describe("messages", () => {
     expect(res.statusCode).toBe(201);
     const msg = res.json();
     expect(msg).toMatchObject({ channelId: null, dmChannelId: dm.id, content: "hi", editedAt: null, author: { id: a.id, username: "alice" } });
-    expect(Object.keys(msg.author).sort()).toEqual(["id", "username"]);
+    expect(Object.keys(msg.author).sort()).toEqual(["id", "isBot", "username"]);
     expect(typeof msg.seq).toBe("string");
     await send(b, url, "yo");
     expect((await history(b, url)).map((m) => m.content)).toEqual(["hi", "yo"]);

@@ -26,13 +26,13 @@ afterAll(async () => {
 });
 
 describe("send", () => {
-  it("a member sends; author is id + username only", async () => {
+  it("a member sends; author is id + username + isBot only", async () => {
     const { member, url, channel } = await setup();
     const res = await call("POST", url, member.token, { content: "  hello  " });
     expect(res.statusCode).toBe(201);
     const msg = res.json();
     expect(msg).toMatchObject({ channelId: channel.id, content: "hello", editedAt: null, author: { id: member.id, username: "member" } });
-    expect(Object.keys(msg.author).sort()).toEqual(["id", "username"]);
+    expect(Object.keys(msg.author).sort()).toEqual(["id", "isBot", "username"]);
     expect(typeof msg.seq).toBe("string");
   });
 

@@ -4,7 +4,7 @@ import { Writable } from "node:stream";
 import { buildApp } from "../app.js";
 import { prisma } from "../db.js";
 import { caller, env, guildWith, resetDb, setEveryone, signUp } from "../../test/helpers.js";
-import { addVoiceChannel, disconnectAll, eventually, expectInRoom, identities, joinAs, publishMic, requestToken, RoomEvent, signedWebhook, testLivekit, webhookHeaders } from "../../test/voice.js";
+import { addVoiceChannel, disconnectAll, eventually, expectInRoom, identities, joinAs, publishMic, publishScreen, requestToken, RoomEvent, signedWebhook, testLivekit, webhookHeaders } from "../../test/voice.js";
 import { voiceRoom } from "./rooms.js";
 
 /** A live session must not outlast the rights it was admitted with. Everything runs against the real LiveKit. */
@@ -55,8 +55,23 @@ describe("rights changes through the API reach live sessions", () => {
     await editEveryone(f, DEFAULT_EVERYONE_PERMISSIONS & ~P.SPEAK);
     await eventually(() => expect(dropped).toBe(1));
     const seat = (await testLivekit.participants(f.room)).find((s) => s.userId === f.alice.id)!;
-    expect(seat).toMatchObject({ speak: false, video: true });
+    expect(seat).toMatchObject({ speak: false, video: true, stream: true });
     expect(await publishMic(f.rooms.alice)).toBe("refused");
+  });
+
+  it("losing STREAM unpublishes the screen but keeps the seat and the camera right", async () => {
+    const f = await fixture();
+    let heard = 0;
+    let dropped = 0;
+    f.rooms.bob.on(RoomEvent.TrackSubscribed, () => heard++);
+    f.rooms.bob.on(RoomEvent.TrackUnsubscribed, () => dropped++);
+    expect(await publishScreen(f.rooms.alice)).toBe("published");
+    await eventually(() => expect(heard).toBe(1));
+    await editEveryone(f, DEFAULT_EVERYONE_PERMISSIONS & ~P.STREAM);
+    await eventually(() => expect(dropped).toBe(1));
+    const seat = (await testLivekit.participants(f.room)).find((s) => s.userId === f.alice.id)!;
+    expect(seat).toMatchObject({ speak: true, video: true, stream: false });
+    expect(await publishScreen(f.rooms.alice)).toBe("refused");
   });
 
   it("losing VIEW through a channel overwrite removes the participant", async () => {
@@ -115,6 +130,15 @@ describe("reconcile() is the safety net", () => {
     await app.voice.reconcile();
     await eventually(async () =>
       expect((await testLivekit.participants(f.room)).map((s) => [s.speak, s.video])).toEqual([[false, true], [false, true]]),
+    );
+  });
+
+  it("downgrades a lost STREAM and keeps SPEAK and VIDEO", async () => {
+    const f = await fixture();
+    await setEveryone(f.guild.id, DEFAULT_EVERYONE_PERMISSIONS & ~P.STREAM);
+    await app.voice.reconcile();
+    await eventually(async () =>
+      expect((await testLivekit.participants(f.room)).map((s) => [s.speak, s.video, s.stream])).toEqual([[true, true, false], [true, true, false]]),
     );
   });
 

@@ -1,6 +1,7 @@
 import cors from "@fastify/cors";
 import Fastify, { type FastifyError, type FastifyServerOptions } from "fastify";
 import { authRoutes } from "./auth/routes.js";
+import { botRoutes } from "./bots/routes.js";
 import type { Env } from "./env.js";
 import { attachmentRoutes } from "./attachments/routes.js";
 import { healthRoutes } from "./health.js";
@@ -61,6 +62,7 @@ export function buildApp(env: Env, logger: FastifyServerOptions["logger"] = fals
     socialRoutes(authed);
     voiceRoutes(authed);
     callRoutes(authed);
+    botRoutes(authed);
   });
   return app;
 }

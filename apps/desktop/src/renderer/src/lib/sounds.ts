@@ -1,5 +1,5 @@
-/** The four voice-room sounds. join/leave = someone else, self* = us. */
-export type SoundKind = "join" | "leave" | "selfJoin" | "selfLeave";
+/** The voice-room sounds. join/leave = someone else, self* = us; unmute/mute = the global shortcut flipped our mic or hearing. */
+export type SoundKind = "join" | "leave" | "selfJoin" | "selfLeave" | "unmute" | "mute";
 type Note = { from: number; /** Hz at the end of the glide (the note slides from `from` to `to`) */ to: number; /** ms from the start of the sound */ at: number; /** ms, release included */ dur: number };
 type Tone = { /** peak gain of the main layer, 0..1 (the layers add up to about 2.25x this) */ gain: number; notes: Note[] };
 
@@ -17,6 +17,8 @@ export const TONES: Record<SoundKind, Tone> = {
   join: { gain: 0.22, notes: [{ from: 196, to: 262, at: 0, dur: 220 }, { from: 262, to: 330, at: 110, dur: 260 }] },
   leave: { gain: 0.22, notes: [{ from: 262, to: 196, at: 0, dur: 220 }, { from: 196, to: 147, at: 110, dur: 260 }] },
   selfJoin: { gain: 0.2, notes: [{ from: 196, to: 262, at: 0, dur: 200 }, { from: 262, to: 330, at: 100, dur: 200 }, { from: 330, to: 392, at: 200, dur: 190 }] },
+  unmute: { gain: 0.2, notes: [{ from: 330, to: 440, at: 0, dur: 100 }] },
+  mute: { gain: 0.2, notes: [{ from: 440, to: 294, at: 0, dur: 100 }] },
   selfLeave: { gain: 0.2, notes: [{ from: 330, to: 247, at: 0, dur: 200 }, { from: 247, to: 165, at: 110, dur: 270 }] },
 };
 export const MAX_MS = 400;

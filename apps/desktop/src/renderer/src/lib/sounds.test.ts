@@ -20,6 +20,10 @@ describe("tone table", () => {
       }
     });
   }
+  it("unmute rises and mute falls", () => {
+    expect(TONES.unmute.notes.every((n) => n.to > n.from)).toBe(true);
+    expect(TONES.mute.notes.every((n) => n.to < n.from)).toBe(true);
+  });
   it("join rises, leave falls", () => {
     const rises = (k: SoundKind) => TONES[k].notes.every((n) => n.to > n.from);
     const falls = (k: SoundKind) => TONES[k].notes.every((n) => n.to < n.from);

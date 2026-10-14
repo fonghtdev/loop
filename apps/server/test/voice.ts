@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { AccessToken, TokenVerifier } from "livekit-server-sdk";
-import { AudioSource, LocalAudioTrack, Room, RoomEvent, TrackPublishOptions, TrackSource } from "@livekit/rtc-node";
+import { AudioSource, LocalAudioTrack, LocalVideoTrack, Room, RoomEvent, TrackPublishOptions, TrackSource, VideoSource } from "@livekit/rtc-node";
 import { expect, vi } from "vitest";
 import { createLivekit } from "../src/voice/livekit.js";
 import { caller, env } from "./helpers.js";
@@ -33,6 +33,15 @@ export async function publishMic(room: Room, waitMs = 2000) {
   const track = LocalAudioTrack.createAudioTrack("mic", new AudioSource(48000, 1));
   const publishing = room
     .localParticipant!.publishTrack(track, new TrackPublishOptions({ source: TrackSource.SOURCE_MICROPHONE }))
+    .then(() => "published" as const, () => "refused" as const);
+  return Promise.race([publishing, new Promise<"refused">((r) => setTimeout(() => r("refused"), waitMs))]);
+}
+
+/** Like `publishMic`, for a (blank) screen-share track. */
+export async function publishScreen(room: Room, waitMs = 2000) {
+  const track = LocalVideoTrack.createVideoTrack("screen", new VideoSource(64, 64));
+  const publishing = room
+    .localParticipant!.publishTrack(track, new TrackPublishOptions({ source: TrackSource.SOURCE_SCREENSHARE }))
     .then(() => "published" as const, () => "refused" as const);
   return Promise.race([publishing, new Promise<"refused">((r) => setTimeout(() => r("refused"), waitMs))]);
 }

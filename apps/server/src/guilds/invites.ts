@@ -12,13 +12,13 @@ const newInviteCode = () => randomBytes(6).toString("base64url");
 const isUniqueViolation = (e: unknown) =>
   e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 
-/** Consumes one use and creates the Member atomically; a failed join rolls back and burns nothing. */
+/** Consumes one use and creates the Member atomically; a failed join rolls back and burns nothing. `joined` is false for an existing member. */
 async function joinWithInvite(code: string, userId: string) {
   return prisma.$transaction(async (tx) => {
     const invite = await tx.invite.findUnique({ where: { code } });
     if (!invite) throw NOT_FOUND;
     const member = await tx.member.findUnique({ where: { guildId_userId: { guildId: invite.guildId, userId } } });
-    if (member) return invite.guildId;
+    if (member) return { guildId: invite.guildId, joined: false };
     const { count } = await tx.invite.updateMany({
       where: {
         code,
@@ -29,7 +29,7 @@ async function joinWithInvite(code: string, userId: string) {
     });
     if (count === 0) throw NOT_FOUND;
     await tx.member.create({ data: { guildId: invite.guildId, userId } });
-    return invite.guildId;
+    return { guildId: invite.guildId, joined: true };
   });
 }
 
@@ -52,13 +52,18 @@ export function inviteRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { code: string } }>("/invites/:code/join", async (req) => {
     const { code } = req.params;
-    let guildId: string;
+    let result: { guildId: string; joined: boolean };
     try {
-      guildId = await joinWithInvite(code, req.userId);
+      result = await joinWithInvite(code, req.userId);
     } catch (e) {
       // Same user joined concurrently: the other request won and this one rolled back, so they are a member.
       if (!isUniqueViolation(e)) throw e;
-      guildId = (await prisma.invite.findUniqueOrThrow({ where: { code } })).guildId;
+      result = { guildId: (await prisma.invite.findUniqueOrThrow({ where: { code } })).guildId, joined: false };
+    }
+    const { guildId } = result;
+    if (result.joined) {
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: req.userId }, select: { id: true, username: true, isBot: true } });
+      await app.realtime.emitToGuild(guildId, "member:joined", () => ({ guildId, user }));
     }
     return { guild: await prisma.guild.findUniqueOrThrow({ where: { id: guildId } }) };
   });
