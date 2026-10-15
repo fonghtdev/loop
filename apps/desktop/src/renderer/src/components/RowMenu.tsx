@@ -4,17 +4,20 @@ import { arrowNav } from "../lib/focus";
 import { Tooltip } from "./Tooltip";
 
 /** One item of a popover menu. */
-export function MenuItem({ icon, label, danger = false, selected, onClick }: { icon: ReactNode; label: string; danger?: boolean; selected?: boolean; onClick: () => void }) {
+export function MenuItem({ icon, label, danger = false, selected, expanded, disabled, trailing, onClick }: { icon: ReactNode; label: string; danger?: boolean; selected?: boolean; /** A row that opens a group of rows below it. */ expanded?: boolean; disabled?: boolean; trailing?: ReactNode; onClick: () => void }) {
   return (
     <button
       type="button"
       data-nav-item
       aria-pressed={selected}
+      aria-expanded={expanded}
+      disabled={disabled}
       onClick={onClick}
-      className={`flex h-10 w-full items-center gap-2.5 rounded-sm px-2.5 text-left text-sm font-medium hover:bg-white/8 focus-visible:bg-cosmic-wash focus-visible:outline-offset-[-2px] focus-visible:shadow-none ${danger ? "text-danger" : "text-ink"}`}
+      className={`flex h-10 w-full items-center gap-2.5 rounded-sm px-2.5 text-left text-sm font-medium hover:bg-white/8 focus-visible:bg-cosmic-wash focus-visible:outline-offset-[-2px] focus-visible:shadow-none disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent ${danger ? "text-danger" : "text-ink"}`}
     >
       {icon}
-      {label}
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {trailing}
     </button>
   );
 }

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { standingFor, type SettingsCtx } from "./admin";
 import type { Member, Role } from "./permissions";
 import type { Dm, FriendsData } from "./social";
-import { cardActions, cardDate, modView, placeCard, presenceOf, relationOf, roleChips } from "./user-card";
+import { cardActions, cardDate, filterRoles, modView, placeCard, presenceOf, relationOf, roleChips, roleColor, rolesView, stepIndex } from "./user-card";
 
 const G = "g";
 const role = (id: string, position: number, permissions: number): Role => ({ id, guildId: G, name: id, permissions, position });
@@ -126,5 +126,57 @@ describe("modView (admin part of the card)", () => {
   });
   it("the owner may assign every real role", () => {
     expect(modView(ctxFor("owner"), target("plain")).assignable.map((r) => r.id)).toEqual(["mod", "helper", "newbie"]);
+  });
+});
+
+describe("roles block (Discord-like card)", () => {
+  it("regression: the caller may add roles even when nothing is left to hand out", () => {
+    // the moderator already gave "plain" every role below their top: assignable is empty but "+" must stay
+    const full = member("full", "helper", "newbie");
+    const v = modView({ ...ctxFor("m"), members: [...members, full] }, full);
+    expect(v.assignable).toEqual([]);
+    expect(v.canRoles).toBe(true);
+    expect(rolesView({ isOwner: false, chipCount: 2, mod: v }).canAdd).toBe(true);
+  });
+  it("the plus shows with no role and with one role; nobody who cannot manage roles gets it", () => {
+    expect(rolesView({ isOwner: false, chipCount: 0, mod: modView(ctxFor("m"), target("plain")) })).toEqual({ show: true, canAdd: true });
+    expect(rolesView({ isOwner: false, chipCount: 1, mod: modView(ctxFor("m"), target("n")) })).toEqual({ show: true, canAdd: true });
+    expect(rolesView({ isOwner: false, chipCount: 1, mod: modView(ctxFor("h"), target("n")) })).toEqual({ show: true, canAdd: false });
+  });
+  it("no right and no roles hides the block; the roles are not loaded yet (mod null) behaves the same", () => {
+    expect(rolesView({ isOwner: false, chipCount: 0, mod: modView(ctxFor("plain"), target("n")) }).show).toBe(false);
+    expect(rolesView({ isOwner: false, chipCount: 0, mod: null }).show).toBe(false);
+    expect(rolesView({ isOwner: false, chipCount: 2, mod: null })).toEqual({ show: true, canAdd: false });
+  });
+  it("the guild owner gets no roles block at all, even with roles", () => {
+    expect(rolesView({ isOwner: true, chipCount: 3, mod: modView(ctxFor("m"), target("owner")) })).toEqual({ show: false, canAdd: false });
+  });
+  it("a manager cannot add roles to the owner (canRoles false)", () => {
+    expect(modView(ctxFor("m"), target("owner")).canRoles).toBe(false);
+  });
+});
+
+describe("filterRoles / stepIndex", () => {
+  it("filters by name substring, ignoring case and surrounding spaces; empty query keeps all", () => {
+    const rs = [role("a", 1, 0), { ...role("b", 2, 0), name: "Quản trị" }, { ...role("c", 3, 0), name: "Khách" }];
+    expect(filterRoles(rs, "  QUẢN ").map((r) => r.id)).toEqual(["b"]);
+    expect(filterRoles(rs, "").length).toBe(3);
+    expect(filterRoles(rs, "zzz")).toEqual([]);
+  });
+  it("arrow keys wrap around; an empty list has no row", () => {
+    expect(stepIndex(0, -1, 3)).toBe(2);
+    expect(stepIndex(2, 1, 3)).toBe(0);
+    expect(stepIndex(0, 1, 0)).toBe(-1);
+  });
+});
+
+describe("roleColor", () => {
+  it("is stable per id and prefers the role's own color", () => {
+    expect(roleColor({ id: "x" })).toBe(roleColor({ id: "x" }));
+    expect(roleColor({ id: "x", color: "#123456" })).toBe("#123456");
+  });
+  it("spreads ids over several distinct hues", () => {
+    const colors = new Set(Array.from({ length: 40 }, (_, i) => roleColor({ id: `role-${i}` })));
+    expect(colors.size).toBeGreaterThanOrEqual(6);
   });
 });

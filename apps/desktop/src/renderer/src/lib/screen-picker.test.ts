@@ -4,7 +4,7 @@ import { createScreenPicker } from "./screen-picker";
 
 const sources = [{ id: "screen:1", name: "Screen 1", thumbnail: "data:x" }];
 const devices = [{ id: "cam1", label: "Capture card" }];
-const choice: ShareChoice = { source: { kind: "display", id: "screen:1" }, quality: { resolution: "720", fps: 60 }, audio: true };
+const choice: ShareChoice = { source: { kind: "display", id: "screen:1" }, quality: { resolution: "720", fps: 60 }, audio: true, label: "Screen 1" };
 const prefs: GoLivePrefs = { resolution: "720", fps: 60, audio: true };
 const make = () => {
   const save = vi.fn();

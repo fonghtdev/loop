@@ -34,10 +34,13 @@ function GoLiveForm({ sources, devices }: { sources: ScreenSource[]; devices: Sh
   const { screens, windows } = partitionSources(sources);
   const canAudio = audioAllowed(tab === "devices" ? "device" : "display", window.loop.platform);
 
+  const screenLabel = (i: number) => (screens.length > 1 ? t("golive.screenN", { n: String(i + 1) }) : t("golive.screenOne"));
   const confirm = () => {
     if (!selected) return;
+    const label =
+      tab === "devices" ? (devices.find((d) => d.id === selected)?.label ?? t("golive.deviceFallback")) : tab === "screens" ? screenLabel(screens.findIndex((s) => s.id === selected)) : (windows.find((s) => s.id === selected)?.name ?? "");
     const source = tab === "devices" ? ({ kind: "device", deviceId: selected } as const) : ({ kind: "display", id: selected } as const);
-    screenPicker.confirm({ source, quality: { resolution, fps }, audio: canAudio && audio }, { resolution, fps, audio });
+    screenPicker.confirm({ source, quality: { resolution, fps }, audio: canAudio && audio, label }, { resolution, fps, audio });
   };
   const thumbs = (list: ScreenSource[], label: (s: ScreenSource, i: number) => string, empty: string) =>
     list.length === 0 ? (
@@ -74,7 +77,7 @@ function GoLiveForm({ sources, devices }: { sources: ScreenSource[]; devices: Sh
           ]}
         />
         {tab === "apps" && thumbs(windows, (s) => s.name, t("golive.noApps"))}
-        {tab === "screens" && thumbs(screens, (_, i) => (screens.length > 1 ? t("golive.screenN", { n: String(i + 1) }) : t("golive.screenOne")), t("golive.noScreens"))}
+        {tab === "screens" && thumbs(screens, (_, i) => screenLabel(i), t("golive.noScreens"))}
         {tab === "devices" &&
           (devices.length === 0 ? (
             <p className="text-small text-ink-muted">{t("golive.noDevices")}</p>

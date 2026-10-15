@@ -76,7 +76,36 @@ export function roleChips(roleIds: string[], roles: Role[], guildId: string) {
   return roles.filter((r) => r.id !== guildId && roleIds.includes(r.id)).sort((a, b) => b.position - a.position);
 }
 
-export type ModView = { kick: boolean; assignable: Role[]; removable: Set<string> };
+/** Dot color of a role: its own `color` when the server sends one, else a stable pick from the palette by role id. */
+const ROLE_PALETTE = ["#e5736b", "#e8a05a", "#e3c65c", "#8fcf6a", "#4fc9a4", "#55b9e0", "#6f93f0", "#a78bfa", "#d77bd8", "#f08aa9"];
+export function roleColor(role: Pick<Role, "id" | "color">) {
+  if (role.color) return role.color;
+  let h = 0;
+  for (const ch of role.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return ROLE_PALETTE[h % ROLE_PALETTE.length];
+}
+
+/** The picker list: roles whose name contains the query (case-insensitive, trimmed); an empty query keeps all. */
+export function filterRoles(roles: Role[], query: string) {
+  const q = query.trim().toLowerCase();
+  return roles.filter((r) => r.name.toLowerCase().includes(q));
+}
+
+/** Arrow-key step through `length` rows, wrapping at both ends; -1 when the list is empty. */
+export const stepIndex = (index: number, delta: 1 | -1, length: number) => (length === 0 ? -1 : (index + delta + length) % length);
+
+/**
+ * What the roles block of the card shows. The owner has no roles block (a crown by the name instead). "+" depends only on
+ * the right to manage this member's roles, NOT on what is left to hand out (an empty picker says so itself). Without that
+ * right the chips are read-only, and the block is hidden when there is nothing to show.
+ */
+export function rolesView(i: { isOwner: boolean; chipCount: number; mod: ModView | null }) {
+  if (i.isOwner) return { show: false, canAdd: false };
+  const canAdd = i.mod?.canRoles ?? false;
+  return { show: canAdd || i.chipCount > 0, canAdd };
+}
+
+export type ModView = { kick: boolean; canRoles: boolean; assignable: Role[]; removable: Set<string> };
 
 /**
  * What an admin may do to this member from the card, from the SAME rules as the members panel (`canManageMember`, rule
@@ -89,6 +118,7 @@ export function modView(ctx: SettingsCtx, target: Member): ModView {
   const handOut = (r: Role) => r.id !== guildId && canHandOutRole(standing, r, channels);
   const usable = mayRoles ? roles.filter(handOut) : [];
   return {
+    canRoles: mayRoles,
     kick: hasPermission(standing.bits, Permission.KICK_MEMBERS) && canManageMember(standing, target, ownerId, roles, "kick"),
     assignable: usable.filter((r) => !target.roleIds.includes(r.id)).sort((a, b) => b.position - a.position),
     removable: new Set(usable.filter((r) => target.roleIds.includes(r.id)).map((r) => r.id)),

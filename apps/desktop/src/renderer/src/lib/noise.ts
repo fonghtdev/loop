@@ -3,6 +3,8 @@ import type { MessageKey } from "../i18n/vi";
 /** How hard the microphone is cleaned: off = the browser's own filter, standard = RNNoise, strong = RNNoise + noise gate. */
 export type NoiseLevel = "off" | "standard" | "strong";
 export const NOISE_LEVELS: NoiseLevel[] = ["off", "standard", "strong"];
+/** A short reason for a failure, to show next to the note so a report says what went wrong. */
+export const reasonOf = (e: unknown) => (e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 120) : undefined);
 export const DEFAULT_NOISE_LEVEL: NoiseLevel = "standard";
 
 export type NoiseConfig = {

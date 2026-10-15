@@ -16,14 +16,16 @@ describe("parseSettings (reading a stored file)", () => {
 
 describe("shortcut settings", () => {
   it("a stored odd or missing accelerator falls back to the default, an empty one (cleared) is kept", () => {
-    expect(parseSettings({ micShortcut: "M", deafenShortcut: 5 })).toEqual(DEFAULT_SETTINGS);
+    expect(parseSettings({ micShortcut: "Control+Shift", deafenShortcut: 5 })).toEqual(DEFAULT_SETTINGS);
     expect(parseSettings({ micShortcut: "" }).micShortcut).toBe("");
     expect(parseSettings({ micShortcut: "Control+Alt+K" }).micShortcut).toBe("Control+Alt+K");
   });
   it("a patch takes a valid accelerator or empty, and refuses anything else", () => {
     expect(parsePatch({ micShortcut: "Control+Alt+K" })).toEqual({ micShortcut: "Control+Alt+K" });
+    expect(parsePatch({ micShortcut: "=" })).toEqual({ micShortcut: "=" });
+    expect(parsePatch({ deafenShortcut: "Control+;" })).toEqual({ deafenShortcut: "Control+;" });
     expect(parsePatch({ deafenShortcut: "" })).toEqual({ deafenShortcut: "" });
-    for (const bad of ["K", "Shift+K", true, null]) expect(parsePatch({ micShortcut: bad })).toBeNull();
+    for (const bad of ["Control+Shift", "Escape", "Control+K+L", "x".repeat(200), true, null]) expect(parsePatch({ micShortcut: bad })).toBeNull();
     expect(parsePatch({ preview: "x" })).toBeNull();
   });
   it("the store refuses two shortcuts with the same keys and changes nothing", () => {

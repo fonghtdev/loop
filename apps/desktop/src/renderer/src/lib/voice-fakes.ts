@@ -1,8 +1,9 @@
 import type { TrackPublishOptions } from "livekit-client";
 import { vi } from "vitest";
 import type { AudioSink, AudioTrackLike } from "./audio-sink";
-import type { ShareChoice } from "./golive";
+import type { GoLivePrefs, ShareChoice } from "./golive";
 import type { NoiseLevel } from "./noise";
+import type { TapAudio } from "./speech-level";
 import { createVoice, type LocalParticipantLike, type ParticipantLike, type RoomLike } from "./voice";
 
 /** A captured track: only what the voice session touches. */
@@ -112,9 +113,23 @@ export const audioTrack = () => ({ kind: "audio", attach: () => document.createE
 /** A stand-in for LocalAudioTrack's processor handling: `processor` is what is attached now. */
 export class FakeMicTrack {
   processor: unknown = null;
-  constraints: unknown[] = [];
+  restarts: unknown[] = [];
   setFails = false;
-  mediaStreamTrack = { applyConstraints: async (c: unknown) => void this.constraints.push(c) };
+  /** `filterOn`: the browser's noiseSuppression of the capture the track started with. */
+  constructor(private filterOn = true) {}
+  getSourceTrackSettings() {
+    return { noiseSuppression: this.filterOn };
+  }
+  async restartTrack(c: { noiseSuppression: boolean }) {
+    this.restarts.push(c);
+    this.filterOn = c.noiseSuppression;
+  }
+  // like LiveKit's: with a processor attached `mediaStreamTrack` is the processor's output, which refuses constraints
+  mediaStreamTrack = {
+    applyConstraints: async () => {
+      if (this.processor) throw new Error("OverconstrainedError: Cannot satisfy constraints");
+    },
+  };
   async setProcessor(p: unknown) {
     if (this.setFails) throw new Error("worklet failed");
     this.processor = p;
@@ -129,7 +144,8 @@ export function setupVoice(token: Partial<{ canSpeak: boolean; canVideo: boolean
   const sink = new FakeSink();
   const request = vi.fn(async (_m: "POST", _p: string, _b?: unknown): Promise<unknown> => ({ token: "tok", url: "ws://lk", canSpeak: true, canVideo: true, canStream: true, ...token }));
   const ensureMedia = vi.fn(async (_k: string) => true);
-  const pickScreen = vi.fn(async (): Promise<ShareChoice | null> => ({ source: { kind: "display", id: "screen:1" }, quality: { resolution: "720", fps: 60 }, audio: true }));
+  const rememberShare = vi.fn<(prefs: GoLivePrefs) => void>();
+  const pickScreen = vi.fn(async (): Promise<ShareChoice | null> => ({ source: { kind: "display", id: "screen:1" }, quality: { resolution: "720", fps: 60 }, audio: true, label: "Màn hình" }));
   const captured: FakeTrack[] = [];
   const capture = vi.fn(async (choice: ShareChoice, _profile: unknown) => {
     const tracks = [new FakeTrack("video"), ...(choice.audio ? [new FakeTrack("audio")] : [])];
@@ -140,6 +156,7 @@ export function setupVoice(token: Partial<{ canSpeak: boolean; canVideo: boolean
   let level: NoiseLevel = "off";
   const processors: { level: NoiseLevel; onFail: (reason?: string) => void }[] = [];
   let clock = 1000;
+  const tap = vi.fn<TapAudio>();
   const voice = createVoice({
     request: request as never,
     createRoom: () => {
@@ -151,11 +168,13 @@ export function setupVoice(token: Partial<{ canSpeak: boolean; canVideo: boolean
     sink,
     ensureMedia,
     pickScreen,
+    rememberShare,
     capture: capture as never,
+    tap,
     noise: { level: () => level, processor: (l, onFail) => (l === "off" ? null : (processors.push({ level: l, onFail }), { name: l } as never)) },
     livekitOrigin: "ws://lk",
     now: () => clock,
     onSound: (kind, deafened) => void sounds.push([kind, deafened]),
   });
-  return { voice, rooms, processors, setLevel: (l: NoiseLevel) => (level = l), room: () => rooms[rooms.length - 1], sink, request, ensureMedia, pickScreen, capture, captured, sounds, state: () => voice.store.getState(), tick: (ms: number) => (clock += ms) };
+  return { voice, tap, rooms, processors, setLevel: (l: NoiseLevel) => (level = l), room: () => rooms[rooms.length - 1], sink, request, ensureMedia, pickScreen, rememberShare, capture, captured, sounds, state: () => voice.store.getState(), tick: (ms: number) => (clock += ms) };
 }

@@ -4,10 +4,11 @@ import { t } from "../i18n/t";
 import { isAllowedLivekitUrl } from "../../../shared/url";
 import type { AudioSink, AudioTrackLike } from "./audio-sink";
 import { errorMessage } from "./errors";
-import type { ShareChoice, StreamProfile } from "./golive";
+import type { GoLivePrefs, Quality, ShareChoice, StreamProfile } from "./golive";
 import { streamProfile } from "./golive";
 import { clampVolume, effectiveVolume, pruneWatching, subscriptionChanges } from "./stream-watch";
-import { noiseConfig, type NoiseLevel } from "./noise";
+import { noiseConfig, reasonOf, type NoiseLevel } from "./noise";
+import { createSpeechDetector, type LevelProbe, type TapAudio } from "./speech-level";
 import type { SoundKind } from "./sounds";
 import { encodeDeafened, parseDeafened } from "./voice-flags";
 import type { Participant } from "./voice-presence";
@@ -44,6 +45,8 @@ export type VoiceState = {
   camEnabled: boolean;
   /** We are sharing the screen (never true unless canStream; follows the OS "Stop sharing" too). */
   screenEnabled: boolean;
+  /** What the running share is (source, quality, sound, name for the panel card); null exactly when `screenEnabled` is false. */
+  stream: ShareChoice | null;
   deafened: boolean;
   /** The microphone state to restore on undeafen. */
   micBeforeDeafen: boolean;
@@ -58,7 +61,7 @@ export type VoiceState = {
 };
 
 // ---- the slice of livekit-client's Room that is used (tests pass a fake) ----
-type TrackPublicationLike = { track?: (Participant["video"] & Partial<AudioTrackLike>) | undefined; isMuted: boolean; /** Remote publications only. */ isSubscribed?: boolean; setSubscribed?(subscribed: boolean): void };
+type TrackPublicationLike = { track?: (Participant["video"] & Partial<AudioTrackLike> & { mediaStreamTrack?: MediaStreamTrack }) | undefined; isMuted: boolean; /** Remote publications only. */ isSubscribed?: boolean; setSubscribed?(subscribed: boolean): void };
 export type ParticipantLike = { identity: string; name?: string; metadata?: string; permissions?: { canPublish: boolean; canPublishSources: number[] }; getTrackPublication(source: string): TrackPublicationLike | undefined };
 export type LocalParticipantLike = ParticipantLike & {
   setMetadata(metadata: string): Promise<unknown>;
@@ -78,7 +81,9 @@ export type RoomLike = {
 };
 
 /** The slice of LiveKit's LocalAudioTrack the noise level touches. */
-type MicTrackLike = { mediaStreamTrack: Pick<MediaStreamTrack, "applyConstraints">; setProcessor(p: NoiseProcessor): Promise<void>; stopProcessor(): Promise<void> };
+// LiveKit: `mediaStreamTrack` is the processor's OUTPUT while one is attached and refuses constraints, so the browser's filter is
+// read from the source track and changed only by a new capture (`restartTrack`).
+type MicTrackLike = { getSourceTrackSettings(): MediaTrackSettings; restartTrack(constraints: { noiseSuppression: boolean }): Promise<void>; setProcessor(p: NoiseProcessor): Promise<void>; stopProcessor(): Promise<void> };
 export type NoiseProcessor = TrackProcessor<Track.Kind.Audio, AudioProcessorOptions>;
 /** The microphone cleaning: the chosen level, and the processor for it (null = none; `onFail` is told when it cannot start). */
 export type NoiseDeps = { level: () => NoiseLevel; processor: (level: NoiseLevel, onFail: (reason?: string) => void) => NoiseProcessor | null };
@@ -94,7 +99,11 @@ type Deps = {
   pickScreen: () => Promise<ShareChoice | null>;
   /** The tracks of a chosen source at a profile: the picture first, then the sound if there is any. */
   capture: (choice: ShareChoice, profile: StreamProfile) => Promise<MediaStreamTrack[]>;
+  /** Remembers the quality and sound a live change settled on (the Go Live dialog's own memory). */
+  rememberShare: (prefs: GoLivePrefs) => void;
   noise: NoiseDeps;
+  /** Measures a microphone track locally for an instant speaking ring; without it only LiveKit's own flag is used. */
+  tap?: TapAudio;
   /** The one LiveKit origin the CSP allows. */
   livekitOrigin: string;
   now?: () => number;
@@ -145,6 +154,7 @@ const RESET: Omit<VoiceState, "sessionId" | "notice"> = {
   micEnabled: false,
   camEnabled: false,
   screenEnabled: false,
+  stream: null,
   deafened: false,
   micBeforeDeafen: false,
   mediaNote: null,
@@ -162,12 +172,14 @@ const RESET: Omit<VoiceState, "sessionId" | "notice"> = {
  * Publishing: a participant without SPEAK/VIDEO that tries to publish gets no error, the publish just hangs, so
  * the microphone/camera/screen are only ever started through `setMic`/`setCamera`/`setScreen`, which check `canSpeak`/`canVideo`/`canStream`.
  */
-export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen, capture, noise, livekitOrigin, now = Date.now, onSound }: Deps) {
+export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen, capture, rememberShare, noise, tap, livekitOrigin, now = Date.now, onSound }: Deps) {
   const store = createStore<VoiceState>(() => ({ ...RESET, sessionId: 0, notice: null }));
   const get = store.getState;
   const set = store.setState;
   let room: RoomLike | null = null;
   let speaking = new Set<string>();
+  // Who is speaking by our own measurement (LiveKit's flag arrives a second or two late); OR-ed with `speaking`.
+  let measured = new Set<string>();
   let session = 0;
   // Who is in the room, for join/leave sounds. null = not listening: while connecting (the initial list is silent) and
   // while reconnecting (LiveKit re-announces everyone); on (re)connect it is re-read, so nobody there already sounds.
@@ -185,7 +197,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     const screen = p.getTrackPublication("screen_share");
     // someone who may not speak has no microphone state to show; for everyone else a missing or muted track is "mic off"
     const micOff = rightsOf(p.permissions ?? { canPublish: true, canPublishSources: [] }).canSpeak && (!mic || mic.isMuted);
-    return { userId: p.identity, username: p.name || p.identity, isLocal, speaking: speaking.has(p.identity), video: cam?.track && !cam.isMuted ? cam.track : undefined, screen: screen?.track && !screen.isMuted ? screen.track : undefined, sharing: !!screen, micOff, deafened: parseDeafened(p.metadata) };
+    return { userId: p.identity, username: p.name || p.identity, isLocal, speaking: speaking.has(p.identity) || measured.has(p.identity), video: cam?.track && !cam.isMuted ? cam.track : undefined, screen: screen?.track && !screen.isMuted ? screen.track : undefined, sharing: !!screen, micOff, deafened: parseDeafened(p.metadata) };
   };
   const refresh = () => {
     if (!room) return;
@@ -220,11 +232,57 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     syncStreams();
   };
 
+  // ---- local speaking detection: one analyser per audible microphone, sampled every METER_MS ----
+  // ponytail: thresholds in speech-level.ts are a guess; analysis is capped at the room limit (25 people).
+  const METER_MS = 50;
+  const METER_MAX = 25;
+  type Tap = { track: MediaStreamTrack; probe: LevelProbe; detect: ReturnType<typeof createSpeechDetector> };
+  const taps = new Map<string, Tap>();
+  let meterTimer: ReturnType<typeof setInterval> | null = null;
+  const closeTap = (id: string) => {
+    taps.get(id)?.probe.close();
+    taps.delete(id);
+  };
+  function meterTick() {
+    if (!room || !tap) return;
+    const at = now();
+    const next = new Set<string>();
+    const present = new Set<string>();
+    for (const p of [room.localParticipant, ...room.remoteParticipants.values()].slice(0, METER_MAX)) {
+      const pub = p.getTrackPublication("microphone");
+      const track = pub?.track?.mediaStreamTrack;
+      // a muted, unsubscribed or (for us) switched-off microphone is never measured
+      if (!track || pub.isMuted || (p === room.localParticipant && !get().micEnabled)) continue;
+      present.add(p.identity);
+      let entry = taps.get(p.identity);
+      if (entry?.track !== track) {
+        closeTap(p.identity);
+        entry = { track, probe: tap(track) ?? { read: () => -Infinity, close: () => undefined }, detect: createSpeechDetector() };
+        taps.set(p.identity, entry);
+      }
+      if (entry.detect(entry.probe.read(), at)) next.add(p.identity);
+    }
+    for (const id of [...taps.keys()]) if (!present.has(id)) closeTap(id);
+    if (next.size === measured.size && [...next].every((id) => measured.has(id))) return; // store untouched unless someone flipped
+    measured = next;
+    refresh();
+  }
+  const startMeter = () => {
+    if (tap && !meterTimer) meterTimer = setInterval(meterTick, METER_MS);
+  };
+  function stopMeter() {
+    if (meterTimer) clearInterval(meterTimer);
+    meterTimer = null;
+    for (const id of [...taps.keys()]) closeTap(id);
+    measured = new Set();
+  }
+
   /** Drops the room and everything hanging off it; the caller sets the next state. */
   function release() {
     const r = room;
     room = null;
     speaking = new Set();
+    stopMeter();
     known = null;
     sink.clear();
     streamAudio.clear();
@@ -276,6 +334,9 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
   // ends the share must (otherwise the capture, and a camera's light, would stay on).
   let shared: MediaStreamTrack[] = [];
   const stopShared = () => shared.splice(0).forEach((track) => track.stop());
+  // true while a share is being replaced by its successor: LiveKit announces the old picture's end, which is not "the share stopped"
+  let swapping = false;
+  const SHARE_OFF = { screenEnabled: false, stream: null };
   async function unshare(r: RoomLike) {
     const old = shared.splice(0);
     await Promise.all(old.map((track) => r.localParticipant.unpublishTrack(track).catch(() => undefined)));
@@ -300,26 +361,54 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
       const allowed = await ensureMedia(camera ? "camera" : "screen");
       if (!active(id)) return;
       if (!allowed) return set({ mediaNote: t(camera ? "voice.media.camOsDenied" : "voice.media.screenOsDenied") });
+      await goLive(r, id, choice);
+    });
+  }
+  /** Replaces the running share (if any) with `choice`: the old tracks go first, so there is never more than one share published. */
+  async function goLive(r: RoomLike, id: number, choice: ShareChoice) {
+    swapping = true;
+    try {
       await unshare(r);
-      set({ screenEnabled: true });
-      try {
-        const profile = streamProfile(choice.quality);
-        const tracks = (shared = await capture(choice, profile));
-        for (const track of tracks) {
-          const video = track.kind === "video";
-          await r.localParticipant.publishTrack(track, video ? { source: Track.Source.ScreenShare, screenShareEncoding: profile.publish, simulcast: false } : { source: Track.Source.ScreenShareAudio });
-        }
-      } catch {
-        await unshare(r);
-        if (active(id)) set({ screenEnabled: false, mediaNote: t(camera ? "voice.media.camDenied" : "voice.media.screenDenied") });
+    } finally {
+      swapping = false;
+    }
+    set({ screenEnabled: true, stream: choice });
+    try {
+      const profile = streamProfile(choice.quality);
+      const tracks = (shared = await capture(choice, profile));
+      for (const track of tracks) {
+        const video = track.kind === "video";
+        await r.localParticipant.publishTrack(track, video ? { source: Track.Source.ScreenShare, screenShareEncoding: profile.publish, simulcast: false } : { source: Track.Source.ScreenShareAudio });
       }
-      if (active(id)) refresh();
+    } catch {
+      await unshare(r);
+      if (active(id)) set({ ...SHARE_OFF, mediaNote: t(choice.source.kind === "device" ? "voice.media.camDenied" : "voice.media.screenDenied") });
+    }
+    if (active(id)) refresh();
+  }
+  /**
+   * Changes the quality or the sound of the running share while keeping its source: the same source is captured again
+   * (the main process answers one getDisplayMedia per `choose`, and `capture` chooses every time) and replaces the old
+   * tracks. Nothing is asked; a no-op change does nothing. The choice is remembered like the dialog's.
+   */
+  function reshare(change: { quality?: Quality; audio?: boolean }) {
+    if (!room || !get().stream) return Promise.resolve();
+    const id = session;
+    return serial(async () => {
+      const r = room;
+      const cur = get().stream;
+      if (!r || !active(id) || !cur) return;
+      const next: ShareChoice = { ...cur, ...change };
+      if (next.audio === cur.audio && next.quality.resolution === cur.quality.resolution && next.quality.fps === cur.quality.fps) return;
+      set({ mediaNote: null });
+      rememberShare({ ...next.quality, audio: next.audio });
+      await goLive(r, id, next);
     });
   }
   function stopScreen() {
     const id = session;
     if (!room || !get().screenEnabled) return Promise.resolve();
-    set({ screenEnabled: false, mediaNote: null });
+    set({ ...SHARE_OFF, mediaNote: null });
     return serial(async () => {
       if (room && active(id)) await unshare(room);
     });
@@ -332,18 +421,21 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
    */
   async function moveNoise() {
     const track = room?.localParticipant.getTrackPublication("microphone")?.track as Partial<MicTrackLike> | undefined;
-    if (!track?.setProcessor || !track.stopProcessor || !track.mediaStreamTrack) return;
+    if (!track?.setProcessor || !track.stopProcessor || !track.restartTrack || !track.getSourceTrackSettings) return;
     const id = session;
     const level = noise.level();
+    const browserFilter = noiseConfig(level).browserNoiseSuppression;
     try {
       const p = noise.processor(level, noiseFailed);
       if (p) await track.setProcessor(p);
       else await track.stopProcessor();
-      await track.mediaStreamTrack.applyConstraints({ noiseSuppression: noiseConfig(level).browserNoiseSuppression });
-    } catch {
+      if (track.getSourceTrackSettings().noiseSuppression !== browserFilter) await track.restartTrack({ noiseSuppression: browserFilter });
+      if (active(id) && get().mediaNote?.startsWith(t("voice.media.noiseFailed"))) set({ mediaNote: null }); // it works now: drop the old complaint
+    } catch (e) {
+      console.error("[noise] switching level failed:", e);
       await track.stopProcessor().catch(() => undefined);
-      await track.mediaStreamTrack.applyConstraints({ noiseSuppression: true }).catch(() => undefined);
-      if (active(id)) noiseFailed();
+      await track.restartTrack({ noiseSuppression: true }).catch(() => undefined);
+      if (active(id)) noiseFailed(reasonOf(e));
     }
   }
 
@@ -358,6 +450,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
       micBeforeDeafen: s.micBeforeDeafen && canSpeak,
       camEnabled: s.camEnabled && canVideo,
       screenEnabled: s.screenEnabled && canStream,
+      stream: canStream ? s.stream : null,
     });
     if (!canStream) stopShared();
     refresh();
@@ -421,8 +514,8 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     });
     // the OS "Stop sharing" button (or a revoked right) ends the track without us asking: the button follows
     on("localTrackUnpublished", (pub: { source: string }) => {
-      if (pub.source === "screen_share") {
-        set({ screenEnabled: false });
+      if (pub.source === "screen_share" && !swapping) {
+        set(SHARE_OFF);
         void unshare(r); // the picture ended on its own: the sound track of the share goes too
       }
       refresh();
@@ -482,6 +575,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     set({ status: "connected", startedAt: now() });
     known = new Set(r.remoteParticipants.keys());
     sound("selfJoin");
+    startMeter();
     publicationsChanged();
     await setMic(true);
     if (video) await setCamera(true);
@@ -502,6 +596,10 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     startScreen,
     stopScreen,
     toggleScreen: () => (get().screenEnabled ? stopScreen() : startScreen()),
+    /** Live: same source, new resolution / frame rate (the picture restarts). */
+    setStreamQuality: (quality: Quality) => reshare({ quality }),
+    /** Live: same source, system sound on or off (the picture restarts). */
+    setStreamAudio: (audio: boolean) => reshare({ audio }),
     /** Start watching someone's screen share (only a person who is sharing right now); subscribes picture and sound. */
     watch(userId: string) {
       const sharing = get().participants.some((p) => p.userId === userId && !p.isLocal && p.sharing);

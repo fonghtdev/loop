@@ -26,7 +26,7 @@ export function Video({ source, fit = "cover" }: { source: NonNullable<Tile["p"]
  * there is no per-person audio level; the ring is driven by --lv so a level could drive it later). A tile that joins
  * springs in, one that leaves springs out (opacity + transform; instant under reduced motion) and then asks to be dropped.
  */
-export function ParticipantTile({ tile, guildId, onGone }: { tile: Tile; guildId: string | null; onGone: (userId: string) => void }) {
+export function ParticipantTile({ tile, guildId, onGone, className = "" }: { tile: Tile; guildId: string | null; onGone: (userId: string) => void; className?: string }) {
   const { p, state } = tile;
   const el = useRef<HTMLLIElement>(null);
   const entered = useRef(state === "enter");
@@ -52,7 +52,7 @@ export function ParticipantTile({ tile, guildId, onGone }: { tile: Tile; guildId
       data-speaking={p.speaking ? "true" : undefined}
       data-user={p.userId}
       style={{ "--lv": p.speaking ? 1 : 0 } as CSSProperties}
-      className="relative edge @container aspect-[16/10] min-w-0 overflow-hidden rounded-panel bg-raise shadow-e2"
+      className={`relative edge @container aspect-[16/10] min-w-0 overflow-hidden rounded-panel bg-raise shadow-e2 ${className}`}
     >
       {p.video ? (
         <Video source={p.video} />

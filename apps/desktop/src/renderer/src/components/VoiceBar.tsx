@@ -1,4 +1,4 @@
-import { ArrowsClockwise, ArrowSquareOut, CellSignalFull, CellSignalLow, CellSignalMedium, CellSignalSlash, MonitorArrowUp, PhoneDisconnect, Stop, VideoCamera, VideoCameraSlash } from "@phosphor-icons/react";
+import { ArrowSquareOut, CellSignalFull, CellSignalLow, CellSignalMedium, CellSignalSlash, MonitorArrowUp, PhoneDisconnect, VideoCamera, VideoCameraSlash } from "@phosphor-icons/react";
 import { CaretDown, Waveform } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
 import { useStore } from "zustand";
@@ -10,6 +10,7 @@ import { panelModel } from "../lib/panel-model";
 import { NOISE_LABEL, NOISE_LEVELS, toggledNoiseLevel, type NoiseLevel } from "../lib/noise";
 import { signalOf } from "../lib/signal";
 import { MenuItem, RowMenu } from "./RowMenu";
+import { SharingCard, StreamMenu } from "./StreamControls";
 import { Tooltip } from "./Tooltip";
 
 const SIGNAL_ICON = { full: CellSignalFull, medium: CellSignalMedium, low: CellSignalLow, lost: CellSignalSlash };
@@ -90,12 +91,13 @@ export function VoiceBar() {
   const status = m.status === "reconnecting" ? t("voice.status.reconnecting") : ready ? t(m.dm ? "voice.status.connectedCall" : "voice.status.connected") : t("voice.status.connecting");
   const leaveLabel = t(m.leave === "cancel" ? "voice.cancelCall" : m.leave === "hangup" ? "voice.hangup" : "voice.leave");
   const camTitle = v.canVideo ? t("voice.camera") : t("voice.cameraNoVideo");
-  const screenTitle = v.canStream ? t(v.screenEnabled ? "voice.screenStop" : "voice.screen") : t("voice.screenNoStream");
+  const screenTitle = v.canStream ? t("voice.screen") : t("voice.screenNoStream");
   const signal = signalOf(m.status, v.quality);
   const SignalIcon = SIGNAL_ICON[signal.level];
 
   return (
     <section aria-label={t("voice.bar.label")} className="flex flex-col gap-2 p-3 pb-2">
+      {v.stream && <SharingCard stream={v.stream} />}
       <div className="flex items-center gap-2">
         <Tooltip label={t(signal.label)}>
           <span role="img" aria-label={t(signal.label)} className={`inline-flex shrink-0 ${SIGNAL_TONE[signal.tone]}`}>
@@ -133,12 +135,11 @@ export function VoiceBar() {
         <Control wide label={t("voice.camera")} hint={camTitle} tone="on" pressed={v.camEnabled} disabled={!m.camera} onClick={() => void voice.toggleCamera()}>
           {v.camEnabled ? <VideoCamera aria-hidden="true" /> : <VideoCameraSlash aria-hidden="true" />}
         </Control>
-        <Control wide label={t(v.screenEnabled ? "voice.screenStop" : "voice.screen")} hint={screenTitle} tone="on" pressed={v.screenEnabled} disabled={!m.screen} onClick={() => void voice.toggleScreen()}>
-          {v.screenEnabled ? <Stop aria-hidden="true" /> : <MonitorArrowUp aria-hidden="true" />}
-        </Control>
-        {v.screenEnabled && (
-          <Control wide label={t("voice.screenChange")} hint={t("voice.screenChange")} disabled={!m.screen} onClick={() => void voice.startScreen()}>
-            <ArrowsClockwise aria-hidden="true" />
+        {v.stream && m.screen ? (
+          <StreamMenu stream={v.stream} />
+        ) : (
+          <Control wide label={t("voice.screen")} hint={screenTitle} tone="on" pressed={v.screenEnabled} disabled={!m.screen} onClick={() => void voice.toggleScreen()}>
+            <MonitorArrowUp aria-hidden="true" />
           </Control>
         )}
         {m.openRoom && (

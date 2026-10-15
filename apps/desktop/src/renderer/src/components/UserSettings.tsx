@@ -2,7 +2,7 @@ import { Gear, SignOut, Trash, X } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useStore } from "zustand";
 import type { BooleanSetting, Settings } from "../../../shared/settings";
-import { acceleratorFromEvent, formatAccelerator, type ShortcutAction } from "../../../shared/shortcut";
+import { acceleratorFromEvent, formatAccelerator, lacksRealModifier, type ShortcutAction } from "../../../shared/shortcut";
 import { UPDATE_ERROR_APP_LOCATION, type UpdateStatus } from "../../../shared/update";
 import { t } from "../i18n/t";
 import type { MessageKey } from "../i18n/vi";
@@ -355,6 +355,7 @@ function ShortcutsSection({ settings }: { settings: Settings }) {
           </Button>
         </div>
       ))}
+      {SHORTCUT_ROWS.some(({ key }) => settings[key] && lacksRealModifier(settings[key])) && <p className="text-[13px] text-warning">{t("userSettings.shortcutBare")}</p>}
       <p role="alert" className="min-h-5 text-[13px] text-danger">
         {clash ? t("userSettings.shortcutClash") : failed.length ? t("userSettings.shortcutTaken") : ""}
       </p>

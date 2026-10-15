@@ -1,5 +1,5 @@
 import type { AudioProcessorOptions, Track, TrackProcessor } from "livekit-client";
-import type { NoiseConfig } from "./noise";
+import { reasonOf, type NoiseConfig } from "./noise";
 
 export type Graph = { output: MediaStreamTrack; destroy(): void };
 export type BuildGraph = (input: MediaStreamTrack, gate: NoiseConfig["gate"]) => Promise<Graph>;
@@ -20,7 +20,7 @@ export function createNoiseProcessor(config: NoiseConfig, onFail: (reason?: stri
         console.error("[noise] graph failed:", e);
         proc.processedTrack = undefined;
         await track.applyConstraints({ noiseSuppression: true }).catch(() => undefined);
-        onFail(e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 120) : undefined); // the reason is for whoever reports it
+        onFail(reasonOf(e));
       }
     },
     async restart(opts) {

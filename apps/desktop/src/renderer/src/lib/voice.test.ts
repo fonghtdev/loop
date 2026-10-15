@@ -208,8 +208,8 @@ describe("mic, deafen and camera", () => {
   });
 });
 
-const display = (over: Partial<ShareChoice> = {}): ShareChoice => ({ source: { kind: "display", id: "screen:1" }, quality: { resolution: "720", fps: 60 }, audio: true, ...over });
-const camera = (over: Partial<ShareChoice> = {}): ShareChoice => ({ source: { kind: "device", deviceId: "cap1" }, quality: { resolution: "1080", fps: 30 }, audio: false, ...over });
+const display = (over: Partial<ShareChoice> = {}): ShareChoice => ({ source: { kind: "display", id: "screen:1" }, quality: { resolution: "720", fps: 60 }, audio: true, label: "Màn hình", ...over });
+const camera = (over: Partial<ShareChoice> = {}): ShareChoice => ({ source: { kind: "device", deviceId: "cap1" }, quality: { resolution: "1080", fps: 30 }, audio: false, label: "Capture", ...over });
 
 describe("screen share", () => {
   it("picks, checks the OS, captures at the chosen profile and publishes the picture (with the sound) as the screen share; stops again", async () => {
@@ -286,6 +286,116 @@ describe("screen share", () => {
     expect(s.state()).toMatchObject({ screenEnabled: false });
     expect(s.state().mediaNote).toContain("chia sẻ màn hình");
     expect(s.captured.map((t) => t.stopped)).toEqual([1, 1]);
+  });
+
+  describe("changing the live stream", () => {
+    const live = (room: FakeRoom) => room.published.filter((p) => !room.unpublished.includes(p.track));
+    const started = async () => {
+      const s = await joined();
+      await s.voice.startScreen();
+      return s;
+    };
+
+    it("remembers what is live: the source, quality, sound and the name for the panel", async () => {
+      const s = await started();
+      expect(s.state().stream).toEqual(display());
+      await s.voice.stopScreen();
+      expect(s.state()).toMatchObject({ screenEnabled: false, stream: null });
+    });
+
+    it("quality: captures the SAME source again at the new profile, replaces the old tracks, asks nothing and remembers the choice", async () => {
+      const s = await started();
+      const room = s.room();
+      await s.voice.setStreamQuality({ resolution: "1080", fps: 30 });
+      expect(s.pickScreen).toHaveBeenCalledOnce();
+      expect(s.ensureMedia.mock.calls.filter(([k]) => k === "screen")).toHaveLength(1); // the OS was asked once, at the start
+      expect(s.capture).toHaveBeenLastCalledWith(display({ quality: { resolution: "1080", fps: 30 } }), streamProfile({ resolution: "1080", fps: 30 }));
+      expect(live(room).map((p) => p.track)).toEqual(s.captured.slice(2)); // only the new picture and sound
+      expect(live(room)[0].options.screenShareEncoding).toEqual({ maxBitrate: 5_000_000, maxFramerate: 30 });
+      expect(s.captured.slice(0, 2).map((t) => t.stopped)).toEqual([1, 1]);
+      expect(s.captured.slice(2).map((t) => t.stopped)).toEqual([0, 0]);
+      expect(s.state()).toMatchObject({ screenEnabled: true, mediaNote: null, stream: { quality: { resolution: "1080", fps: 30 }, audio: true, label: "Màn hình" } });
+      expect(s.rememberShare).toHaveBeenCalledWith({ resolution: "1080", fps: 30, audio: true });
+      expect(room.disconnected).toBe(0);
+    });
+
+    it("sound: turning it off re-captures the same source without sound (one picture, no sound track), and back on", async () => {
+      const s = await started();
+      const room = s.room();
+      await s.voice.setStreamAudio(false);
+      expect(s.capture).toHaveBeenLastCalledWith(display({ audio: false }), streamProfile({ resolution: "720", fps: 60 }));
+      expect(live(room).map((p) => p.options.source)).toEqual(["screen_share"]);
+      expect(s.rememberShare).toHaveBeenLastCalledWith({ resolution: "720", fps: 60, audio: false });
+      await s.voice.setStreamAudio(true);
+      expect(live(room).map((p) => p.options.source)).toEqual(["screen_share", "screen_share_audio"]);
+      expect(s.state().stream?.audio).toBe(true);
+      expect(s.pickScreen).toHaveBeenCalledOnce();
+    });
+
+    it("the share never reads as stopped while it is being replaced (the old picture's end is not a stop)", async () => {
+      const s = await started();
+      const seen: boolean[] = [];
+      s.voice.store.subscribe((st) => seen.push(st.screenEnabled));
+      await s.voice.setStreamQuality({ resolution: "native", fps: 15 });
+      expect(seen).not.toContain(false);
+      expect(s.state().screenEnabled).toBe(true);
+    });
+
+    it("quick changes in a row all apply, in order, on top of each other", async () => {
+      const s = await started();
+      void s.voice.setStreamQuality({ resolution: "1080", fps: 30 });
+      await s.voice.setStreamAudio(false);
+      expect(s.state().stream).toMatchObject({ quality: { resolution: "1080", fps: 30 }, audio: false });
+      expect(live(s.room())).toHaveLength(1);
+    });
+
+    it("changing to what is already live does nothing", async () => {
+      const s = await started();
+      await s.voice.setStreamQuality({ resolution: "720", fps: 60 });
+      await s.voice.setStreamAudio(true);
+      expect(s.capture).toHaveBeenCalledOnce();
+      expect(s.rememberShare).not.toHaveBeenCalled();
+    });
+
+    it("without a running share there is nothing to change", async () => {
+      const s = await joined();
+      await s.voice.setStreamQuality({ resolution: "1080", fps: 30 });
+      await s.voice.setStreamAudio(false);
+      expect(s.capture).not.toHaveBeenCalled();
+      expect(s.state().screenEnabled).toBe(false);
+    });
+
+    it("a camera keeps its device when its quality changes", async () => {
+      const s = await joined();
+      s.pickScreen.mockResolvedValueOnce(camera());
+      await s.voice.startScreen();
+      await s.voice.setStreamQuality({ resolution: "720", fps: 60 });
+      expect(s.capture).toHaveBeenLastCalledWith(camera({ quality: { resolution: "720", fps: 60 } }), streamProfile({ resolution: "720", fps: 60 }));
+      expect(live(s.room())).toHaveLength(1);
+    });
+
+    it("a capture that fails leaves the share off, says so, and releases the old tracks", async () => {
+      const s = await started();
+      s.capture.mockRejectedValueOnce(new Error("NotAllowedError"));
+      await s.voice.setStreamQuality({ resolution: "1080", fps: 30 });
+      expect(s.state()).toMatchObject({ screenEnabled: false, stream: null });
+      expect(s.state().mediaNote).toContain("chia sẻ màn hình");
+      expect(live(s.room())).toEqual([]);
+    });
+
+    it("changing the source updates the remembered stream", async () => {
+      const s = await started();
+      s.pickScreen.mockResolvedValueOnce(camera());
+      await s.voice.startScreen();
+      expect(s.state().stream).toEqual(camera());
+    });
+
+    it("losing the right to stream clears it", async () => {
+      const s = await started();
+      s.room().localParticipant.permissions = { canPublish: true, canPublishSources: [1, 2] };
+      s.room().fire("participantPermissionsChanged", {}, { identity: "me" });
+      expect(s.state()).toMatchObject({ screenEnabled: false, stream: null });
+    });
   });
 
   it("cancelling the dialog is not an error and publishes nothing", async () => {

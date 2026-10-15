@@ -1,5 +1,5 @@
-import { Plus, X } from "@phosphor-icons/react";
-import { useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { Crown, Plus, X } from "@phosphor-icons/react";
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
 import { admin, session } from "../lib/app";
@@ -8,10 +8,12 @@ import { useNav } from "../lib/nav";
 import { useBlocks, useDms, useFriends, useGuild, useIsOnline, useMembers, usePermissions, useRoles } from "../lib/queries";
 import { acceptRequest, blockUser, dismissRequest, openDm, sendFriendRequest, unblockUser, unfriend } from "../lib/social-actions";
 import { toast } from "../lib/toast";
-import { cardActions, cardDate, closeUserCard, modView, openUserCard, placeCard, presenceOf, relationOf, roleChips, userCard, type CardTarget } from "../lib/user-card";
+import { cardActions, cardDate, closeUserCard, filterRoles, modView, openUserCard, placeCard, presenceOf, relationOf, roleChips, roleColor, rolesView, stepIndex, userCard, type CardTarget } from "../lib/user-card";
 import { Avatar } from "./Avatar";
 import { ConfirmBody } from "./Confirm";
 import { Dialog } from "./Dialog";
+import { Tooltip } from "./Tooltip";
+import type { Role } from "../lib/permissions";
 
 type Person = { id: string; username: string };
 
@@ -131,6 +133,8 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
   const online = flag !== undefined && (userId === selfId || isOnline({ id: userId, online: flag }));
   const mod = guild && members && roles && standing && member ? modView({ guildId: guildId!, guildName: guild.guild.name, ownerId: guild.guild.ownerId, standing, roles, members, channels: guild.channels }, member) : null;
   const chips = guildId && member && roles ? roleChips(member.roleIds, roles, guildId) : [];
+  const isOwner = !!guild && guild.guild.ownerId === userId;
+  const view = rolesView({ isOwner, chipCount: chips.length, mod });
 
   // every server answer is final: failures go to the toast, the caches are refreshed by the call itself
   async function run(fn: () => Promise<unknown>, done = false) {
@@ -166,6 +170,14 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <h2 className="min-w-0 truncate font-display text-heading3 font-bold select-text">{username}</h2>
+            {isOwner && (
+              <Tooltip label={t("members.owner")}>
+                <span className="shrink-0 text-warning">
+                  <Crown aria-hidden="true" weight="fill" size={16} />
+                  <span className="sr-only">{t("members.owner")}</span>
+                </span>
+              </Tooltip>
+            )}
             {isBot && <span className="shrink-0 rounded-xs bg-surface-4 px-1.5 text-micro font-bold text-ink">{t("userCard.bot")}</span>}
           </div>
           {flag !== undefined && (
@@ -179,44 +191,34 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
 
       {member && guildId && (
         <>
-          {(chips.length > 0 || guild?.guild.ownerId === userId || (mod?.assignable.length ?? 0) > 0) && (
-          <Section title={t("userCard.roles")}>
-            <ul className="flex flex-wrap gap-1">
-              {guild?.guild.ownerId === userId && (
-                <li className="inline-flex h-8 items-center rounded-control bg-surface-3 px-2 text-caption text-ink-muted">{t("members.owner")}</li>
-              )}
-              {chips.map((r) => (
-                <li key={r.id} className="inline-flex h-8 max-w-full items-center rounded-control bg-surface-3 pl-2 text-caption text-ink-muted">
-                  <span className="min-w-0 truncate">{r.name}</span>
-                  {mod?.removable.has(r.id) ? (
-                    <button type="button" disabled={busy} aria-label={t("userCard.removeRole", { name: r.name })} onClick={() => void run(() => admin.unassignRole(guildId, userId, r.id))} className="grid size-8 shrink-0 place-items-center rounded-control hover:bg-surface-4 hover:text-ink">
-                      <X aria-hidden="true" size={12} />
-                    </button>
-                  ) : (
-                    <span className="pr-2" />
-                  )}
-                </li>
-              ))}
-              {mod && mod.assignable.length > 0 && (
-                <li>
-                  <button type="button" aria-expanded={adding} aria-label={t("userCard.addRole")} onClick={() => setAdding((v) => !v)} className="grid size-8 place-items-center rounded-control bg-surface-3 text-ink-muted hover:bg-surface-4 hover:text-ink">
-                    <Plus aria-hidden="true" size={14} />
-                  </button>
-                </li>
-              )}
-            </ul>
-            {adding && mod && (
-              <ul aria-label={t("userCard.addRole")} className="mt-2 flex max-h-40 flex-col overflow-y-auto rounded-control bg-surface-3 p-1">
-                {mod.assignable.map((r) => (
-                  <li key={r.id}>
-                    <button type="button" disabled={busy} onClick={() => void run(() => admin.assignRole(guildId, userId, r.id))} className="h-10 w-full truncate rounded-sm px-2.5 text-left text-sm hover:bg-surface-4">
-                      {r.name}
-                    </button>
+          {view.show && (
+            <Section title={t("userCard.roles")}>
+              <ul className="flex flex-wrap gap-1">
+                {chips.map((r) => (
+                  <li key={r.id} className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-control bg-surface-3 pl-2 text-caption text-ink-muted">
+                    <RoleDot role={r} />
+                    <span className="min-w-0 truncate">{r.name}</span>
+                    {mod?.removable.has(r.id) ? (
+                      <button type="button" disabled={busy} aria-label={t("userCard.removeRole", { name: r.name })} onClick={() => void run(() => admin.unassignRole(guildId, userId, r.id))} className="grid size-8 shrink-0 place-items-center rounded-control hover:bg-surface-4 hover:text-ink">
+                        <X aria-hidden="true" size={12} />
+                      </button>
+                    ) : (
+                      <span className="pr-2" />
+                    )}
                   </li>
                 ))}
+                {view.canAdd && (
+                  <li>
+                    <button type="button" aria-expanded={adding} aria-haspopup="listbox" aria-label={t("userCard.addRole")} onClick={() => setAdding((v) => !v)} className="grid size-8 place-items-center rounded-control bg-surface-3 text-ink-muted hover:bg-surface-4 hover:text-ink">
+                      <Plus aria-hidden="true" size={14} />
+                    </button>
+                  </li>
+                )}
               </ul>
-            )}
-          </Section>
+              {adding && mod && (
+                <RolePicker roles={mod.assignable} busy={busy} onClose={() => setAdding(false)} onPick={(r) => void run(() => admin.assignRole(guildId, userId, r.id))} />
+              )}
+            </Section>
           )}
           <dl className="grid gap-2 border-t border-hair pt-3">
             <DateRow label={t("userCard.joinedLoop")} iso={member.createdAt} />
@@ -249,6 +251,67 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
             </button>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+const RoleDot = ({ role }: { role: Role }) => <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: roleColor(role) }} />;
+
+/** Search box over a list of roles: type to filter, arrows + Enter or a click to pick; Esc closes only the picker. */
+function RolePicker({ roles, busy, onClose, onPick }: { roles: Role[]; busy: boolean; onClose: () => void; onPick: (r: Role) => void }) {
+  const [query, setQuery] = useState("");
+  const [active, setActive] = useState(0);
+  const input = useRef<HTMLInputElement>(null);
+  const shown = filterRoles(roles, query);
+  const current = Math.min(active, shown.length - 1);
+  useEffect(() => input.current?.focus(), []);
+
+  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive(stepIndex(current, e.key === "ArrowDown" ? 1 : -1, shown.length));
+    } else if (e.key === "Enter" && shown[current] && !busy) {
+      e.preventDefault();
+      onPick(shown[current]);
+    }
+  }
+
+  return (
+    <div className="mt-2 rounded-control bg-surface-3 p-1 shadow-lg">
+      <input
+        ref={input}
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setActive(0);
+        }}
+        onKeyDown={onKeyDown}
+        role="combobox"
+        aria-expanded="true"
+        aria-controls="role-picker-list"
+        aria-activedescendant={current >= 0 ? `role-pick-${shown[current].id}` : undefined}
+        placeholder={t("userCard.searchRole")}
+        aria-label={t("userCard.searchRole")}
+        className="h-9 w-full rounded-sm bg-surface-2 px-2.5 text-sm text-ink outline-none placeholder:text-ink-muted"
+      />
+      {shown.length === 0 ? (
+        <p className="px-2.5 py-3 text-caption text-ink-muted">{t("userCard.noRolesLeft")}</p>
+      ) : (
+        <ul id="role-picker-list" role="listbox" className="mt-1 flex max-h-40 flex-col overflow-y-auto">
+          {shown.map((r, i) => (
+            <li key={r.id} id={`role-pick-${r.id}`} role="option" aria-selected={i === current}>
+              <button type="button" tabIndex={-1} disabled={busy} onMouseEnter={() => setActive(i)} onClick={() => onPick(r)} className={`flex h-9 w-full items-center gap-2 truncate rounded-sm px-2.5 text-left text-sm ${i === current ? "bg-surface-4" : ""}`}>
+                <RoleDot role={r} />
+                <span className="min-w-0 truncate">{r.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

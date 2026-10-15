@@ -25,6 +25,7 @@ import { createNoiseLevel, noiseConfig } from "./noise";
 import { buildGraph } from "./noise-graph";
 import { createNoiseProcessor } from "./noise-processor";
 import { createScreenPicker } from "./screen-picker";
+import { tapAudio } from "./speech-level";
 import { createVoice, type RoomLike } from "./voice";
 import { createVoicePresence } from "./voice-presence";
 import { dmKey, type ConvKey } from "./conversation";
@@ -163,6 +164,7 @@ export const voice = createVoice({
   sink,
   ensureMedia: (kind) => window.loop.media.ensureAccess(kind).catch(() => false),
   pickScreen: () => screenPicker.pick(),
+  rememberShare: goLivePrefs.set,
   capture: (choice, profile) => captureShare(navigator.mediaDevices, window.loop.screen.choose, choice, profile),
   noise: {
     level: noiseLevel.get,
@@ -171,6 +173,7 @@ export const voice = createVoice({
       return config.rnnoise ? createNoiseProcessor(config, onFail, buildGraph) : null;
     },
   },
+  tap: tapAudio,
   livekitOrigin: LIVEKIT_ORIGIN,
   onSound: sounds.handle,
 });

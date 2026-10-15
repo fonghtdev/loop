@@ -7,7 +7,8 @@ export type Quality = { resolution: Resolution; fps: Fps };
 export type GoLivePrefs = Quality & { audio: boolean };
 /** Where the picture comes from: a screen or window (id from the main process) or a camera / capture card. */
 export type ShareSource = { kind: "display"; id: string } | { kind: "device"; deviceId: string };
-export type ShareChoice = { source: ShareSource; quality: Quality; audio: boolean };
+/** `label` is what the panel calls the share (the window title, "Màn hình 1", the device name). */
+export type ShareChoice = { source: ShareSource; quality: Quality; audio: boolean; label: string };
 
 export const DEFAULT_GOLIVE: GoLivePrefs = { resolution: "720", fps: 60, audio: true };
 

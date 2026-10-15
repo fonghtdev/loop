@@ -5,7 +5,7 @@ import { FakeMicTrack, setupVoice } from "./voice-fakes";
 async function inRoom(level: "off" | "standard" | "strong" = "off") {
   const s = setupVoice();
   s.setLevel(level);
-  const mic = new FakeMicTrack();
+  const mic = new FakeMicTrack(level === "off"); // captured with the filter the level asked for
   await s.voice.joinChannel("c1", "Phòng họp");
   s.room().localParticipant.getTrackPublication = (src: string) => (src === "microphone" ? ({ track: mic, isMuted: false } as never) : undefined);
   return { s, mic };
@@ -34,7 +34,7 @@ describe("changing the level inside the room", () => {
     s.setLevel("standard");
     await s.voice.applyNoise();
     expect(mic.processor).toMatchObject({ name: "standard" });
-    expect(mic.constraints.at(-1)).toEqual({ noiseSuppression: false });
+    expect(mic.restarts.at(-1)).toEqual({ noiseSuppression: false });
     expect(s.state().micEnabled).toBe(before.micEnabled);
     expect(s.room().mic).toEqual([true]); // no extra publish / mute
   });
@@ -46,14 +46,37 @@ describe("changing the level inside the room", () => {
     s.setLevel("off");
     await s.voice.applyNoise();
     expect(mic.processor).toBeNull();
-    expect(mic.constraints.at(-1)).toEqual({ noiseSuppression: true });
+    expect(mic.restarts.at(-1)).toEqual({ noiseSuppression: true });
   });
 
-  it("standard -> strong swaps the processor", async () => {
+  it("standard -> strong swaps the processor and does not touch the capture (the filter stays off)", async () => {
     const { s, mic } = await inRoom("standard");
     s.setLevel("strong");
     await s.voice.applyNoise();
     expect(mic.processor).toMatchObject({ name: "strong" });
+    expect(mic.restarts).toEqual([]);
+    expect(s.state().mediaNote).toBeNull();
+  });
+
+  it("a real microphone refuses constraints behind a processor: switching still works and shows no complaint", async () => {
+    const { s, mic } = await inRoom("standard");
+    s.setLevel("strong");
+    await s.voice.applyNoise();
+    s.setLevel("off");
+    await s.voice.applyNoise();
+    s.setLevel("standard");
+    await s.voice.applyNoise();
+    expect(mic.processor).toMatchObject({ name: "standard" });
+    expect(s.state().mediaNote).toBeNull();
+  });
+
+  it("a complaint from an earlier failure goes away once a switch works", async () => {
+    const { s } = await inRoom("standard");
+    s.processors[0].onFail("x");
+    expect(s.state().mediaNote).toMatch(/khử tiếng ồn/);
+    s.setLevel("strong");
+    await s.voice.applyNoise();
+    expect(s.state().mediaNote).toBeNull();
   });
 
   it("a muted mic stays muted and is moved too", async () => {
@@ -80,7 +103,7 @@ describe("changing the level inside the room", () => {
     s.setLevel("standard");
     await s.voice.applyNoise();
     expect(mic.processor).toBeNull();
-    expect(mic.constraints.at(-1)).toEqual({ noiseSuppression: true });
+    expect(mic.restarts.at(-1)).toEqual({ noiseSuppression: true });
     expect(s.state().micEnabled).toBe(true);
     expect(s.state().mediaNote).toMatch(/khử tiếng ồn/);
     expect(s.state().status).toBe("connected");
@@ -94,7 +117,8 @@ describe("changing the level inside the room", () => {
 
   it("a device switch re-applies the level (the new capture starts from the old constraints)", async () => {
     const { s, mic } = await inRoom("standard");
+    await mic.restartTrack({ noiseSuppression: true }); // the new capture came back with the browser filter on
     await s.voice.switchDevice("audioinput", "d2");
-    expect(mic.constraints.at(-1)).toEqual({ noiseSuppression: false });
+    expect(mic.restarts.at(-1)).toEqual({ noiseSuppression: false });
   });
 });
