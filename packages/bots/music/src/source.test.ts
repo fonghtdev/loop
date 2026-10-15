@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
-import { MAX_DURATION_SECONDS, UserError, audioArgs, createSource, metaArgs, toTrack } from "./source.js";
+import { META_TIMEOUT_MS, MAX_DURATION_SECONDS, UserError, audioArgs, createSource, metaArgs, toTrack } from "./source.js";
 
 describe("spawn arguments", () => {
   it("search goes inside ytsearch1: and after --; a query that looks like a flag stays data", () => {
@@ -76,6 +76,16 @@ describe("createSource", () => {
     const p2 = createSource({ spawnFn: (() => missing) as any }).resolve("x");
     missing.emit("error", new Error("ENOENT"));
     await expect(p2).rejects.toThrow(/đã cài chưa/);
+  });
+
+  it("a lookup killed by the time limit says it was too slow (not 'not found') and the limit allows a slow host minutes", async () => {
+    expect(META_TIMEOUT_MS).toBeGreaterThanOrEqual(120_000);
+    const dl = fakeChild();
+    const spawnFn = vi.fn(() => dl) as any;
+    const pending = createSource({ spawnFn }).resolve("x");
+    expect(spawnFn.mock.calls[0][2]).toMatchObject({ timeout: META_TIMEOUT_MS });
+    dl.emit("close", null, "SIGTERM");
+    await expect(pending).rejects.toThrow("quá chậm");
   });
 
   const track = { id: "dQw4w9WgXcQ", title: "t", duration: 1 };

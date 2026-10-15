@@ -31,6 +31,7 @@ export function createScreenPicker({ list, devices, save }: Deps) {
     },
     confirm(choice: ShareChoice, prefs: GoLivePrefs) {
       const resolve = waiting;
+      if (!resolve) return; // a second click on the same source: already started
       close();
       save(prefs);
       resolve?.(choice);

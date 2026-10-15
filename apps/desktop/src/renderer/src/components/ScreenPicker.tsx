@@ -22,24 +22,21 @@ export function ScreenPicker() {
   );
 }
 
-const pick = "flex w-full flex-col gap-1.5 rounded-control bg-surface-1 p-2 text-left transition-colors duration-(--duration-fast) hover:bg-surface-4 aria-pressed:bg-surface-4 aria-pressed:ring-2 aria-pressed:ring-moss-400";
+const pick = "flex w-full flex-col gap-1.5 rounded-control bg-surface-1 p-2 text-left transition-colors duration-(--duration-fast) hover:bg-surface-4 focus-visible:bg-surface-4";
 
 function GoLiveForm({ sources, devices }: { sources: ScreenSource[]; devices: ShareDevice[] }) {
-  const start = goLivePrefs.get();
+  const saved = goLivePrefs.get();
   const [tab, setTab] = useState<Tab>("apps");
-  const [selected, setSelected] = useState<string | null>(null);
-  const [resolution, setResolution] = useState<Resolution>(start.resolution);
-  const [fps, setFps] = useState<Fps>(start.fps);
-  const [audio, setAudio] = useState(start.audio);
+  const [resolution, setResolution] = useState<Resolution>(saved.resolution);
+  const [fps, setFps] = useState<Fps>(saved.fps);
+  const [audio, setAudio] = useState(saved.audio);
   const { screens, windows } = partitionSources(sources);
   const canAudio = audioAllowed(tab === "devices" ? "device" : "display", window.loop.platform);
 
   const screenLabel = (i: number) => (screens.length > 1 ? t("golive.screenN", { n: String(i + 1) }) : t("golive.screenOne"));
-  const confirm = () => {
-    if (!selected) return;
-    const label =
-      tab === "devices" ? (devices.find((d) => d.id === selected)?.label ?? t("golive.deviceFallback")) : tab === "screens" ? screenLabel(screens.findIndex((s) => s.id === selected)) : (windows.find((s) => s.id === selected)?.name ?? "");
-    const source = tab === "devices" ? ({ kind: "device", deviceId: selected } as const) : ({ kind: "display", id: selected } as const);
+  // Clicking a source starts the stream with the quality and sound chosen above; the picker ignores a second click.
+  const start = (id: string, label: string) => {
+    const source = tab === "devices" ? ({ kind: "device", deviceId: id } as const) : ({ kind: "display", id } as const);
     screenPicker.confirm({ source, quality: { resolution, fps }, audio: canAudio && audio, label }, { resolution, fps, audio });
   };
   const thumbs = (list: ScreenSource[], label: (s: ScreenSource, i: number) => string, empty: string) =>
@@ -49,7 +46,7 @@ function GoLiveForm({ sources, devices }: { sources: ScreenSource[]; devices: Sh
       <ul className="m-0 grid max-h-[30vh] list-none grid-cols-3 gap-3 overflow-y-auto p-0">
         {list.map((s, i) => (
           <li key={s.id} className="min-w-0">
-            <button type="button" aria-pressed={selected === s.id} onClick={() => setSelected(s.id)} className={pick}>
+            <button type="button" onClick={() => start(s.id, label(s, i))} className={pick}>
               <img src={s.thumbnail} alt="" className="aspect-video w-full rounded-control bg-surface-0 object-contain" />
               <span className="truncate text-caption text-ink">{label(s, i)}</span>
             </button>
@@ -69,7 +66,7 @@ function GoLiveForm({ sources, devices }: { sources: ScreenSource[]; devices: Sh
           labelledBy="golive-source"
           name="golive-tab"
           value={tab}
-          onChange={(next) => (setTab(next), setSelected(null))}
+          onChange={setTab}
           options={[
             { value: "apps", label: t("golive.tabApps") },
             { value: "screens", label: t("golive.tabScreens") },
@@ -85,7 +82,7 @@ function GoLiveForm({ sources, devices }: { sources: ScreenSource[]; devices: Sh
             <ul className="m-0 flex max-h-[30vh] list-none flex-col gap-2 overflow-y-auto p-0">
               {devices.map((d) => (
                 <li key={d.id}>
-                  <button type="button" aria-pressed={selected === d.id} onClick={() => setSelected(d.id)} className={`${pick} flex-row items-center gap-3`}>
+                  <button type="button" onClick={() => start(d.id, d.label || t("golive.deviceFallback"))} className={`${pick} flex-row items-center gap-3`}>
                     <VideoCamera aria-hidden="true" className="shrink-0" />
                     <span className="truncate text-small text-ink">{d.label}</span>
                   </button>
@@ -108,9 +105,6 @@ function GoLiveForm({ sources, devices }: { sources: ScreenSource[]; devices: Sh
       <DialogActions>
         <Button type="button" variant="ghost" onClick={screenPicker.cancel}>
           {t("common.cancel")}
-        </Button>
-        <Button type="button" disabled={!selected} onClick={confirm}>
-          {t("golive.start")}
         </Button>
       </DialogActions>
     </>

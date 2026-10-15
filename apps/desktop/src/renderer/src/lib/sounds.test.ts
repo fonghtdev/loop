@@ -24,6 +24,17 @@ describe("tone table", () => {
     expect(TONES.unmute.notes.every((n) => n.to > n.from)).toBe(true);
     expect(TONES.mute.notes.every((n) => n.to < n.from)).toBe(true);
   });
+  it("streamStart climbs through two notes, streamStop falls, and neither is the join / leave figure", () => {
+    const pitches = (k: SoundKind) => TONES[k].notes.flatMap((n) => [n.from, n.to]);
+    const up = pitches("streamStart");
+    const down = pitches("streamStop");
+    expect(TONES.streamStart.notes).toHaveLength(2);
+    expect(TONES.streamStop.notes).toHaveLength(2);
+    expect(up).toEqual([...up].sort((a, b) => a - b));
+    expect(down).toEqual([...down].sort((a, b) => b - a));
+    expect(TONES.streamStart.notes).not.toEqual(TONES.join.notes);
+    expect(TONES.streamStop.notes).not.toEqual(TONES.leave.notes);
+  });
   it("join rises, leave falls", () => {
     const rises = (k: SoundKind) => TONES[k].notes.every((n) => n.to > n.from);
     const falls = (k: SoundKind) => TONES[k].notes.every((n) => n.to < n.from);

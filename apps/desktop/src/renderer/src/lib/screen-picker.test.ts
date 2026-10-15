@@ -44,4 +44,14 @@ describe("createScreenPicker", () => {
     void picker.pick();
     expect(await first).toBeNull();
   });
+
+  it("a second confirm (double click) neither resolves again nor saves again", async () => {
+    const { picker, save } = make();
+    const result = opened(picker);
+    await vi.waitFor(() => expect(picker.store.getState().open).not.toBeNull());
+    picker.confirm(choice, prefs);
+    picker.confirm({ ...choice, audio: false }, { ...prefs, audio: false });
+    expect(await result).toEqual(choice);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
 });

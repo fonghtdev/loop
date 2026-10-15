@@ -278,5 +278,7 @@ Bot nhạc (`packages/bots/music`) chạy thành một web service free **trong 
 
 Bot chưa kết nối được server (đang ngủ) thì thử lại mỗi 15 giây, không thoát.
 
+**Giới hạn đã đo (2026-10-15, Docker ép `--cpus=0.1 --memory=512m`, linux/amd64 giả lập trên Mac):** `yt-dlp` mất ~38 s chỉ để khởi động và ~180 s cho một lần tìm bài đầy đủ (1 CPU: 8 s). Giới hạn chờ cũ 30 s làm tiến trình bị kill và log `[music] yt-dlp:` rỗng. Giờ chờ tối đa 5 phút, báo "Đang tìm bài..." sau 4 s và ghi mã thoát/tín hiệu vào log; nhưng trên gói free một `!play` vẫn có thể mất vài phút (số đo bị giả lập làm chậm thêm, máy Render thật có thể nhanh hơn). Muốn phát nhạc mượt cần máy có ít nhất ~0,5 CPU (gói trả phí hoặc máy khác).
+
 **Đã kiểm (Docker trên Mac, ép `linux/amd64` như Render):** image build; chạy user `node`; `yt-dlp` 2026.08.19 và `ffmpeg` 5.1 chạy được; `--js-runtimes node` được `yt-dlp` chấp nhận; `ytsearch1:` tìm ra video; ống `yt-dlp | ffmpeg` ra đúng 3 giây PCM 48k mono (287376 byte); cổng `PORT` trả 200 `ok`; mất server thì bot ghi log và thử lại; SIGTERM thoát (143).
 **Chưa kiểm:** Render thật (Blueprint, workspace, build); YouTube có chặn IP của Render ("Sign in to confirm you're not a bot", khi đó cần cookie, chưa hỗ trợ) — thử trên máy nhà chỉ chứng minh IP nhà; phát tiếng thật trong phòng LiveKit với server production; 0,1 CPU của gói free có đủ để phát không giật; ngưỡng "lưu lượng ra ngoài cao bất thường" mà Render có thể khoá; điều khoản Render về nhiều workspace.

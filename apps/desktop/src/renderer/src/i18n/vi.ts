@@ -626,7 +626,6 @@ export const vi = {
   "golive.audio": "Chia sẻ âm thanh hệ thống",
   "golive.audioOs": "Chưa hỗ trợ âm thanh hệ thống trên hệ điều hành này",
   "golive.audioDevice": "Thiết bị ghi hình không có âm thanh hệ thống",
-  "golive.start": "Bắt đầu phát",
   "voice.leave": "Rời kênh thoại",
   "voice.hangup": "Kết thúc cuộc gọi",
   "voice.cancelCall": "Huỷ cuộc gọi",

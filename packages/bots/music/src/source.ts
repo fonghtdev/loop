@@ -2,7 +2,8 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { classify } from "./commands.js";
 
 export const MAX_DURATION_SECONDS = 3600 * 3;
-const META_TIMEOUT_MS = 30_000;
+// A tiny host (Render free: 0.1 CPU) needs minutes for one yt-dlp lookup (measured: 38 s just to start, ~3 min for a search); 30 s killed it silently.
+export const META_TIMEOUT_MS = 300_000;
 const MAX_TITLE = 80;
 
 export type Track = { id: string; title: string; duration: number };
@@ -24,8 +25,11 @@ const oneLine = (s: string) => s.replace(/[\p{Cc}\s]+/gu, " ").trim();
 const clip = (s: string) => (s.length > MAX_TITLE ? `${s.slice(0, MAX_TITLE - 1)}…` : s);
 
 /** What yt-dlp said on stderr, as a sentence for the user. */
-function explain(stderr: string) {
-  console.error("[music] yt-dlp:", stderr.trim().slice(-500)); // the user gets a short sentence; the host's log gets the real reason
+function logFailure(stderr: string, how: string) {
+  console.error("[music] yt-dlp:", how, stderr.trim().slice(-500)); // the user gets a short sentence; the host's log gets the real reason
+}
+function explain(stderr: string, how = "") {
+  logFailure(stderr, how);
   return /unavailable|private|removed|sign in|confirm your age|copyright|blocked/i.test(stderr) ? "Video không khả dụng." : "Không tìm thấy hoặc không tải được video.";
 }
 
@@ -49,8 +53,12 @@ export function createSource({ ytdlp = "yt-dlp", ffmpeg = "ffmpeg", spawnFn = sp
       child.stdout!.on("data", (d) => (out += d));
       child.stderr!.on("data", (d) => (err += d));
       child.on("error", () => fail(new UserError(`Không chạy được ${ytdlp} (đã cài chưa?).`)));
-      child.on("close", (code) => {
-        if (code !== 0) return fail(new UserError(explain(err)));
+      child.on("close", (code, signal) => {
+        if (signal) {
+          logFailure(err, `killed by ${signal} after the ${META_TIMEOUT_MS / 1000} s limit`);
+          return fail(new UserError("yt-dlp quá chậm, thử lại sau."));
+        }
+        if (code !== 0) return fail(new UserError(explain(err, `exit ${code}`)));
         try {
           done(toTrack(JSON.parse(out)));
         } catch (e) {

@@ -87,7 +87,8 @@ test("deafened: no sound for others or for our own leave", async () => {
   await settle();
   await leaveApp();
   await settle();
-  expect(await counts()).toEqual({ selfJoin: 3, join: 1, leave: 1, selfLeave: 2 });
+  // the deafen click itself is confirmed by one `mute` tone; nothing else plays while deafened
+  expect(await counts()).toEqual({ mute: 1, selfJoin: 3, join: 1, leave: 1, selfLeave: 2 });
 });
 
 test("setting off (Âm thanh in the settings): nothing plays; on again: it does", async () => {
@@ -105,7 +106,7 @@ test("setting off (Âm thanh in the settings): nothing plays; on again: it does"
   await settle();
   await leaveApp();
   await settle();
-  expect(await counts()).toEqual({ selfJoin: 3, join: 1, leave: 1, selfLeave: 2 });
+  expect(await counts()).toEqual({ mute: 1, selfJoin: 3, join: 1, leave: 1, selfLeave: 2 });
   await openSettings();
   await soundSwitch().click();
   await expect(soundSwitch()).toHaveAttribute("aria-checked", "true");

@@ -35,7 +35,8 @@ export class FakeRoom implements RoomLike {
     identity: "me",
     name: "Me",
     permissions: { canPublish: true, canPublishSources: [] },
-    getTrackPublication: () => undefined,
+    // like LiveKit: the screen-share publication exists from publish until unpublish
+    getTrackPublication: (source: string) => (source === "screen_share" && this.published.some((p) => p.options.source === source && !this.unpublished.includes(p.track)) ? { isMuted: false } : undefined),
     setMicrophoneEnabled: async (on, options) => {
       this.micOptions.push(options);
       await this.micGate;

@@ -177,8 +177,8 @@ export const voice = createVoice({
   livekitOrigin: LIVEKIT_ORIGIN,
   onSound: sounds.handle,
 });
-// the global mic / deafen shortcuts (main process) act on the live session; "deafened" is false so the beep also confirms deafening
-window.loop.onShortcut(createShortcutHandler(voice, (kind) => sounds.handle(kind, false)));
+// the global mic / deafen shortcuts (main process) act on the live session
+window.loop.onShortcut(createShortcutHandler(voice));
 // a dialog left open by a session that is gone would only be answered into nothing
 voice.store.subscribe((s) => s.status === "idle" && screenPicker.cancel());
 // joining is a click: the audio context is created / resumed right then (the autoplay policy of the window already allows it)

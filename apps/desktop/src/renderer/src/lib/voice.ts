@@ -184,7 +184,10 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
   // Who is in the room, for join/leave sounds. null = not listening: while connecting (the initial list is silent) and
   // while reconnecting (LiveKit re-announces everyone); on (re)connect it is re-read, so nobody there already sounds.
   let known: Set<string> | null = null;
-  const sound = (kind: SoundKind) => onSound?.(kind, get().deafened);
+  const sound = (kind: SoundKind, deafened = get().deafened) => onSound?.(kind, deafened);
+  // Who shares a screen right now, for the stream sounds. null = not listening (same rule as `known`): the first list after
+  // (re)connecting is the baseline, so joining a room where someone is live is silent.
+  let liveSharers: Set<string> | null = null;
   const sessionEnding = () => {
     const { status } = get();
     if (status === "connected" || status === "reconnecting") sound("selfLeave");
@@ -199,11 +202,27 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     const micOff = rightsOf(p.permissions ?? { canPublish: true, canPublishSources: [] }).canSpeak && (!mic || mic.isMuted);
     return { userId: p.identity, username: p.name || p.identity, isLocal, speaking: speaking.has(p.identity) || measured.has(p.identity), video: cam?.track && !cam.isMuted ? cam.track : undefined, screen: screen?.track && !screen.isMuted ? screen.track : undefined, sharing: !!screen, micOff, deafened: parseDeafened(p.metadata) };
   };
+  /** One sound per share that really started / ended since the last look. Our own share stays "on" while a quality / source change re-captures it. */
+  const streamSounds = (participants: Participant[]) => {
+    if (!known) {
+      liveSharers = null;
+      return;
+    }
+    const before = liveSharers;
+    const current = new Set(participants.filter((p) => p.sharing || (p.isLocal && !!before?.has(p.userId) && get().screenEnabled)).map((p) => p.userId));
+    if (before) {
+      for (const id of current) if (!before.has(id)) sound("streamStart");
+      // someone who left ends their share by leaving: that is the leave sound's job
+      for (const id of before) if (!current.has(id) && participants.some((p) => p.userId === id)) sound("streamStop");
+    }
+    liveSharers = current;
+  };
   const refresh = () => {
     if (!room) return;
     const remotes = [...room.remoteParticipants.values()];
     const participants = [toParticipant(room.localParticipant, true), ...remotes.map((p) => toParticipant(p, false))];
     const sharers = new Set(participants.filter((p) => !p.isLocal && p.sharing).map((p) => p.userId));
+    streamSounds(participants);
     set({ participants, watching: pruneWatching(get().watching, sharers) });
   };
 
@@ -284,6 +303,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     speaking = new Set();
     stopMeter();
     known = null;
+    liveSharers = null;
     sink.clear();
     streamAudio.clear();
     stopShared();
@@ -463,6 +483,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     });
     on("reconnecting", () => {
       known = null;
+      liveSharers = null;
       set({ status: "reconnecting" });
     });
     on("reconnected", () => {
@@ -590,7 +611,11 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     leave,
     toggleMic: async () => {
       const s = get();
-      if (!s.deafened) await setMic(!s.micEnabled);
+      if (s.deafened) return;
+      const done = setMic(!s.micEnabled);
+      // the intention flips at once (a refused unmute is rare and shows its own note), so the beep is not held up by a slow publish
+      if (get().micEnabled !== s.micEnabled) sound(s.micEnabled ? "mute" : "unmute");
+      await done;
     },
     toggleCamera: () => setCamera(!get().camEnabled),
     startScreen,
@@ -625,6 +650,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
       const s = get();
       if (!room) return;
       if (!s.deafened) {
+        sound("mute", false); // heard before the hearing goes; deafened = silent for every other sound
         sink.setMuted(true);
         set({ deafened: true, micBeforeDeafen: s.micEnabled });
         publishDeafened(true);
@@ -635,6 +661,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
         publishDeafened(false);
         const restore = s.micBeforeDeafen;
         set({ deafened: false, micBeforeDeafen: false });
+        sound("unmute");
         applyStreamAudio();
         if (restore) await setMic(true);
       }

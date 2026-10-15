@@ -4,6 +4,7 @@ import { GuildPlayer, MAX_QUEUE, type Source } from "./player.js";
 import { UserError } from "./source.js";
 
 const LIST_LIMIT = 10;
+const SLOW_HINT_MS = 4000;
 const HELP = [`${PREFIX}play <tên bài | link YouTube> - phát hoặc thêm vào hàng đợi`, `${PREFIX}skip - bỏ qua bài đang phát`, `${PREFIX}stop - dừng, xoá hàng đợi, rời kênh`, `${PREFIX}queue - xem hàng đợi`].join("\n");
 
 type Session = { channelId: string; text: string; player: GuildPlayer };
@@ -53,7 +54,9 @@ export function attachMusic(bot: LoopBot, source: Source) {
     if (query.length > MAX_QUERY_LENGTH) return `Yêu cầu dài quá (tối đa ${MAX_QUERY_LENGTH} ký tự).`;
     const channelId = await voiceChannelOf(m.author.id, voice);
     if (!channelId) return "Bạn cần vào một kênh thoại trước.";
-    const track = await source.resolve(query);
+    // a slow host can need minutes to look a song up: say so instead of staying silent
+    const slow = setTimeout(() => void bot.sendMessage(m.channelId!, "Đang tìm bài, máy chủ chậm nên có thể mất vài phút...").catch(() => {}), SLOW_HINT_MS);
+    const track = await source.resolve(query).finally(() => clearTimeout(slow));
     const session = await join(guildId, channelId, m.channelId!);
     if (session.channelId !== channelId) return "Mình đang phát ở kênh thoại khác.";
     session.text = m.channelId!;

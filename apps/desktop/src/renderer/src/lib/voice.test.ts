@@ -666,7 +666,132 @@ describe("join/leave sounds", () => {
     await s.voice.toggleDeafen();
     s.room().addRemote("n");
     s.voice.leave();
-    expect(s.sounds).toEqual([["selfJoin", false], ["join", true], ["selfLeave", true]]);
+    expect(s.sounds).toEqual([["selfJoin", false], ["mute", false], ["join", true], ["selfLeave", true]]);
+  });
+});
+
+describe("stream and toggle sounds", () => {
+  const kinds = (s: { sounds: [string, boolean][] }) => s.sounds.map(([k]) => k);
+  const sharing = (id: string) => ({ identity: id, getTrackPublication: (src: string) => (src === "screen_share" ? { isMuted: false } : undefined) });
+  const joined = async (...live: string[]) => {
+    const s = setupVoice({}, (r) => live.forEach((id) => r.remoteParticipants.set(id, sharing(id) as never)));
+    await s.voice.joinChannel("c1", "Phòng");
+    s.sounds.length = 0;
+    return s;
+  };
+  const sharesOf = (s: Awaited<ReturnType<typeof joined>>, id: string, on: boolean) => {
+    const live = on ? sharing(id) : { identity: id, getTrackPublication: () => undefined };
+    s.room().remoteParticipants.set(id, live as never);
+    s.room().fire("trackPublished");
+  };
+
+  it("someone else starting and stopping a share sounds once each; a repeated announcement does not", async () => {
+    const s = await joined();
+    s.room().addRemote("u2");
+    s.sounds.length = 0;
+    sharesOf(s, "u2", true);
+    sharesOf(s, "u2", true);
+    sharesOf(s, "u2", false);
+    sharesOf(s, "u2", false);
+    expect(kinds(s)).toEqual(["streamStart", "streamStop"]);
+  });
+
+  it("joining a room where someone is already live is silent, and so is a reconnect; their stop still sounds", async () => {
+    const s = await joined("u2");
+    expect(s.sounds).toEqual([]);
+    s.room().fire("reconnecting");
+    s.room().addRemote("u3");
+    sharesOf(s, "u3", true); // went live during the outage: nobody was listening
+    s.room().fire("reconnected");
+    expect(s.sounds).toEqual([]);
+    sharesOf(s, "u2", false);
+    expect(kinds(s)).toEqual(["streamStop"]);
+  });
+
+  it("a sharer who leaves the room is the leave sound's business, not a streamStop", async () => {
+    const s = await joined("u2");
+    s.room().removeRemote("u2");
+    expect(kinds(s)).toEqual(["leave"]);
+  });
+
+  it("our own share: sounds when it really starts and when it ends, not when the dialog opens or is cancelled", async () => {
+    const s = await joined();
+    s.pickScreen.mockResolvedValueOnce(null);
+    await s.voice.startScreen();
+    expect(s.sounds).toEqual([]);
+    await s.voice.startScreen();
+    expect(kinds(s)).toEqual(["streamStart"]);
+    await s.voice.stopScreen();
+    expect(kinds(s)).toEqual(["streamStart", "streamStop"]);
+  });
+
+  it("the OS 'Stop sharing' ends our share with a streamStop", async () => {
+    const s = await joined();
+    await s.voice.startScreen();
+    s.room().unpublished.push(...s.room().published.map((p) => p.track));
+    s.room().fire("localTrackUnpublished", { source: "screen_share" });
+    expect(kinds(s)).toEqual(["streamStart", "streamStop"]);
+  });
+
+  it("changing the quality or the sound of a live share does not sound stop + start", async () => {
+    const s = await joined();
+    await s.voice.startScreen();
+    s.sounds.length = 0;
+    await s.voice.setStreamQuality({ resolution: "1080", fps: 30 });
+    await s.voice.setStreamAudio(false);
+    expect(s.sounds).toEqual([]);
+    expect(s.state().screenEnabled).toBe(true);
+  });
+
+  it("a re-capture that fails ends the share with one streamStop", async () => {
+    const s = await joined();
+    await s.voice.startScreen();
+    s.sounds.length = 0;
+    s.room().screenFails = true;
+    await s.voice.setStreamQuality({ resolution: "1080", fps: 30 });
+    expect(kinds(s)).toEqual(["streamStop"]);
+  });
+
+  it("stream sounds follow the deafen state they are played in", async () => {
+    const s = await joined();
+    await s.voice.toggleDeafen();
+    s.sounds.length = 0;
+    s.room().addRemote("u2");
+    sharesOf(s, "u2", true);
+    expect(s.sounds).toEqual([["join", true], ["streamStart", true]]);
+  });
+
+  it("the mic toggle sounds once per flip: off = mute, on = unmute", async () => {
+    const s = await joined();
+    await s.voice.toggleMic();
+    await s.voice.toggleMic();
+    expect(s.sounds).toEqual([["mute", false], ["unmute", false]]);
+  });
+
+  it("a mic toggle that changes nothing (no right to speak, deafened, no session) is silent", async () => {
+    const quiet = await joined();
+    await quiet.voice.toggleDeafen();
+    quiet.sounds.length = 0;
+    await quiet.voice.toggleMic();
+    expect(quiet.sounds).toEqual([]);
+    const mute = setupVoice({ canSpeak: false });
+    await mute.voice.joinChannel("c1", "x");
+    mute.sounds.length = 0;
+    await mute.voice.toggleMic();
+    expect(mute.sounds).toEqual([]);
+    const none = setupVoice();
+    await none.voice.toggleMic();
+    await none.voice.toggleDeafen();
+    expect(none.sounds).toEqual([]);
+  });
+
+  it("deafen ON is announced once and audible (played as not deafened); the mic it forces off adds nothing; undeafen sounds after hearing is back", async () => {
+    const s = await joined();
+    await s.voice.toggleDeafen();
+    expect(s.sounds).toEqual([["mute", false]]);
+    await s.voice.toggleDeafen();
+    expect(s.sounds).toEqual([["mute", false], ["unmute", false]]);
+    expect(s.state()).toMatchObject({ deafened: false, micEnabled: true });
   });
 });
 
