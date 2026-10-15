@@ -80,6 +80,8 @@ describe("permission input schemas", () => {
 
   it("@everyone is reserved as a role name", () => {
     expect(createRoleSchema.safeParse({ name: " @everyone " }).success).toBe(false);
-    expect(createRoleSchema.parse({ name: " mod " })).toEqual({ name: "mod", permissions: 0 });
+    expect(createRoleSchema.parse({ name: " mod " })).toEqual({ name: "mod", permissions: 0, color: null }); // no color = null
+    expect(createRoleSchema.parse({ name: "mod", color: "#12abEF" }).color).toBe("#12abEF");
+    expect(createRoleSchema.safeParse({ name: "mod", color: "red" }).success).toBe(false);
   });
 });

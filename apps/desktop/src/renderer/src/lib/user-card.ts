@@ -2,7 +2,8 @@ import { hasPermission, Permission } from "@loop/shared";
 import { createStore } from "zustand/vanilla";
 import { canHandOutRole, canManageMember, callerChannelBits, type SettingsCtx } from "./admin";
 import type { Member, Role } from "./permissions";
-import type { Dm, FriendsData } from "./social";
+import { NEUTRAL_ROLE_COLOR } from "./role-colors";
+import type { FriendsData } from "./social";
 
 // ---- what the card is open on ----
 export type CardTarget = { userId: string; username: string; guildId: string | null; anchor: HTMLElement };
@@ -36,10 +37,6 @@ export function relationOf(userId: string, friends: FriendsData | undefined): Re
   if (friends?.outgoing.some((u) => u.id === userId)) return "outgoing";
   return "none";
 }
-
-/** Presence exists only for friends and DM partners (the server tracks no one else): undefined = not known, show nothing. */
-export const presenceOf = (userId: string, friends: FriendsData | undefined, dms: Dm[] | undefined) =>
-  (friends?.friends.find((f) => f.id === userId) ?? dms?.find((d) => d.user.id === userId)?.user)?.online;
 
 export type CardActions = {
   /** "open": a DM already exists; "create": a friend without one (POST /dms needs a friendship). */
@@ -76,14 +73,8 @@ export function roleChips(roleIds: string[], roles: Role[], guildId: string) {
   return roles.filter((r) => r.id !== guildId && roleIds.includes(r.id)).sort((a, b) => b.position - a.position);
 }
 
-/** Dot color of a role: its own `color` when the server sends one, else a stable pick from the palette by role id. */
-const ROLE_PALETTE = ["#e5736b", "#e8a05a", "#e3c65c", "#8fcf6a", "#4fc9a4", "#55b9e0", "#6f93f0", "#a78bfa", "#d77bd8", "#f08aa9"];
-export function roleColor(role: Pick<Role, "id" | "color">) {
-  if (role.color) return role.color;
-  let h = 0;
-  for (const ch of role.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return ROLE_PALETTE[h % ROLE_PALETTE.length];
-}
+/** Dot color of a role: its own `color`, else a neutral muted one. */
+export const roleColor = (role: Pick<Role, "color">) => role.color ?? NEUTRAL_ROLE_COLOR;
 
 /** The picker list: roles whose name contains the query (case-insensitive, trimmed); an empty query keeps all. */
 export function filterRoles(roles: Role[], query: string) {

@@ -72,6 +72,34 @@ describe("roles API", () => {
     expect(await status("PATCH", roleUrl(s, "nope"), s.owner.token, { name: "x" })).toBe(404);
   });
 
+  it("role color: create with / without, set, change, clear, survives other patches, listed", async () => {
+    const s = await setup();
+    const withColor = (await call("POST", `${s.base}/roles`, s.owner.token, { name: "c", color: "#1abC2f" })).json();
+    expect(withColor.color).toBe("#1abC2f");
+    const plain = (await call("POST", `${s.base}/roles`, s.owner.token, { name: "p" })).json();
+    expect(plain.color).toBeNull();
+    const url = roleUrl(s, plain.id);
+    expect((await call("PATCH", url, s.owner.token, { color: "#000000" })).json().color).toBe("#000000");
+    expect((await call("PATCH", url, s.owner.token, { color: "#FFFFFF" })).json().color).toBe("#FFFFFF");
+    expect((await call("PATCH", url, s.owner.token, { name: "renamed" })).json().color).toBe("#FFFFFF");
+    const list: { id: string; color: string | null }[] = (await call("GET", `${s.base}/roles`, s.owner.token)).json();
+    expect(list.find((r) => r.id === plain.id)?.color).toBe("#FFFFFF");
+    expect(list.find((r) => r.id === withColor.id)?.color).toBe("#1abC2f");
+    expect(list.find((r) => r.id === s.guild.id)?.color).toBeNull();
+    expect((await call("PATCH", url, s.owner.token, { color: null })).json().color).toBeNull();
+    expect((await prisma.role.findUniqueOrThrow({ where: { id: plain.id } })).color).toBeNull();
+    expect((await call("PATCH", `${s.base}/roles/${s.guild.id}`, s.owner.token, { color: "#123456" })).json().color).toBe("#123456");
+  });
+
+  it("rejects invalid role colors", async () => {
+    const s = await setup();
+    for (const color of ["red", "#12345", "#GGGGGG", "123456", "#1234567", 123456]) {
+      expect(await status("POST", `${s.base}/roles`, s.owner.token, { name: "x", color })).toBe(400);
+      expect(await status("PATCH", roleUrl(s, s.roles.below.id), s.owner.token, { color })).toBe(400);
+    }
+    await expect(prisma.role.update({ where: { id: s.roles.below.id }, data: { color: "red" } })).rejects.toThrow();
+  });
+
   it("members list carries roleIds; a kicked member loses their roles and comes back without them", async () => {
     const s = await setup();
     const low = (await call("GET", `${s.base}/members`, s.owner.token)).json().find((m: { username: string }) => m.username === "low");

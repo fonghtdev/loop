@@ -12,6 +12,7 @@ import { captureShare, createGoLivePrefs } from "./golive";
 import { createChat, type Message } from "./chat";
 import { goHome, openConversation, placeForKey, useNav, writeLastPlace } from "./nav";
 import type { Guild } from "./permissions";
+import { createPresence } from "./presence";
 import { createRealtime } from "./realtime";
 import { createSession } from "./session";
 import { createFirstRun } from "./firstrun";
@@ -51,6 +52,7 @@ export const session = createSession({
     voice.leave();
     calls.reset();
     voicePresence.clear();
+    presence.clear();
     unread.reset();
     realtime.stop();
     chat.reset();
@@ -58,6 +60,9 @@ export const session = createSession({
     goHome();
   },
 });
+
+/** Everyone's status plus the user's own choice (lib/presence). */
+export const presence = createPresence({ request: session.client.request });
 
 const myId = () => session.useSession.getState().user?.id;
 
@@ -235,6 +240,7 @@ function notifyMessage(key: ConvKey, m: Message) {
     conversation: key,
     blocked: isBlocked(m.author.id),
     settings: appSettings.store.getState().settings,
+    myStatus: presence.store.getState().mine,
   });
   if (wanted && m.dmChannelId) ask(() => window.loop.notify(messageNotice(m)));
 }
@@ -252,6 +258,7 @@ calls.store.subscribe((s, prev) => {
     conversation: dmKey(call.dmId),
     blocked: isBlocked(call.from.id),
     settings: appSettings.store.getState().settings,
+    myStatus: presence.store.getState().mine,
   });
   if (wanted) ask(() => window.loop.notify(callNotice(call.dmId, call.from.username, call.video)));
 });
@@ -278,15 +285,25 @@ export const realtime = createRealtime({
     chat.markUnavailable(key);
     revalidateGuild(useNav.getState().guildId);
   },
-  onSocial: (event) => applySocialEvent(queryClient, event),
+  onSocial: (event) => {
+    applySocialEvent(queryClient, event);
+    presence.apply(event);
+  },
+  onMyStatus: presence.setMine,
   onGuild: (event) => applyGuildEvent(queryClient, event),
   onWatched: (channelId) => void fetchVoiceSeats(channelId),
   onWatchRefused: () => revalidateGuild(useNav.getState().guildId),
   onVoiceUpdate: (channelId, seats) => voicePresence.update(channelId, seats),
   onCall: (event) => calls.handle(event),
   // everything may have changed meanwhile: friends, DM list, blocks, permissions (the open conversation catches up separately)
-  onReconnected: () => void queryClient.invalidateQueries(),
+  onReconnected: () => {
+    void queryClient.invalidateQueries();
+    void presence.loadMine();
+  },
 });
+
+// the main process watches the system idle time; the server learns it through the socket
+window.loop.onIdle((away) => realtime.setAway(away));
 
 // The socket lives exactly as long as the signed-in session.
 session.useSession.subscribe((s, prev) => {
@@ -296,6 +313,7 @@ session.useSession.subscribe((s, prev) => {
       firstRun.start(s.user.id);
     }
     void appSettings.load();
+    void presence.loadMine();
     realtime.start();
   }
   if (s.status !== "signedIn" && prev.status === "signedIn") {

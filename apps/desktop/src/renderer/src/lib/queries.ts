@@ -1,9 +1,8 @@
 import { hasPermission } from "@loop/shared";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
 import { standingFor } from "./admin";
-import { session } from "./app";
-import { BLOCKS_KEY, DMS_KEY, FRIENDS_KEY, showOnline, type Dm, type FriendsData, type PublicUser } from "./social";
+import { presence, session } from "./app";
+import { BLOCKS_KEY, DMS_KEY, FRIENDS_KEY, type Dm, type FriendsData, type PublicUser } from "./social";
 import { permissionsFor, type Guild, type Member, type Role } from "./permissions";
 import type { GuildData } from "./categories";
 
@@ -20,7 +19,7 @@ export const guildQuery = (guildId: string | null) => ({
 export const useGuild = (guildId: string | null) => useQuery({ ...guildQuery(guildId), enabled: !!guildId });
 
 export const useMembers = (guildId: string | null) =>
-  useQuery({ queryKey: ["guild", guildId, "members"], queryFn: () => api<Member[]>("GET", `/guilds/${guildId}/members`), enabled: !!guildId });
+  useQuery({ queryKey: ["guild", guildId, "members"], queryFn: () => api<Member[]>("GET", `/guilds/${guildId}/members`).then((l) => presence.seed(l.map((m) => ({ id: m.userId, status: m.status })), l)), enabled: !!guildId });
 
 export const useRoles = (guildId: string | null) =>
   useQuery({ queryKey: ["guild", guildId, "roles"], queryFn: () => api<Role[]>("GET", `/guilds/${guildId}/roles`), enabled: !!guildId });
@@ -43,13 +42,6 @@ export function usePermissions(guildId: string | null, channelId?: string | null
 }
 
 // Friends, DMs and blocks: kept live in place by the socket events (lib/social.ts); refetched after a reconnect.
-export const useFriends = () => useQuery({ queryKey: FRIENDS_KEY, queryFn: () => api<FriendsData>("GET", "/friends") });
+export const useFriends = () => useQuery({ queryKey: FRIENDS_KEY, queryFn: () => api<FriendsData>("GET", "/friends").then((d) => presence.seed(d.friends, d)) });
 export const useBlocks = () => useQuery({ queryKey: BLOCKS_KEY, queryFn: () => api<PublicUser[]>("GET", "/blocks") });
-export const useDms = () => useQuery({ queryKey: DMS_KEY, queryFn: () => api<Dm[]>("GET", "/dms") });
-
-/** Whether to show someone as online: their flag, but never for a blocked user (and not before the block list is known). */
-export function useIsOnline() {
-  const blocks = useBlocks();
-  const ids = useMemo(() => new Set(blocks.data?.map((u) => u.id)), [blocks.data]);
-  return (u: { id: string; online: boolean }) => blocks.isSuccess && showOnline(u.id, u.online, ids);
-}
+export const useDms = () => useQuery({ queryKey: DMS_KEY, queryFn: () => api<Dm[]>("GET", "/dms").then((l) => presence.seed(l.map((x) => x.user), l)) });

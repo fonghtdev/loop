@@ -20,6 +20,7 @@ model User {
   bots            User[]       @relation("BotOwner")
   botTokenHash    String?      @unique // SHA-256 of the bot token's secret; null once the bot is deleted
   deletedAt       DateTime? // bots are soft-deleted: their messages keep the author (Message.authorId is Restrict)
+  statusPref      String       @default("online") // StatusPref in @loop/shared (CHECK in DB)
   sessions        Session[]
   ownedGuilds     Guild[]
   memberships     Member[]
@@ -161,6 +162,7 @@ model Role {
   name        String
   permissions Int // bitmask, see Permission in @loop/shared
   position    Int // higher = more powerful; non-@everyone roles are >= 1
+  color       String? // "#RRGGBB" (CHECK in DB), null = default
   createdAt   DateTime           @default(now())
   members     MemberRole[]
   overwrites  ChannelOverwrite[]

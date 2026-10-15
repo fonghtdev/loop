@@ -4,6 +4,8 @@ import type { LiveEvent as ChannelEvent, Message } from "./chat";
 import { channelKey, dmKey, parseKey, type ConvKey } from "./conversation";
 import type { CallEvent } from "./calls";
 import type { GuildEvent } from "./categories";
+import { asPref, asStatus } from "./presence";
+import type { StatusPref } from "@loop/shared";
 import type { Friend, PublicUser, SocialEvent } from "./social";
 import type { Seat } from "./voice-presence";
 
@@ -42,6 +44,8 @@ type Deps = {
   onRefused: (key: ConvKey) => void;
   /** Friend, DM-list and presence events (they arrive whatever is open). */
   onSocial: (event: SocialEvent) => void;
+  /** The user's own status choice was changed from another device (`me:status`). */
+  onMyStatus: (pref: StatusPref) => void;
   /** Channel and category changes of a server we are in (they arrive in the user's own room, whatever is open). */
   onGuild: (event: GuildEvent) => void;
   /** A watched voice channel was subscribed (first time and after every reconnect): fetch who is in it. */
@@ -69,13 +73,14 @@ type Deps = {
  * - The server never subscribes by itself: the open channel is (re)subscribed on every connect. A DM needs no
  *   subscribe (every socket is in the user's own room); friend, DM and presence events arrive in that room.
  */
-export function createRealtime({ url, getToken, onEvent, onActivity, onSubscribed, onRefused, onSocial, onGuild, onWatched, onWatchRefused, onVoiceUpdate, onCall, onReconnected, io = connectIo, retryDelayMs = 1000 }: Deps) {
+export function createRealtime({ url, getToken, onEvent, onActivity, onSubscribed, onRefused, onSocial, onMyStatus, onGuild, onWatched, onWatchRefused, onVoiceUpdate, onCall, onReconnected, io = connectIo, retryDelayMs = 1000 }: Deps) {
   const state = createStore<{ status: ConnectionStatus }>(() => ({ status: "idle" }));
   const setStatus = (status: ConnectionStatus) => state.setState({ status });
   let socket: SocketLike | null = null;
   let openKey: ConvKey | null = null;
   let watched = new Set<string>();
   let tracked = new Set<string>(); // text channels of the open server, listened to for unread counts only
+  let away = false; // the system is idle; kept across stop() (an account switch on an idle machine stays away)
   let sent: string | null = null; // the token of the latest handshake
   let authRetried = false;
   let everConnected = false;
@@ -152,6 +157,7 @@ export function createRealtime({ url, getToken, onEvent, onActivity, onSubscribe
       retries = 0;
       if (everConnected) onReconnected();
       everConnected = true;
+      if (away) s.emit("presence:away", { away }); // the server's flag is per socket and starts false
       if (openKey) subscribe(s, openKey);
       for (const id of watched) watch(s, id);
       for (const id of tracked) track(s, id);
@@ -183,7 +189,11 @@ export function createRealtime({ url, getToken, onEvent, onActivity, onSubscribe
     s.on("friend:request", (d: { from: PublicUser }) => d?.from && social({ type: "friend:request", from: d.from }));
     s.on("friend:accepted", (d: { user: PublicUser }) => d?.user && social({ type: "friend:accepted", user: d.user }));
     s.on("friend:removed", (d: { userId: string }) => d?.userId && social({ type: "friend:removed", userId: d.userId }));
-    s.on("presence:update", (d: { userId: string; online: boolean }) => d?.userId && social({ type: "presence", userId: d.userId, online: d.online === true }));
+    s.on("presence:update", (d: { userId: string; status: unknown }) => d?.userId && social({ type: "presence", userId: d.userId, status: asStatus(d.status) }));
+    s.on("me:status", (d: { status: unknown }) => {
+      const pref = asPref(d?.status);
+      if (s === socket && pref) onMyStatus(pref);
+    });
     const guild = (event: GuildEvent) => s === socket && onGuild(event);
     s.on("channel:created", (d: Extract<GuildEvent, { type: "channel:created" }>["channel"]) => d?.id && guild({ type: "channel:created", channel: d }));
     s.on("category:created", (d: Extract<GuildEvent, { type: "category:created" }>["category"]) => d?.id && guild({ type: "category:created", category: d }));
@@ -248,6 +258,12 @@ export function createRealtime({ url, getToken, onEvent, onActivity, onSubscribe
         for (const id of dropped) if (!listened(id)) s.emit("channel:unsubscribe", { channelId: id });
         for (const id of added) track(s, id);
       }
+    },
+    /** The system went idle / came back: told to the server now (if connected) and again after every reconnect. */
+    setAway(next: boolean) {
+      if (next === away) return;
+      away = next;
+      if (socket?.connected) socket.emit("presence:away", { away });
     },
     /** "Try again" after `failed`. */
     retry() {

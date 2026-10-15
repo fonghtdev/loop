@@ -4,7 +4,9 @@ import { useStore } from "zustand";
 import { t } from "../i18n/t";
 import { calls, chat, voice } from "../lib/app";
 import { dmKey } from "../lib/conversation";
-import { useBlocks, useDms, useFriends, useIsOnline } from "../lib/queries";
+import { useStatusOf } from "../lib/presence-hooks";
+import { statusLabel } from "../lib/presence";
+import { useBlocks, useDms, useFriends } from "../lib/queries";
 import { dmComposerState, type DmComposerState } from "../lib/social";
 import { isActive } from "../lib/voice-hooks";
 import { PresenceAvatar } from "./Avatar";
@@ -23,7 +25,7 @@ export function DmView({ dmId }: { dmId: string }) {
   const dm = useDms().data?.find((d) => d.id === dmId);
   const friends = useFriends();
   const blocks = useBlocks();
-  const isOnline = useIsOnline();
+  const statusOf = useStatusOf();
   const forbiddenAt = useStore(chat.store, (s) => s.convs[key]?.forbiddenAt ?? null);
   const inCall = useStore(voice.store, (s) => s.target?.kind === "dm" && s.target.id === dmId && isActive(s.status));
   const blocked = useMemo(() => new Set(blocks.data?.map((u) => u.id)), [blocks.data]);
@@ -39,7 +41,7 @@ export function DmView({ dmId }: { dmId: string }) {
     );
 
   const name = dm.user.username;
-  const online = isOnline(dm.user);
+  const status = statusOf(dm.user.id);
   const state = dmComposerState({ friends: friends.data, friendsUpdatedAt: friends.dataUpdatedAt, blocked, otherId: dm.user.id, forbiddenAt });
   return (
     <Conversation
@@ -47,14 +49,14 @@ export function DmView({ dmId }: { dmId: string }) {
       header={
         <>
           <UserCardTrigger user={dm.user} guildId={null} decorative>
-            <PresenceAvatar id={dm.user.id} name={name} online={online} ring={2} className="size-8 rounded-full text-xs" />
+            <PresenceAvatar id={dm.user.id} name={name} status={status} ring={2} labelled={false} className="size-8 rounded-full text-xs" />
           </UserCardTrigger>
           <h1 className="min-w-0 truncate">
             <UserCardTrigger user={dm.user} guildId={null} className="max-w-full truncate hover:underline">
               {name}
             </UserCardTrigger>
           </h1>
-          <span className="shrink-0 text-xs font-normal text-ink-muted">{online ? t("presence.online") : t("presence.offline")}</span>
+          <span className="shrink-0 text-xs font-normal text-ink-muted">{statusLabel(status)}</span>
           <span className="ml-auto flex shrink-0 gap-1">
             {[false, true].map((video) => (
               <Tooltip key={String(video)} label={state !== "ok" ? t("call.unavailable") : inCall ? t("call.inCall") : video ? t("call.video") : t("call.voice")}>

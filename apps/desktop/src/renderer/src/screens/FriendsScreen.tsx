@@ -1,6 +1,7 @@
 import { ChatCircle, Prohibit, UserMinus, UsersThree } from "@phosphor-icons/react";
+import type { PresenceStatus } from "@loop/shared";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref, type RefObject } from "react";
-import { PresenceAvatar } from "../components/Avatar";
+import { Avatar, PresenceAvatar } from "../components/Avatar";
 import { Banner } from "../components/Banner";
 import { Checklist } from "../components/Checklist";
 import { Button } from "../components/Button";
@@ -17,7 +18,9 @@ import type { MessageKey } from "../i18n/vi";
 import { errorMessage } from "../lib/errors";
 import { isFirstRun } from "../lib/firstrun";
 import { useFirstRun } from "../lib/firstrun-hooks";
-import { useBlocks, useFriends, useIsOnline } from "../lib/queries";
+import { useStatusOf } from "../lib/presence-hooks";
+import { statusLabel } from "../lib/presence";
+import { useBlocks, useFriends } from "../lib/queries";
 import { acceptRequest, blockUser, dismissRequest, openDm, sendFriendRequest, unblockUser, unfriend } from "../lib/social-actions";
 import { sortFriends, type Friend, type PublicUser } from "../lib/social";
 import { nextTab } from "../lib/tabs";
@@ -206,10 +209,14 @@ function ListState({ query, empty }: { query: { isPending: boolean; isError: boo
   return empty;
 }
 
-function Row({ user, online, subtitle, children }: { user: PublicUser; online?: boolean; subtitle?: string; children: ReactNode }) {
+function Row({ user, status, subtitle, children }: { user: PublicUser; status?: PresenceStatus; subtitle?: string; children: ReactNode }) {
   return (
     <li className="relative flex min-h-16 items-center gap-3 rounded-card px-3 py-2 transition-colors duration-(--duration-fast) hover:bg-white/[.04] not-first:before:absolute not-first:before:top-0 not-first:before:right-3 not-first:before:left-16 not-first:before:h-px not-first:before:bg-hair hover:before:opacity-0 [&:hover+li]:before:opacity-0">
-      <PresenceAvatar id={user.id} name={user.username} online={!!online} ring={2} className="size-10 rounded-full text-sm" />
+      {status ? (
+        <PresenceAvatar id={user.id} name={user.username} status={status} ring={2} labelled={false} className="size-10 rounded-full text-sm" />
+      ) : (
+        <Avatar id={user.id} name={user.username} className="size-10 rounded-full text-sm" />
+      )}
       <span className="min-w-0 flex-1">
         <Tooltip label={user.username}>
           <span className="block truncate text-chat font-semibold text-ink select-text">{user.username}</span>
@@ -224,7 +231,7 @@ function Row({ user, online, subtitle, children }: { user: PublicUser; online?: 
 function FriendList() {
   const friends = useFriends();
   const blocks = useBlocks();
-  const isOnline = useIsOnline();
+  const statusOf = useStatusOf();
   const [dialog, setDialog] = useState<{ kind: "unfriend" | "block"; user: Friend } | null>(null);
   const action = useRowAction();
   const sorted = useMemo(() => sortFriends(friends.data?.friends ?? [], new Set(blocks.data?.map((u) => u.id))), [friends.data, blocks.data]);
@@ -240,7 +247,7 @@ function FriendList() {
       {friends.data && sorted.length > 0 && (
         <ul aria-label={t("friends.list")} className="flex flex-col">
           {sorted.map((f) => (
-            <Row key={f.id} user={f} online={isOnline(f)} subtitle={isOnline(f) ? t("presence.online") : t("presence.offline")}>
+            <Row key={f.id} user={f} status={statusOf(f.id)} subtitle={statusLabel(statusOf(f.id))}>
               <IconButton label={t("friends.message", { name: f.username })} onClick={() => void action.run(f.id, () => openDm(f.id))}>
                 <ChatCircle aria-hidden="true" />
               </IconButton>

@@ -34,6 +34,7 @@ test("register, restore the session after a relaunch, logout, wrong password", a
     "media",
     "notify",
     "onFocusChange",
+    "onIdle",
     "onNavigate",
     "onShortcut",
     "openExternal",

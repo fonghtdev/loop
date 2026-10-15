@@ -13,7 +13,8 @@ import { hasFiles } from "../lib/drop";
 import { errorMessage } from "../lib/errors";
 import { move, reducedNow } from "../lib/motion";
 import { useNav } from "../lib/nav";
-import { useGuild, usePermissions } from "../lib/queries";
+import { useGuild, useMembers, usePermissions, useRoles } from "../lib/queries";
+import { nameColorOf } from "../lib/role-colors";
 import { linkify } from "../lib/text";
 import { buildTimeline, fullTimestamp, timeOfDay } from "../lib/timeline";
 import { Avatar } from "./Avatar";
@@ -152,6 +153,8 @@ function MessageList({ convKey, logLabel, start, state, canManage }: { convKey: 
   const myId = session.useSession((s) => s.user?.id);
   const { messages, pending } = state;
   const rows = useMemo(() => buildTimeline(messages), [messages]);
+  const guildId = useNav((s) => (parseKey(convKey).kind === "channel" ? s.guildId : null));
+  const colors = useNameColors(guildId);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true); // the user is at (or near) the bottom
   const snap = useRef({ first: "", last: "", pending: 0, height: 0, top: 0 });
@@ -250,6 +253,7 @@ function MessageList({ convKey, logLabel, start, state, canManage }: { convKey: 
               day={r.day}
               convKey={convKey}
               mine={r.message.author.id === myId}
+              nameColor={colors.get(r.message.author.id)}
               canDelete={r.message.author.id === myId || canManage}
               onDelete={onDelete}
             />
@@ -338,12 +342,29 @@ type RowProps = {
   day?: string;
   convKey: ConvKey;
   mine: boolean;
+  /** The author's top colored role in this guild (undefined: default text color). */
+  nameColor?: string;
   canDelete: boolean;
   onDelete: (m: Message) => void;
 };
 
+/** userId -> name color for the guild on screen, from the members and roles the shell already holds (no request of its own). */
+function useNameColors(guildId: string | null) {
+  const members = useMembers(guildId).data;
+  const roles = useRoles(guildId).data;
+  return useMemo(() => {
+    const map = new Map<string, string>();
+    if (roles)
+      for (const m of members ?? []) {
+        const c = nameColorOf(m.roleIds, roles, guildId!);
+        if (c) map.set(m.userId, c);
+      }
+    return map;
+  }, [members, roles, guildId]);
+}
+
 /** One message (memoized: with 1000+ loaded, only changed rows re-render). Sizes come from the density variables (--m-*). */
-const MessageRow = memo(function MessageRow({ message, grouped, day, convKey, mine, canDelete, onDelete }: RowProps) {
+const MessageRow = memo(function MessageRow({ message, grouped, day, convKey, mine, nameColor, canDelete, onDelete }: RowProps) {
   const [editing, setEditing] = useState(false);
   const { copied, copy } = useCopy();
   const guildId = useNav((s) => (parseKey(convKey).kind === "channel" ? s.guildId : null));
@@ -378,7 +399,7 @@ const MessageRow = memo(function MessageRow({ message, grouped, day, convKey, mi
         <div className="min-w-0">
           {!grouped && (
             <p className="flex min-w-0 items-baseline gap-2 leading-5">
-              <UserCardTrigger user={message.author} guildId={guildId} className="min-w-0 truncate font-semibold tracking-[-0.005em] text-ink hover:underline">
+              <UserCardTrigger user={message.author} guildId={guildId} className="min-w-0 truncate font-semibold tracking-[-0.005em] text-ink hover:underline" style={{ color: nameColor }}>
                 {message.author.username}
               </UserCardTrigger>
               <time dateTime={message.createdAt} title={fullTimestamp(message.createdAt)} className="numeric shrink-0 text-caption text-ink-faint">

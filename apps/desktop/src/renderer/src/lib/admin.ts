@@ -76,11 +76,12 @@ export const roleNameError = (name: string) => {
 };
 
 /** Only what changed (and never the name of @everyone); null when there is nothing to save. Unknown bits ride along in `permissions`. */
-export function patchRole(role: Role, draft: { name: string; permissions: number }) {
-  const patch: { name?: string; permissions?: number } = {};
+export function patchRole(role: Role, draft: { name: string; permissions: number; color: string | null }) {
+  const patch: { name?: string; permissions?: number; color?: string | null } = {};
   const name = draft.name.trim();
   if (role.id !== role.guildId && name !== role.name) patch.name = name;
   if (draft.permissions !== role.permissions) patch.permissions = draft.permissions;
+  if (draft.color !== (role.color ?? null)) patch.color = draft.color;
   return Object.keys(patch).length ? patch : null;
 }
 

@@ -11,6 +11,7 @@ const base: NotifyDecision = {
   conversation: "dm:d1",
   blocked: false,
   settings: { notifications: true },
+  myStatus: "online",
 };
 const decide = (over: Partial<NotifyDecision>) => shouldNotify({ ...base, ...over });
 
@@ -33,6 +34,11 @@ describe("shouldNotify", () => {
     expect(decide({ isOwn: true })).toBe(false);
     expect(decide({ blocked: true })).toBe(false);
     expect(decide({ settings: { notifications: false } })).toBe(false);
+  });
+  it("do-not-disturb silences messages and calls; every other status notifies", () => {
+    expect(decide({ myStatus: "dnd" })).toBe(false);
+    expect(decide({ myStatus: "dnd", kind: "call" })).toBe(false);
+    for (const myStatus of ["online", "idle", "invisible"] as const) expect(decide({ myStatus })).toBe(true);
   });
   it("never for a guild channel (there are no mentions yet)", () => {
     expect(decide({ conversation: "channel:c1" })).toBe(false);

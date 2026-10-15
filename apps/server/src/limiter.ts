@@ -11,8 +11,8 @@ export type Limits = {
   hit(name: PolicyName, subject: string): Promise<number>;
   /** Client address of a Socket.IO handshake, with the same proxy trust as HTTP. */
   socketIp(headers: Record<string, unknown>, address: string): string;
-  /** A fresh in-memory counter for one socket: true while under `socket-subscribe`. */
-  socketBudget(): () => boolean;
+  /** A fresh in-memory counter for one socket: true while under the given per-socket policy. */
+  socketBudget(name: "socket-subscribe" | "socket-presence"): () => boolean;
 };
 
 const ipOf = (req: FastifyRequest) => normalizeIP(req.ip);
@@ -68,8 +68,8 @@ export function registerLimiter(app: FastifyInstance, env: Env): Limits {
         const chain = [...String(headers["x-forwarded-for"] ?? "").split(",").map((s) => s.trim()).filter(Boolean), address];
         return normalizeIP(chain[trust === true ? 0 : Math.max(0, chain.length - 1 - trust)].slice(0, 64));
       },
-      socketBudget() {
-        const { max, windowMs } = policies("socket-subscribe");
+      socketBudget(name) {
+        const { max, windowMs } = policies(name);
         let count = 0;
         let resetAt = 0;
         return () => {

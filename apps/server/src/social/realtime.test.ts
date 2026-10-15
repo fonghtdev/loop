@@ -102,7 +102,7 @@ describe("DM events", () => {
     await call("POST", "/dms", b.token, { userId: a.id });
     await until(() => sb.got["dm:new"]!.length);
     await settle();
-    expect(sb.got["dm:new"]).toEqual([{ id: dm.id, user: { id: a.id, username: "alice", online: true } }]);
+    expect(sb.got["dm:new"]).toEqual([{ id: dm.id, user: { id: a.id, username: "alice", online: true, status: "online" } }]);
     expect(sa.got["dm:new"]).toEqual([]);
   });
 
@@ -129,7 +129,7 @@ describe("presence", () => {
     const watcher = await connect(a);
     const tab1 = await connect(b);
     await until(() => presence(watcher).length);
-    expect(presence(watcher)).toEqual([{ userId: b.id, online: true }]);
+    expect(presence(watcher)).toEqual([{ userId: b.id, online: true, status: "online" }]);
 
     const tab2 = await connect(b);
     tab2.disconnect(); // a second tab coming and going changes nothing
@@ -138,7 +138,7 @@ describe("presence", () => {
 
     tab1.disconnect();
     await until(() => presence(watcher).length === 2);
-    expect(presence(watcher)[1]).toEqual({ userId: b.id, online: false });
+    expect(presence(watcher)[1]).toEqual({ userId: b.id, online: false, status: "offline" });
   });
 
   it("GET /friends and GET /dms report online correctly", async () => {

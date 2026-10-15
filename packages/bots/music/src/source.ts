@@ -14,11 +14,13 @@ export class UserError extends Error {}
 export const watchUrl = (id: string) => `https://www.youtube.com/watch?v=${id}`;
 
 /** Metadata of one video: a link as is, a search as `ytsearch1:`; the target comes after `--`, so it can never be an option. */
-export function metaArgs(query: string) {
+export function metaArgs(query: string, cookies?: string) {
   const c = classify(query);
-  return ["--dump-single-json", "--no-playlist", "--playlist-items", "1", "--skip-download", "--no-warnings", "--", "url" in c ? c.url : `ytsearch1:${c.search}`];
+  return [...cookieArgs(cookies), "--dump-single-json", "--no-playlist", "--playlist-items", "1", "--skip-download", "--no-warnings", "--", "url" in c ? c.url : `ytsearch1:${c.search}`];
 }
-export const audioArgs = (id: string) => ["-f", "bestaudio/best", "-o", "-", "--no-playlist", "--no-warnings", "--", watchUrl(id)];
+/** A cookies file (Netscape format) lets yt-dlp look like a signed-in browser; the path comes from our own configuration, never from a chat message. */
+const cookieArgs = (cookies?: string) => (cookies ? ["--cookies", cookies] : []);
+export const audioArgs = (id: string, cookies?: string) => [...cookieArgs(cookies), "-f", "bestaudio/best", "-o", "-", "--no-playlist", "--no-warnings", "--", watchUrl(id)];
 export const FFMPEG_ARGS = ["-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-f", "s16le", "-ar", "48000", "-ac", "1", "pipe:1"];
 
 const oneLine = (s: string) => s.replace(/[\p{Cc}\s]+/gu, " ").trim();
@@ -30,6 +32,8 @@ function logFailure(stderr: string, how: string) {
 }
 function explain(stderr: string, how = "") {
   logFailure(stderr, how);
+  // YouTube refuses data-centre addresses ("Sign in to confirm you're not a bot"): not the video's fault, and only cookies (or another host) help
+  if (/not a bot/i.test(stderr)) return "YouTube đang chặn máy chủ của bot (cần cookie đăng nhập, xem hướng dẫn trong docs/DEPLOY.md).";
   return /unavailable|private|removed|sign in|confirm your age|copyright|blocked/i.test(stderr) ? "Video không khả dụng." : "Không tìm thấy hoặc không tải được video.";
 }
 
@@ -44,10 +48,10 @@ export function toTrack(json: any): Track {
 }
 
 /** yt-dlp finds the video, yt-dlp | ffmpeg turn it into PCM. `spawnFn` is a seam for tests. */
-export function createSource({ ytdlp = "yt-dlp", ffmpeg = "ffmpeg", spawnFn = spawn }: { ytdlp?: string; ffmpeg?: string; spawnFn?: typeof spawn } = {}) {
+export function createSource({ ytdlp = "yt-dlp", ffmpeg = "ffmpeg", cookies, spawnFn = spawn }: { ytdlp?: string; ffmpeg?: string; cookies?: string; spawnFn?: typeof spawn } = {}) {
   function resolve(query: string) {
     return new Promise<Track>((done, fail) => {
-      const child = spawnFn(ytdlp, metaArgs(query), { stdio: ["ignore", "pipe", "pipe"], timeout: META_TIMEOUT_MS });
+      const child = spawnFn(ytdlp, metaArgs(query, cookies), { stdio: ["ignore", "pipe", "pipe"], timeout: META_TIMEOUT_MS });
       let out = "";
       let err = "";
       child.stdout!.on("data", (d) => (out += d));
@@ -69,7 +73,7 @@ export function createSource({ ytdlp = "yt-dlp", ffmpeg = "ffmpeg", spawnFn = sp
   }
 
   async function* open(track: Track, signal: AbortSignal): AsyncGenerator<Buffer> {
-    const dl: ChildProcess = spawnFn(ytdlp, audioArgs(track.id), { stdio: ["ignore", "pipe", "pipe"] });
+    const dl: ChildProcess = spawnFn(ytdlp, audioArgs(track.id, cookies), { stdio: ["ignore", "pipe", "pipe"] });
     const ff: ChildProcess = spawnFn(ffmpeg, FFMPEG_ARGS, { stdio: ["pipe", "pipe", "ignore"] });
     const kill = () => {
       dl.kill();

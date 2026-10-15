@@ -157,6 +157,7 @@ export function guildRoutes(app: FastifyInstance) {
       select: { userId: true, joinedAt: true, user: { select: { username: true, isBot: true, createdAt: true } }, roles: { select: { roleId: true } } },
       orderBy: { joinedAt: "asc" },
     });
+    const status = await app.realtime.statusOf(req.userId, members.map((m) => m.userId));
     return members.map((m) => ({
       userId: m.userId,
       username: m.user.username,
@@ -164,6 +165,7 @@ export function guildRoutes(app: FastifyInstance) {
       joinedAt: m.joinedAt,
       createdAt: m.user.createdAt, // when the account was made ("member of Loop since")
       roleIds: m.roles.map((r) => r.roleId),
+      status: status.get(m.userId) ?? "offline", // as the caller may see it (invisible / blocked -> offline)
     }));
   });
 

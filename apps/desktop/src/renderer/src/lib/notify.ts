@@ -1,3 +1,4 @@
+import type { StatusPref } from "@loop/shared";
 import type { NotifyPayload } from "../../../shared/notify";
 import type { Settings } from "../../../shared/settings";
 import { t } from "../i18n/t";
@@ -15,6 +16,8 @@ export type NotifyDecision = {
   /** The sender is someone we blocked. */
   blocked: boolean;
   settings: Pick<Settings, "notifications">;
+  /** My own status choice: do-not-disturb silences the OS. */
+  myStatus: StatusPref;
 };
 
 /**
@@ -23,7 +26,7 @@ export type NotifyDecision = {
  */
 export function shouldNotify(d: NotifyDecision): boolean {
   if (parseKey(d.conversation).kind !== "dm") return false;
-  if (!d.settings.notifications || d.isOwn || d.blocked) return false;
+  if (!d.settings.notifications || d.myStatus === "dnd" || d.isOwn || d.blocked) return false;
   return !(d.windowFocused && d.openConversation === d.conversation);
 }
 

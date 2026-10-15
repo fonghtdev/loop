@@ -35,6 +35,8 @@ const ROWS: Row[] = [
   { route: "GET /dms", ok: 200, url: () => "/dms", own: "lists only the caller's own DM channels" },
   { route: "POST /dms/:dmId/messages", ok: 201, url: (f) => `/dms/${f.dm.id}/messages`, body: () => ({ content: "hi" }), miss: { status: 404 } },
   { route: "GET /dms/:dmId/messages", ok: 200, url: (f) => `/dms/${f.dm.id}/messages`, miss: { status: 404 } },
+  { route: "GET /me/status", ok: 200, url: () => "/me/status", own: "the caller's own status preference" },
+  { route: "PUT /me/status", ok: 200, url: () => "/me/status", body: () => ({ status: "dnd" }), own: "sets the caller's own status preference" },
 ];
 
 /** actor is friends with `friend` (DM open) and `friend2`, has a request from `requester`; `fresh` and `stranger` are unrelated. */

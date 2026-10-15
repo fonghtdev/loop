@@ -72,7 +72,7 @@ describe("two instances sharing Redis", () => {
     const watcher = await sockB(a);
     const tab1 = await sockA(b);
     await until(() => watcher.got["presence:update"]!.length);
-    expect(watcher.got["presence:update"]).toEqual([{ userId: b.id, online: true }]);
+    expect(watcher.got["presence:update"]).toEqual([{ userId: b.id, online: true, status: "online" }]);
     expect((await onB("GET", "/friends", a.token)).json().friends[0].online).toBe(true); // computed from the adapter
 
     const tab2 = await sockB(b); // second tab, on the other instance
@@ -82,8 +82,33 @@ describe("two instances sharing Redis", () => {
 
     tab1.disconnect();
     await until(() => watcher.got["presence:update"]!.length === 2);
-    expect(watcher.got["presence:update"]![1]).toEqual({ userId: b.id, online: false });
+    expect(watcher.got["presence:update"]![1]).toEqual({ userId: b.id, online: false, status: "offline" });
     await vi.waitFor(async () => expect((await onB("GET", "/friends", a.token)).json().friends[0].online).toBe(false), { timeout: 3000 });
+  });
+
+  it("presence v2 spans instances: a status set on A reaches B, and the effective status counts sockets on both", async () => {
+    const [a, b] = await Promise.all([signUp("alice"), signUp("bob")]);
+    await befriend(instA, a, b);
+    const watcher = await sockB(a);
+    const onAtab = await sockA(b);
+    const onBtab = await sockB(b);
+    const statuses = () => watcher.got["presence:update"]!.map((u) => u.status);
+    await until(() => statuses().length === 1);
+    onAtab.emit("presence:away", { away: true }); // the tab on B is still active: online
+    await settle();
+    expect(statuses()).toEqual(["online"]);
+    expect((await onA("GET", "/friends", a.token)).json().friends[0].status).toBe("online");
+    onBtab.emit("presence:away", { away: true }); // now every tab, on both instances, is away
+    await until(() => statuses().length === 2);
+    expect(statuses()[1]).toBe("idle");
+    expect((await onA("GET", "/friends", a.token)).json().friends[0].status).toBe("idle");
+    expect((await onA("PUT", "/me/status", b.token, { status: "dnd" })).statusCode).toBe(200);
+    await until(() => statuses().length === 3);
+    expect(watcher.got["presence:update"]![2]).toEqual({ userId: b.id, online: true, status: "dnd" });
+    await onA("PUT", "/me/status", b.token, { status: "invisible" });
+    await until(() => statuses().length === 4);
+    expect(statuses()[3]).toBe("offline");
+    expect((await onB("GET", "/friends", a.token)).json().friends[0]).toMatchObject({ online: false, status: "offline" });
   });
 
   it("closing one instance leaves the other's sockets connected", async () => {

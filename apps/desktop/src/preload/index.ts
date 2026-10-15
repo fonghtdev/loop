@@ -42,6 +42,11 @@ const api: LoopApi = {
     ipcRenderer.on("window:focus", listener);
     return () => void ipcRenderer.removeListener("window:focus", listener);
   },
+  onIdle: (cb) => {
+    const listener = (_e: unknown, away: unknown) => cb(away === true);
+    ipcRenderer.on("presence:idle", listener);
+    return () => void ipcRenderer.removeListener("presence:idle", listener);
+  },
   uninstall: () => ipcRenderer.invoke("app:uninstall"),
   openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
   version: () => ipcRenderer.invoke("app:version"),

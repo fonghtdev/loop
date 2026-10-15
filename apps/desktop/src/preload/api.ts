@@ -49,6 +49,8 @@ export type LoopApi = {
   setBadge(count: number): Promise<void>;
   /** Whether the window is focused and on screen (pushed by the main process); returns the unsubscribe. */
   onFocusChange(cb: (focused: boolean) => void): () => void;
+  /** The system has been idle for 10 minutes (true) or is active again (false); pushed on change only; returns the unsubscribe. */
+  onIdle(cb: (away: boolean) => void): () => void;
   /**
    * Removes Loop and its data from THIS computer (the account and server data stay). The main process shows its own native
    * confirmation; "cancelled" = the user said no. On "done" the app is already gone, so this normally never resolves.

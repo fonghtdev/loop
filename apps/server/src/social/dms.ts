@@ -1,12 +1,13 @@
 import type { FastifyInstance } from "fastify";
-import { historyQuerySchema, messageBodySchema, openDmSchema } from "@loop/shared";
+import { historyQuerySchema, messageBodySchema, openDmSchema, type PresenceStatus } from "@loop/shared";
 import { prisma } from "../db.js";
 import { parse } from "../http.js";
+import { presenceFields } from "../presence.js";
 import { createMessage, history, toDto } from "../messages/routes.js";
-import { areFriends, blockedWith, NOT_FOUND, otherOf, pair, requireDm, requireFriendsUnblocked, requireReachableUser, requireUser, userSelect } from "./access.js";
+import { areFriends, NOT_FOUND, otherOf, pair, requireDm, requireFriendsUnblocked, requireReachableUser, requireUser, userSelect } from "./access.js";
 
 export function dmRoutes(app: FastifyInstance) {
-  const dmDto = (id: string, user: { id: string; username: string }, online: boolean) => ({ id, user: { ...user, online } });
+  const dmDto = (id: string, user: { id: string; username: string }, status: PresenceStatus | undefined) => ({ id, user: { ...user, ...presenceFields(status) } });
 
   /**
    * Get-or-create. Unknown, blocked and not-a-friend all give the same 404 (nothing to tell them apart by);
@@ -21,9 +22,13 @@ export function dmRoutes(app: FastifyInstance) {
     const key = pair(req.userId, them.id);
     const { count } = await prisma.dmChannel.createMany({ data: [key], skipDuplicates: true });
     const dm = await prisma.dmChannel.findUniqueOrThrow({ where: { userLowId_userHighId: key } });
-    const [online, self] = await Promise.all([app.realtime.onlineIds([them.id]), requireUser({ id: req.userId })]);
-    if (count) app.realtime.emitToUsers([them.id], "dm:new", dmDto(dm.id, self, true));
-    return reply.code(count ? 201 : 200).send(dmDto(dm.id, them, online.has(them.id)));
+    const [theirs, mine, self] = await Promise.all([
+      app.realtime.statusOf(req.userId, [them.id]),
+      app.realtime.statusOf(them.id, [req.userId]), // as they may see me: an invisible caller stays offline
+      requireUser({ id: req.userId }),
+    ]);
+    if (count) app.realtime.emitToUsers([them.id], "dm:new", dmDto(dm.id, self, mine.get(req.userId)));
+    return reply.code(count ? 201 : 200).send(dmDto(dm.id, them, theirs.get(them.id)));
   });
 
   // ponytail: loads all of the caller's DM channels, no paging; add a cursor on lastMessageAt if lists get long
@@ -33,14 +38,14 @@ export function dmRoutes(app: FastifyInstance) {
       where: { OR: [{ userLowId: me }, { userHighId: me }] },
       include: { userLow: { select: userSelect }, userHigh: { select: userSelect } },
     });
-    // A block ends the friendship but keeps the DM: presence must not leak across it, in either direction.
-    const [online, blocked] = await Promise.all([app.realtime.onlineIds(rows.map((r) => otherOf(r, me))), blockedWith(me)]);
+    // A block ends the friendship but keeps the DM: statusOf hides presence across it, in either direction.
+    const status = await app.realtime.statusOf(me, rows.map((r) => otherOf(r, me)));
     const activity = (r: (typeof rows)[number]) => (r.lastMessageAt ?? r.createdAt).getTime();
     return rows
       .sort((a, b) => activity(b) - activity(a))
       .map((r) => {
         const user = r.userLowId === me ? r.userHigh : r.userLow;
-        return { ...dmDto(r.id, user, online.has(user.id) && !blocked.has(user.id)), lastMessageAt: r.lastMessageAt };
+        return { ...dmDto(r.id, user, status.get(user.id)), lastMessageAt: r.lastMessageAt };
       });
   });
 

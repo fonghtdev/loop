@@ -1,6 +1,8 @@
 import type { Track } from "./source.js";
 
 export const MAX_QUEUE = 25;
+/** A pause that nobody ends would hold the voice channel (and a stalled download) forever. */
+export const PAUSE_LIMIT_MS = 10 * 60 * 1000;
 
 /** The part of a VoiceConnection a player uses. */
 export interface Connection {
@@ -22,6 +24,9 @@ export class GuildPlayer {
   private running = false;
   private closed = false;
   private abort?: AbortController;
+  private paused = false;
+  private release?: () => void;
+  private pauseTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
     private readonly conn: Connection,
@@ -36,11 +41,50 @@ export class GuildPlayer {
     return this.pending;
   }
 
-  /** Tracks ahead of the new one (0 = it plays now), or null when the queue is full. */
-  add(track: Track) {
+  get isPaused() {
+    return this.paused;
+  }
+
+  /**
+   * Holds the audio where it is: the connection's native buffer is only ~200 ms ahead, so it goes quiet almost at once, and
+   * resuming continues from the same spot (the paced playback has no clock to catch up with). False when nothing plays or it already is paused.
+   */
+  pause() {
+    if (!this.current || this.paused) return false;
+    this.paused = true;
+    this.pauseTimer = setTimeout(() => void this.stop(), PAUSE_LIMIT_MS);
+    this.pauseTimer.unref?.();
+    return true;
+  }
+
+  /** Continues a paused track. False when it was not paused. */
+  resume() {
+    if (!this.paused) return false;
+    this.unpause();
+    return true;
+  }
+
+  private unpause() {
+    this.paused = false;
+    clearTimeout(this.pauseTimer);
+    this.release?.();
+    this.release = undefined;
+  }
+
+  /** The source's audio, but it stops handing out chunks while paused (so playback starves and the download backs up) and wakes on resume / skip / stop. */
+  private async *gated(pcm: AsyncIterable<Buffer>): AsyncGenerator<Buffer> {
+    for await (const chunk of pcm) {
+      while (this.paused) await new Promise<void>((wake) => (this.release = wake));
+      yield chunk;
+    }
+  }
+
+  /** Tracks ahead of the new one (0 = it plays now), or null when the queue is full. `next` puts it first in line instead of last. */
+  add(track: Track, next = false) {
     if (this.pending.length >= MAX_QUEUE) return null;
-    const ahead = (this.current ? 1 : 0) + this.pending.length;
-    this.pending.push(track);
+    const ahead = (this.current ? 1 : 0) + (next ? 0 : this.pending.length);
+    if (next) this.pending.unshift(track);
+    else this.pending.push(track);
     if (!this.running) void this.run();
     return ahead;
   }
@@ -53,6 +97,7 @@ export class GuildPlayer {
   }
 
   private cut() {
+    this.unpause(); // a paused track that is skipped or stopped must not leave the gate waiting
     this.abort?.abort();
     this.conn.stop();
   }
@@ -64,7 +109,7 @@ export class GuildPlayer {
       const ctl = (this.abort = new AbortController());
       this.say(`Đang phát: ${track.title}`);
       try {
-        await this.conn.playPcm(this.source.open(track, ctl.signal));
+        await this.conn.playPcm(this.gated(this.source.open(track, ctl.signal)));
       } catch (e) {
         this.say(`Không phát được "${track.title}": ${(e as Error).message}`);
       }

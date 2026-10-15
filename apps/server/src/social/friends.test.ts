@@ -27,7 +27,7 @@ describe("friend requests", () => {
 
     expect((await call("POST", `/friends/requests/${a.id}/accept`, b.token)).statusCode).toBe(200);
     for (const [me, other] of [[a, b], [b, a]] as const) {
-      expect(await lists(me)).toEqual({ friends: [{ id: other.id, username: other.name, online: false }], incoming: [], outgoing: [] });
+      expect(await lists(me)).toEqual({ friends: [{ id: other.id, username: other.name, online: false, status: "offline" }], incoming: [], outgoing: [] });
     }
   });
 
@@ -115,7 +115,7 @@ describe("friend requests", () => {
   it("the lists never expose email or password hash", async () => {
     const [a, b] = await Promise.all([signUp("alice"), signUp("bob")]);
     await befriend(app, a, b);
-    expect(Object.keys((await lists(a)).friends[0]).sort()).toEqual(["id", "online", "username"]);
+    expect(Object.keys((await lists(a)).friends[0]).sort()).toEqual(["id", "online", "status", "username"]);
   });
 });
 

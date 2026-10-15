@@ -2,15 +2,18 @@ import { Crown, Plus, X } from "@phosphor-icons/react";
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
-import { admin, session } from "../lib/app";
+import { admin, presence, session } from "../lib/app";
 import { errorMessage } from "../lib/errors";
 import { useNav } from "../lib/nav";
-import { useBlocks, useDms, useFriends, useGuild, useIsOnline, useMembers, usePermissions, useRoles } from "../lib/queries";
+import { useStatusOf } from "../lib/presence-hooks";
+import { dotOfPref, statusLabel } from "../lib/presence";
+import { useBlocks, useDms, useFriends, useGuild, useMembers, usePermissions, useRoles } from "../lib/queries";
 import { acceptRequest, blockUser, dismissRequest, openDm, sendFriendRequest, unblockUser, unfriend } from "../lib/social-actions";
 import { toast } from "../lib/toast";
-import { cardActions, cardDate, closeUserCard, filterRoles, modView, openUserCard, placeCard, presenceOf, relationOf, roleChips, roleColor, rolesView, stepIndex, userCard, type CardTarget } from "../lib/user-card";
+import { cardActions, cardDate, closeUserCard, filterRoles, modView, openUserCard, placeCard, relationOf, roleChips, roleColor, rolesView, stepIndex, userCard, type CardTarget } from "../lib/user-card";
 import { Avatar } from "./Avatar";
 import { ConfirmBody } from "./Confirm";
+import { StatusDot } from "./StatusDot";
 import { Dialog } from "./Dialog";
 import { Tooltip } from "./Tooltip";
 import type { Role } from "../lib/permissions";
@@ -120,7 +123,8 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
   const friends = useFriends().data;
   const blocks = useBlocks().data;
   const dms = useDms().data;
-  const isOnline = useIsOnline();
+  const statusOf = useStatusOf();
+  const myPref = useStore(presence.store, (s) => s.mine);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
 
@@ -129,8 +133,7 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
   const person = { id: userId, username };
   const dm = dms?.find((d) => d.user.id === userId);
   const actions = cardActions({ selfId, userId, isBot, relation: relationOf(userId, friends), blocked: !!blocks?.some((u) => u.id === userId), hasDm: !!dm });
-  const flag = userId === selfId ? true : presenceOf(userId, friends, dms);
-  const online = flag !== undefined && (userId === selfId || isOnline({ id: userId, online: flag }));
+  const status = userId === selfId ? dotOfPref(myPref) : statusOf(userId);
   const mod = guild && members && roles && standing && member ? modView({ guildId: guildId!, guildName: guild.guild.name, ownerId: guild.guild.ownerId, standing, roles, members, channels: guild.channels }, member) : null;
   const chips = guildId && member && roles ? roleChips(member.roleIds, roles, guildId) : [];
   const isOwner = !!guild && guild.guild.ownerId === userId;
@@ -180,12 +183,10 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
             )}
             {isBot && <span className="shrink-0 rounded-xs bg-surface-4 px-1.5 text-micro font-bold text-ink">{t("userCard.bot")}</span>}
           </div>
-          {flag !== undefined && (
-            <p className="flex items-center gap-1.5 text-caption text-ink-muted">
-              <span aria-hidden="true" className={`size-2 rounded-full ${online ? "bg-presence-on" : "bg-line-strong"}`} />
-              {online ? t("presence.online") : t("presence.offline")}
-            </p>
-          )}
+          <p className="flex items-center gap-1.5 text-caption text-ink-muted">
+            <StatusDot status={status} size={10} labelled={false} />
+            {statusLabel(status)}
+          </p>
         </div>
       </div>
 

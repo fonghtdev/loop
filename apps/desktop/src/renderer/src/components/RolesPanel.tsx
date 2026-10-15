@@ -7,7 +7,9 @@ import { canManageRole, grantableBits, patchRole, PERMISSION_GROUPS, roleNameErr
 import { admin } from "../lib/app";
 import { errorMessage } from "../lib/errors";
 import type { Role } from "../lib/permissions";
+import { isRoleColor, ROLE_COLORS } from "../lib/role-colors";
 import { toast } from "../lib/toast";
+import { roleColor } from "../lib/user-card";
 import { Banner } from "./Banner";
 import { Button } from "./Button";
 import { ConfirmBody } from "./Confirm";
@@ -51,6 +53,7 @@ export function RolesPanel({ ctx }: { ctx: SettingsCtx }) {
               onClick={() => setEditing(r.id)}
               className="flex min-h-12 w-full items-center gap-3 rounded-control px-3 text-left transition-colors duration-(--duration-fast) hover:bg-white/[.045] active:scale-[.99]"
             >
+              {r.id !== guildId && <span aria-hidden="true" className="size-3 shrink-0 rounded-full" style={{ backgroundColor: roleColor(r) }} />}
               <Tooltip label={r.name}>
                 <span className={`min-w-0 flex-1 truncate ${r.id === guildId ? "text-ink-muted italic" : "font-medium"}`}>{r.name}</span>
               </Tooltip>
@@ -77,15 +80,18 @@ function RoleEditor({ ctx, role, onBack }: { ctx: SettingsCtx; role: Role | null
   const editable = role ? canManageRole(standing, role) : true;
   const [name, setName] = useState(role?.name ?? "");
   const [permissions, setPermissions] = useState(role?.permissions ?? 0);
+  const [color, setColor] = useState<string | null>(role?.color ?? null);
+  const [hex, setHex] = useState(role?.color ?? "");
   const [tried, setTried] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const held = grantableBits(standing.bits);
-  const patch = role ? patchRole(role, { name, permissions }) : null;
+  const patch = role ? patchRole(role, { name, permissions, color }) : null;
   const nameError = isEveryone ? undefined : roleNameError(name);
+  const hexInvalid = hex !== "" && !isRoleColor(hex);
 
   const save = useMutation({
     mutationFn: async () => {
-      if (!role) await admin.createRole(guildId, { name: name.trim(), permissions });
+      if (!role) await admin.createRole(guildId, { name: name.trim(), permissions, color });
       else if (patch) await admin.updateRole(guildId, role.id, patch);
     },
     onSuccess: () => (role ? toast.push(t("roles.saved")) : onBack()),
@@ -95,9 +101,20 @@ function RoleEditor({ ctx, role, onBack }: { ctx: SettingsCtx; role: Role | null
     toast.dismiss(); // "saved" is no longer true of what is on screen
     fn();
   };
+  const pickColor = (c: string | null) =>
+    change(() => {
+      setColor(c);
+      setHex(c ?? "");
+    });
+  const typeHex = (v: string) =>
+    change(() => {
+      setHex(v);
+      if (isRoleColor(v)) setColor(v);
+      else if (v === "") setColor(null);
+    });
   const submit = () => {
     setTried(true);
-    if (!nameError && !save.isPending) save.mutate();
+    if (!nameError && !hexInvalid && !save.isPending) save.mutate();
   };
 
   return (
@@ -126,6 +143,16 @@ function RoleEditor({ ctx, role, onBack }: { ctx: SettingsCtx; role: Role | null
           disabled={!editable}
           onChange={(e) => change(() => setName(e.target.value))}
           error={tried ? nameError : undefined}
+        />
+      )}
+      {!isEveryone && (
+        <ColorPicker
+          color={color}
+          hex={hex}
+          error={hexInvalid && (tried || hex.length >= 7) ? t("roles.color.invalid") : undefined}
+          disabled={!editable}
+          onPick={pickColor}
+          onType={typeHex}
         />
       )}
       {PERMISSION_GROUPS.map((group) => (
@@ -186,5 +213,28 @@ function RoleEditor({ ctx, role, onBack }: { ctx: SettingsCtx; role: Role | null
         )}
       </Dialog>
     </form>
+  );
+}
+
+/** 16 swatches, "no color", and a custom #RRGGBB field. `hex` is the raw text of the field (may be mid-typing and invalid). */
+function ColorPicker({ color, hex, error, disabled, onPick, onType }: { color: string | null; hex: string; error: string | undefined; disabled: boolean; onPick: (c: string | null) => void; onType: (v: string) => void }) {
+  const swatch = (selected: boolean) =>
+    `grid size-8 place-items-center rounded-full outline-offset-2 transition-transform duration-(--duration-fast) enabled:hover:scale-110 enabled:active:scale-95 ${selected ? "ring-2 ring-ink ring-offset-2 ring-offset-raise" : ""}`;
+  return (
+    <fieldset className="relative edge flex min-w-0 flex-col gap-3 rounded-panel bg-raise p-4 shadow-e2">
+      <legend className="sr-only">{t("roles.color")}</legend>
+      <p aria-hidden="true" className="font-display text-small font-bold tracking-wide text-ink-muted uppercase">
+        {t("roles.color")}
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" disabled={disabled} aria-pressed={color === null} onClick={() => onPick(null)} className={`h-8 rounded-full border border-line-strong px-3 text-small font-medium text-ink-muted ${color === null ? "ring-2 ring-ink ring-offset-2 ring-offset-raise" : "enabled:hover:bg-white/[.045]"}`}>
+          {t("roles.color.none")}
+        </button>
+        {ROLE_COLORS.map((c) => (
+          <button key={c} type="button" disabled={disabled} aria-pressed={color?.toLowerCase() === c} aria-label={t("roles.color.swatch", { color: c })} onClick={() => onPick(c)} className={swatch(color?.toLowerCase() === c)} style={{ backgroundColor: c }} />
+        ))}
+      </div>
+      <TextField label={t("roles.color.custom")} maxLength={7} placeholder="#RRGGBB" value={hex} disabled={disabled} onChange={(e) => onType(e.target.value.trim())} error={error} />
+    </fieldset>
   );
 }

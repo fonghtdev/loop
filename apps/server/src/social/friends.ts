@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { friendRequestSchema } from "@loop/shared";
 import { prisma } from "../db.js";
 import { HttpError, parse } from "../http.js";
+import { presenceFields } from "../presence.js";
 import { endDmCall } from "../voice/calls.js";
 import { isUuid, NOT_FOUND, pair, requireReachableUser, requireUser, userSelect } from "./access.js";
 
@@ -30,10 +31,10 @@ export function friendRoutes(app: FastifyInstance) {
     });
     const withOther = rows.map((r) => ({ ...r, other: r.userLowId === me ? r.userHigh : r.userLow }));
     const accepted = withOther.filter((r) => r.status === "ACCEPTED").map((r) => r.other);
-    const online = await app.realtime.onlineIds(accepted.map((u) => u.id));
+    const status = await app.realtime.statusOf(me, accepted.map((u) => u.id));
     const pending = withOther.filter((r) => r.status === "PENDING");
     return {
-      friends: accepted.map((u) => ({ ...u, online: online.has(u.id) })),
+      friends: accepted.map((u) => ({ ...u, ...presenceFields(status.get(u.id)) })),
       incoming: pending.filter((r) => r.requesterId !== me).map((r) => r.other),
       outgoing: pending.filter((r) => r.requesterId === me).map((r) => r.other),
     };

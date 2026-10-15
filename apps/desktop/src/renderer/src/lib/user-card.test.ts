@@ -2,8 +2,9 @@ import { Permission } from "@loop/shared";
 import { describe, expect, it } from "vitest";
 import { standingFor, type SettingsCtx } from "./admin";
 import type { Member, Role } from "./permissions";
-import type { Dm, FriendsData } from "./social";
-import { cardActions, cardDate, filterRoles, modView, placeCard, presenceOf, relationOf, roleChips, roleColor, rolesView, stepIndex } from "./user-card";
+import type { FriendsData } from "./social";
+import { NEUTRAL_ROLE_COLOR } from "./role-colors";
+import { cardActions, cardDate, filterRoles, modView, placeCard, relationOf, roleChips, roleColor, rolesView, stepIndex } from "./user-card";
 
 const G = "g";
 const role = (id: string, position: number, permissions: number): Role => ({ id, guildId: G, name: id, permissions, position });
@@ -52,17 +53,11 @@ describe("cardActions", () => {
   });
 });
 
-describe("relation and presence", () => {
-  const friends: FriendsData = { friends: [{ id: "f", username: "f", online: true }], incoming: [{ id: "i", username: "i" }], outgoing: [{ id: "o", username: "o" }] };
+describe("relation", () => {
+  const friends: FriendsData = { friends: [{ id: "f", username: "f", status: "online" }], incoming: [{ id: "i", username: "i" }], outgoing: [{ id: "o", username: "o" }] };
   it("relationOf reads the three lists", () => {
     expect(["f", "i", "o", "x"].map((id) => relationOf(id, friends))).toEqual(["friend", "incoming", "outgoing", "none"]);
     expect(relationOf("f", undefined)).toBe("none");
-  });
-  it("presence is known for friends and DM partners only (undefined, not offline, for strangers)", () => {
-    const dms: Dm[] = [{ id: "d", user: { id: "p", username: "p", online: false }, lastMessageAt: null }];
-    expect(presenceOf("f", friends, dms)).toBe(true);
-    expect(presenceOf("p", friends, dms)).toBe(false);
-    expect(presenceOf("stranger", friends, dms)).toBeUndefined();
   });
 });
 
@@ -171,12 +166,12 @@ describe("filterRoles / stepIndex", () => {
 });
 
 describe("roleColor", () => {
-  it("is stable per id and prefers the role's own color", () => {
-    expect(roleColor({ id: "x" })).toBe(roleColor({ id: "x" }));
-    expect(roleColor({ id: "x", color: "#123456" })).toBe("#123456");
+  it("uses the role's own color, stable", () => {
+    expect(roleColor({ color: "#123456" })).toBe("#123456");
+    expect(roleColor({ color: "#123456" })).toBe(roleColor({ color: "#123456" }));
   });
-  it("spreads ids over several distinct hues", () => {
-    const colors = new Set(Array.from({ length: 40 }, (_, i) => roleColor({ id: `role-${i}` })));
-    expect(colors.size).toBeGreaterThanOrEqual(6);
+  it("a role without color (missing or null) gets the same neutral color, whatever its id", () => {
+    expect(roleColor({})).toBe(NEUTRAL_ROLE_COLOR);
+    expect(roleColor({ color: null })).toBe(NEUTRAL_ROLE_COLOR);
   });
 });

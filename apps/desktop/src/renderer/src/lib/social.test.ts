@@ -1,3 +1,4 @@
+import type { PresenceStatus } from "@loop/shared";
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import type { Message } from "./chat";
@@ -11,6 +12,7 @@ import {
   dmComposerState,
   DMS_KEY,
   FRIENDS_KEY,
+  isOnline,
   removePerson,
   setDmPresence,
   setFriendPresence,
@@ -21,7 +23,7 @@ import {
   type FriendsData,
 } from "./social";
 
-const user = (id: string, online = false): Friend => ({ id, username: id, online });
+const user = (id: string, status: PresenceStatus = "offline"): Friend => ({ id, username: id, status });
 const data = (over: Partial<FriendsData> = {}): FriendsData => ({ friends: [], incoming: [], outgoing: [], ...over });
 const dm = (id: string, other: string, lastMessageAt: string | null): Dm => ({ id, user: user(other), lastMessageAt });
 const message = (dmChannelId: string, at: string): Message => ({
@@ -39,22 +41,23 @@ const message = (dmChannelId: string, at: string): Message => ({
 describe("presence", () => {
   it("a blocked user is never online, whatever the flag says", () => {
     const blocked = new Set(["b"]);
-    expect(showOnline("a", true, blocked)).toBe(true);
-    expect(showOnline("b", true, blocked)).toBe(false);
-    expect(showOnline("a", false, blocked)).toBe(false);
+    expect(showOnline("a", "online", blocked)).toBe(true);
+    expect(showOnline("b", "online", blocked)).toBe(false);
+    expect(showOnline("a", "offline", blocked)).toBe(false);
+    expect(["online", "idle", "dnd", "offline"].map((s) => isOnline(s as PresenceStatus))).toEqual([true, true, true, false]);
   });
   it("sorts online friends first (blocked ones count as offline), then by name", () => {
-    const list = [user("zed", true), user("ann"), user("bob", true), user("cat", true)];
+    const list = [user("zed", "online"), user("ann"), user("bob", "idle"), user("cat", "dnd")];
     expect(sortFriends(list, new Set(["cat"])).map((f) => f.id)).toEqual(["bob", "zed", "ann", "cat"]);
   });
   it("presence updates friends and DM users in place, and returns the same object when nothing changes", () => {
-    const d = data({ friends: [user("a"), user("b", true)] });
-    expect(setFriendPresence(d, "a", true).friends.map((f) => f.online)).toEqual([true, true]);
-    expect(setFriendPresence(d, "a", false)).toBe(d);
-    expect(setFriendPresence(d, "stranger", true)).toBe(d);
+    const d = data({ friends: [user("a"), user("b", "online")] });
+    expect(setFriendPresence(d, "a", "idle").friends.map((f) => f.status)).toEqual(["idle", "online"]);
+    expect(setFriendPresence(d, "a", "offline")).toBe(d);
+    expect(setFriendPresence(d, "stranger", "online")).toBe(d);
     const dms = [dm("d1", "a", null)];
-    expect(setDmPresence(dms, "a", true)[0].user.online).toBe(true);
-    expect(setDmPresence(dms, "a", false)).toBe(dms);
+    expect(setDmPresence(dms, "a", "dnd")[0].user.status).toBe("dnd");
+    expect(setDmPresence(dms, "a", "offline")).toBe(dms);
   });
 });
 
@@ -109,9 +112,9 @@ describe("applySocialEvent (TanStack caches, in place)", () => {
     const qc = setup(data({ friends: [user("a")] }), [dm("d1", "a", null)]);
     applySocialEvent(qc, { type: "friend:request", from: { id: "r", username: "r" } });
     expect(qc.getQueryData<FriendsData>(FRIENDS_KEY)!.incoming.map((u) => u.id)).toEqual(["r"]);
-    applySocialEvent(qc, { type: "presence", userId: "a", online: true });
-    expect(qc.getQueryData<FriendsData>(FRIENDS_KEY)!.friends[0].online).toBe(true);
-    expect(qc.getQueryData<Dm[]>(DMS_KEY)![0].user.online).toBe(true);
+    applySocialEvent(qc, { type: "presence", userId: "a", status: "idle" });
+    expect(qc.getQueryData<FriendsData>(FRIENDS_KEY)!.friends[0].status).toBe("idle");
+    expect(qc.getQueryData<Dm[]>(DMS_KEY)![0].user.status).toBe("idle");
     applySocialEvent(qc, { type: "dm:new", dm: { id: "d2", user: user("n") } });
     expect(qc.getQueryData<Dm[]>(DMS_KEY)!.map((x) => x.id)).toEqual(["d2", "d1"]);
     applySocialEvent(qc, { type: "friend:removed", userId: "a" });
@@ -137,7 +140,7 @@ describe("applySocialEvent (TanStack caches, in place)", () => {
   it("a cache that is not loaded yet is left alone", () => {
     const qc = new QueryClient();
     applySocialEvent(qc, { type: "friend:request", from: { id: "r", username: "r" } });
-    applySocialEvent(qc, { type: "presence", userId: "a", online: true });
+    applySocialEvent(qc, { type: "presence", userId: "a", status: "online" });
     expect(qc.getQueryData(FRIENDS_KEY)).toBeUndefined();
   });
 });

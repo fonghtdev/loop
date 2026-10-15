@@ -11,6 +11,14 @@ describe("spawn arguments", () => {
     expect(args).toContain("--dump-single-json");
   });
 
+  it("cookies come first and never move the target: the target stays after --", () => {
+    expect(metaArgs("x", "/tmp/c.txt").slice(0, 2)).toEqual(["--cookies", "/tmp/c.txt"]);
+    expect(metaArgs("x", "/tmp/c.txt").slice(-2)).toEqual(["--", "ytsearch1:x"]);
+    expect(audioArgs("dQw4w9WgXcQ", "/tmp/c.txt").slice(0, 2)).toEqual(["--cookies", "/tmp/c.txt"]);
+    expect(metaArgs("x")).not.toContain("--cookies");
+    expect(audioArgs("dQw4w9WgXcQ")).not.toContain("--cookies");
+  });
+
   it("a link goes after -- as is; the audio command is built from the validated id only", () => {
     const url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL1";
     expect(metaArgs(url).slice(-2)).toEqual(["--", url]);
@@ -76,6 +84,19 @@ describe("createSource", () => {
     const p2 = createSource({ spawnFn: (() => missing) as any }).resolve("x");
     missing.emit("error", new Error("ENOENT"));
     await expect(p2).rejects.toThrow(/đã cài chưa/);
+  });
+
+  it("the bot check is reported as YouTube blocking the host, not as an unavailable video", async () => {
+    const dl = fakeChild();
+    const pending = createSource({ spawnFn: (() => dl) as any }).resolve("x");
+    dl.stderr.write("ERROR: [youtube] kFbbTrkiY04: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies");
+    dl.emit("close", 1);
+    await expect(pending).rejects.toThrow(/chặn máy chủ/);
+    const age = fakeChild();
+    const p2 = createSource({ spawnFn: (() => age) as any }).resolve("x");
+    age.stderr.write("ERROR: Sign in to confirm your age");
+    age.emit("close", 1);
+    await expect(p2).rejects.toThrow("Video không khả dụng.");
   });
 
   it("a lookup killed by the time limit says it was too slow (not 'not found') and the limit allows a slow host minutes", async () => {

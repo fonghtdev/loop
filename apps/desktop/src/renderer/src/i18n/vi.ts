@@ -227,8 +227,14 @@ export const vi = {
   "home.noDmsTitle": "Chưa có cuộc trò chuyện nào",
   "home.noDmsBody": "Mở một cuộc trò chuyện từ danh sách bạn bè để bắt đầu.",
 
-  "presence.online": "Đang hoạt động",
+  "presence.online": "Trực tuyến",
+  "presence.idle": "Vắng mặt",
+  "presence.dnd": "Không làm phiền",
+  "presence.dnd.hint": "Bạn sẽ không nhận thông báo trên máy này",
+  "presence.invisible": "Ẩn",
+  "presence.invisible.hint": "Bạn sẽ hiện là ngoại tuyến với mọi người",
   "presence.offline": "Ngoại tuyến",
+  "presence.pick": "Đặt trạng thái",
 
   "rail.createServer": "Tạo máy chủ",
   "rail.joinServer": "Tham gia bằng mã mời",
@@ -322,6 +328,11 @@ export const vi = {
   "roles.unknownBits": "Vai trò còn mang quyền mà phiên bản này chưa biết (mã {bits}); chúng được giữ nguyên.",
   "roles.save": "Lưu thay đổi",
   "roles.saved": "Đã lưu.",
+  "roles.color": "Màu vai trò",
+  "roles.color.none": "Không màu",
+  "roles.color.swatch": "Màu {color}",
+  "roles.color.custom": "Mã màu tùy chọn",
+  "roles.color.invalid": "Nhập mã màu dạng #RRGGBB.",
   "roles.createSubmit": "Tạo vai trò",
   "roles.delete": "Xoá vai trò",
   "roles.deleteTitle": "Xoá vai trò {name}?",
@@ -413,6 +424,8 @@ export const vi = {
 
   "members.count": "Thành viên ({count})",
   "members.owner": "Chủ máy chủ",
+  "members.online": "Trực tuyến",
+  "members.offline": "Ngoại tuyến",
 
   "userCard.label": "Hồ sơ của {name}",
   "userCard.bot": "BOT",

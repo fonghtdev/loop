@@ -5,11 +5,19 @@ import { UserError } from "./source.js";
 
 const LIST_LIMIT = 10;
 const SLOW_HINT_MS = 4000;
-const HELP = [`${PREFIX}play <tên bài | link YouTube> - phát hoặc thêm vào hàng đợi`, `${PREFIX}skip - bỏ qua bài đang phát`, `${PREFIX}stop - dừng, xoá hàng đợi, rời kênh`, `${PREFIX}queue - xem hàng đợi`].join("\n");
+const HELP = [
+  `${PREFIX}play <tên bài | link YouTube> - phát hoặc thêm vào hàng đợi (không kèm tên: tiếp tục nếu đang tạm dừng)`,
+  `${PREFIX}next <tên bài | link YouTube> - phát ngay sau bài đang phát (chèn lên đầu hàng đợi)`,
+  `${PREFIX}pause - tạm dừng`,
+  `${PREFIX}resume (hoặc ${PREFIX}continue) - phát tiếp`,
+  `${PREFIX}skip - bỏ qua bài đang phát`,
+  `${PREFIX}stop - dừng, xoá hàng đợi, rời kênh`,
+  `${PREFIX}queue - xem hàng đợi`,
+].join("\n");
 
 type Session = { channelId: string; text: string; player: GuildPlayer };
 
-/** Text commands (`!play`, `!skip`, `!stop`, `!queue`, `!help`); one voice session per guild. */
+/** Text commands (`!play`, `!next`, `!pause`, `!resume`, `!skip`, `!stop`, `!queue`, `!help`); one voice session per guild. */
 export function attachMusic(bot: LoopBot, source: Source) {
   const sessions = new Map<string, Promise<Session>>();
 
@@ -49,8 +57,8 @@ export function attachMusic(bot: LoopBot, source: Source) {
     return s;
   }
 
-  async function play(m: Message, guildId: string, voice: { id: string }[], query: string) {
-    if (!query) return `Dùng: ${PREFIX}play <tên bài | link YouTube>`;
+  async function play(m: Message, guildId: string, voice: { id: string }[], query: string, next = false) {
+    if (!query) return `Dùng: ${PREFIX}${next ? "next" : "play"} <tên bài | link YouTube>`;
     if (query.length > MAX_QUERY_LENGTH) return `Yêu cầu dài quá (tối đa ${MAX_QUERY_LENGTH} ký tự).`;
     const channelId = await voiceChannelOf(m.author.id, voice);
     if (!channelId) return "Bạn cần vào một kênh thoại trước.";
@@ -60,24 +68,27 @@ export function attachMusic(bot: LoopBot, source: Source) {
     const session = await join(guildId, channelId, m.channelId!);
     if (session.channelId !== channelId) return "Mình đang phát ở kênh thoại khác.";
     session.text = m.channelId!;
-    const ahead = session.player.add(track);
+    const ahead = session.player.add(track, next);
     if (ahead === null) return `Hàng đợi đầy (tối đa ${MAX_QUEUE} bài).`;
-    return ahead ? `Đã thêm vào hàng đợi (vị trí ${ahead}): ${track.title}` : undefined; // the player announces what it starts
+    return ahead ? (next ? `Sẽ phát tiếp theo: ${track.title}` : `Đã thêm vào hàng đợi (vị trí ${ahead}): ${track.title}`) : undefined; // the player announces what it starts
   }
 
   async function run(m: Message, cmd: { name: string; args: string }) {
     if (cmd.name === "help") return HELP;
     const where = await locate(m.channelId!);
     if (!where) return;
-    if (cmd.name === "play") return play(m, where.guildId, where.voice, cmd.args);
     const player = (await sessions.get(where.guildId))?.player;
+    if (cmd.name === "play") return !cmd.args && player?.isPaused ? (player.resume(), "Đã phát tiếp.") : play(m, where.guildId, where.voice, cmd.args);
+    if (cmd.name === "next" || cmd.name === "playnext") return play(m, where.guildId, where.voice, cmd.args, true);
+    if (cmd.name === "pause") return player?.pause() ? `Đã tạm dừng. Gõ ${PREFIX}resume để phát tiếp.` : player?.isPaused ? "Đã tạm dừng rồi." : "Không có gì đang phát.";
+    if (cmd.name === "resume" || cmd.name === "continue") return player?.resume() ? "Đã phát tiếp." : "Không có gì đang tạm dừng.";
     if (cmd.name === "skip") return player?.skip() ? "Đã bỏ qua." : "Không có gì đang phát.";
     if (cmd.name === "stop") return player ? (await player.stop(), "Đã dừng và rời kênh.") : "Mình không ở kênh thoại nào.";
     if (cmd.name === "queue") {
       if (!player?.current) return "Hàng đợi trống.";
       const next = player.queued;
       const lines = next.slice(0, LIST_LIMIT).map((t, i) => `${i + 1}. ${t.title}`);
-      return [`Đang phát: ${player.current.title}`, ...lines, ...(next.length > LIST_LIMIT ? [`... và ${next.length - LIST_LIMIT} bài nữa`] : [])].join("\n");
+      return [`${player.isPaused ? "Tạm dừng" : "Đang phát"}: ${player.current.title}`, ...lines, ...(next.length > LIST_LIMIT ? [`... và ${next.length - LIST_LIMIT} bài nữa`] : [])].join("\n");
     }
   }
 

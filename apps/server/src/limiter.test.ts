@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { io, type Socket } from "socket.io-client";
 import type { Redis } from "ioredis";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "./app.js";
 import { prisma } from "./db.js";
 import type { Env } from "./env.js";
 import { EXEMPT, POLICIES, type PolicyOverrides, ROUTES } from "./rate-limits.js";
-import { caller, env, guildWith, resetDb, signUp } from "../test/helpers.js";
-import { listen, settle } from "../test/sockets.js";
+import { befriend, caller, env, guildWith, resetDb, signUp } from "../test/helpers.js";
+import { connect as connectTo, listen, settle, until } from "../test/sockets.js";
 
 /**
  * Real Redis, real app. The shared test env has limiting off (the suite signs up dozens of users from one address);
@@ -113,6 +113,7 @@ describe("authenticated routes are keyed by user", () => {
     ["invite join", "invite-join", "POST", () => "/invites/nope/join", undefined, 404],
     ["attachment create", "attachment-create", "POST", () => "/attachments", {}, 400],
     ["voice token", "voice-token", "POST", () => `/channels/${randomUUID()}/voice/token`, undefined, 404],
+    ["status change", "status-set", "PUT", () => "/me/status", { status: "dnd" }, 200],
   ] as const)("%s", async (_, policy, method, url, body, firstStatus) => {
     const u = await signUp(plain, "alice");
     const app = limited({ [policy]: { max: 1, windowMs: 60_000 } });
@@ -237,5 +238,20 @@ describe("Socket.IO", () => {
     for (let i = 0; i < 4; i++) acks.push(await s.emitWithAck("channel:subscribe", { channelId: general.id }));
     expect(acks).toEqual([{ ok: true }, { ok: true }, { ok: true }, { ok: false, error: "Too many requests" }]);
     await settle();
+  });
+
+  it("caps live presence:away pushes per socket, but still keeps the flag", async () => {
+    const [a, b] = await Promise.all([signUp(plain, "alice"), signUp(plain, "bob")]);
+    await befriend(plain, a, b);
+    const app = limited({ "socket-presence": { max: 2, windowMs: 60_000 } });
+    const port = await listen(app);
+    const watcher = await connectTo(port, a.token, ["presence:update"], sockets);
+    const s = await connectTo(port, b.token, [], sockets);
+    await until(() => watcher.got["presence:update"]!.length === 1); // online
+    for (const away of [true, false, true]) s.emit("presence:away", { away }); // the third is over budget
+    await until(() => watcher.got["presence:update"]!.length === 3);
+    await settle();
+    expect(watcher.got["presence:update"]!.map((u) => u.status)).toEqual(["online", "idle", "online"]);
+    await vi.waitFor(async () => expect((await caller(app)("GET", "/friends", a.token)).json().friends[0].status).toBe("idle"), { timeout: 3000 });
   });
 });

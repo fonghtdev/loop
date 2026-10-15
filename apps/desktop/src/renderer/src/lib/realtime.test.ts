@@ -82,6 +82,7 @@ function setup(first: string = "a1", refreshes: (string | null)[] = ["a2", "a3"]
     onSubscribed: vi.fn(),
     onRefused: vi.fn(),
     onSocial: vi.fn(),
+    onMyStatus: vi.fn(),
     onGuild: vi.fn(),
     onWatched: vi.fn(),
     onWatchRefused: vi.fn(),
@@ -309,20 +310,50 @@ describe("DM, friend and presence events", () => {
   it("friend and presence events reach onSocial whatever is open", async () => {
     const s = await connected();
     const sock = s.socket();
-    sock.fire("dm:new", { id: "d9", user: { id: "u", username: "u", online: true } });
+    sock.fire("dm:new", { id: "d9", user: { id: "u", username: "u", status: "idle" } });
     sock.fire("friend:request", { from: { id: "u", username: "u" } });
     sock.fire("friend:accepted", { user: { id: "u", username: "u" } });
     sock.fire("friend:removed", { userId: "u" });
-    sock.fire("presence:update", { userId: "u", online: true });
-    sock.fire("presence:update", { userId: "u", online: false });
+    sock.fire("presence:update", { userId: "u", online: true, status: "dnd" });
+    sock.fire("presence:update", { userId: "u", online: false, status: "offline" });
+    sock.fire("presence:update", { userId: "u", online: true, status: "bogus" });
     expect(s.onSocial.mock.calls.map((c) => c[0])).toEqual([
-      { type: "dm:new", dm: { id: "d9", user: { id: "u", username: "u", online: true } } },
+      { type: "dm:new", dm: { id: "d9", user: { id: "u", username: "u", status: "idle" } } },
       { type: "friend:request", from: { id: "u", username: "u" } },
       { type: "friend:accepted", user: { id: "u", username: "u" } },
       { type: "friend:removed", userId: "u" },
-      { type: "presence", userId: "u", online: true },
-      { type: "presence", userId: "u", online: false },
+      { type: "presence", userId: "u", status: "dnd" },
+      { type: "presence", userId: "u", status: "offline" },
+      { type: "presence", userId: "u", status: "offline" }, // an unknown status reads as offline
     ]);
+  });
+
+  it("me:status reaches onMyStatus only with a valid choice", async () => {
+    const s = await connected();
+    s.socket().fire("me:status", { status: "dnd" });
+    s.socket().fire("me:status", { status: "offline" }); // an effective status, not a choice
+    s.socket().fire("me:status", {});
+    expect(s.onMyStatus.mock.calls).toEqual([["dnd"]]);
+  });
+
+  it("the away flag is sent on change, skipped when unchanged, and re-sent after every reconnect", async () => {
+    const s = await connected();
+    const sock = s.socket();
+    const away = () => sock.emitted.filter((e) => e.event === "presence:away").map((e) => e.payload);
+    s.rt.setAway(true);
+    s.rt.setAway(true);
+    expect(away()).toEqual([{ away: true }]);
+    sock.drop();
+    s.rt.setAway(false);
+    s.rt.setAway(true); // changed while offline: nothing can be sent now
+    expect(away()).toEqual([{ away: true }]);
+    sock.accept();
+    expect(away()).toEqual([{ away: true }, { away: true }]);
+  });
+
+  it("an active user sends no away flag on connect (the server starts at false)", async () => {
+    const s = await connected();
+    expect(s.socket().emitted.filter((e) => e.event === "presence:away")).toEqual([]);
   });
 
   it("channel and category events reach onGuild whatever is open; malformed ones and ones after stop do not", async () => {
@@ -355,10 +386,11 @@ describe("DM, friend and presence events", () => {
   it("nothing is processed after stop (sign-out), even by handlers captured earlier", async () => {
     const s = await connected(dmKey("d1"));
     const sock = s.socket();
-    const handlers = ["dm:message:new", "dm:new", "friend:request", "friend:accepted", "friend:removed", "presence:update"].map((e) => [e, [...(sock.handlers.get(e) ?? [])]] as const);
+    const handlers = ["dm:message:new", "dm:new", "friend:request", "friend:accepted", "friend:removed", "presence:update", "me:status"].map((e) => [e, [...(sock.handlers.get(e) ?? [])]] as const);
     s.rt.stop();
-    for (const [event, fns] of handlers) fns.forEach((fn) => fn(event === "dm:message:new" ? dmMsg("d1") : { from: { id: "u" }, user: { id: "u" }, userId: "u", id: "d", online: true }));
+    for (const [event, fns] of handlers) fns.forEach((fn) => fn(event === "dm:message:new" ? dmMsg("d1") : { from: { id: "u" }, user: { id: "u" }, userId: "u", id: "d", status: "dnd" }));
     expect(s.onSocial).not.toHaveBeenCalled();
+    expect(s.onMyStatus).not.toHaveBeenCalled();
     expect(s.onEvent).not.toHaveBeenCalled();
   });
 });

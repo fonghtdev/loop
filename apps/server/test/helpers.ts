@@ -61,7 +61,16 @@ async function closeKnownRooms() {
 export async function resetDb() {
   await closeKnownRooms();
   await removeObjects(testStorage, (await prisma.attachment.findMany({ select: { id: true } })).map((a) => a.id));
-  await prisma.$executeRaw`TRUNCATE "Message", "Invite", "Member", "Channel", "Guild", "Session", "User" CASCADE`;
+  // Presence work of the previous test's disconnects may still be reading Friendship/Member/Block; Postgres can pick
+  // the TRUNCATE as the deadlock victim (40P01), so try again.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await prisma.$executeRaw`TRUNCATE "Message", "Invite", "Member", "Channel", "Guild", "Session", "User" CASCADE`;
+      return;
+    } catch (e) {
+      if (attempt === 3 || !String((e as Error).message).includes("40P01")) throw e;
+    }
+  }
 }
 
 /** Routes of the attachments plugin; they have their own guard test. */
@@ -69,8 +78,8 @@ export const isAttachmentRoute = (route: string) => /^[A-Z]+ \/attachments\b/.te
 
 type User = { token: string; id: string; name: string };
 
-/** Routes of the social plugin (friends, blocks, DMs); they have their own guard test. */
-export const isSocialRoute = (route: string) => /^[A-Z]+ \/(friends|blocks|dms)\b(?!\/:dmId\/call)/.test(route);
+/** Routes of the social plugin (friends, blocks, DMs, own status); they have their own guard test. */
+export const isSocialRoute = (route: string) => /^[A-Z]+ \/(friends|blocks|dms|me\/status)\b(?!\/:dmId\/call)/.test(route);
 
 /** Routes of the voice plugin (channel voice, DM calls, LiveKit webhook); they have their own guard test. */
 export const isVoiceRoute = (route: string) => /^[A-Z]+ (\/channels\/:channelId\/voice\b|\/dms\/:dmId\/call\b|\/livekit\b)/.test(route);

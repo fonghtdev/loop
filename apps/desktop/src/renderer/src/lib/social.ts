@@ -1,8 +1,9 @@
+import type { PresenceStatus } from "@loop/shared";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Message } from "./chat";
 
 export type PublicUser = { id: string; username: string };
-export type Friend = PublicUser & { online: boolean };
+export type Friend = PublicUser & { status: PresenceStatus };
 export type FriendsData = { friends: Friend[]; incoming: PublicUser[]; outgoing: PublicUser[] };
 export type Dm = { id: string; user: Friend; lastMessageAt: string | null };
 
@@ -17,13 +18,16 @@ export type SocialEvent =
   | { type: "friend:request"; from: PublicUser }
   | { type: "friend:accepted"; user: PublicUser }
   | { type: "friend:removed"; userId: string }
-  | { type: "presence"; userId: string; online: boolean };
+  | { type: "presence"; userId: string; status: PresenceStatus };
 
 const without = (list: PublicUser[], id: string) => list.filter((u) => u.id !== id);
 const plain = ({ id, username }: PublicUser): PublicUser => ({ id, username });
 
+/** Anything but offline counts as online (idle, do not disturb). */
+export const isOnline = (status: PresenceStatus) => status !== "offline";
+
 /** A blocked user never shows as online, whatever a stale list or an event says. */
-export const showOnline = (userId: string, online: boolean, blockedIds: ReadonlySet<string>) => online && !blockedIds.has(userId);
+export const showOnline = (userId: string, status: PresenceStatus, blockedIds: ReadonlySet<string>) => isOnline(status) && !blockedIds.has(userId);
 
 export const addIncoming = (d: FriendsData, from: PublicUser): FriendsData =>
   d.incoming.some((u) => u.id === from.id) || d.friends.some((u) => u.id === from.id) ? d : { ...d, incoming: [...d.incoming, plain(from)] };
@@ -31,9 +35,9 @@ export const addIncoming = (d: FriendsData, from: PublicUser): FriendsData =>
 export const addOutgoing = (d: FriendsData, to: PublicUser): FriendsData =>
   d.outgoing.some((u) => u.id === to.id) ? d : { ...d, outgoing: [...d.outgoing, plain(to)] };
 
-/** Becoming friends settles any request between the two; online is unknown until presence says (a refetch follows). */
-export const addFriend = (d: FriendsData, user: PublicUser, online = false): FriendsData => ({
-  friends: d.friends.some((f) => f.id === user.id) ? d.friends : [...d.friends, { ...plain(user), online }],
+/** Becoming friends settles any request between the two; status is unknown until presence says (a refetch follows). */
+export const addFriend = (d: FriendsData, user: PublicUser, status: PresenceStatus = "offline"): FriendsData => ({
+  friends: d.friends.some((f) => f.id === user.id) ? d.friends : [...d.friends, { ...plain(user), status }],
   incoming: without(d.incoming, user.id),
   outgoing: without(d.outgoing, user.id),
 });
@@ -45,11 +49,11 @@ export const removePerson = (d: FriendsData, userId: string): FriendsData => ({
   outgoing: without(d.outgoing, userId),
 });
 
-export const setFriendPresence = (d: FriendsData, userId: string, online: boolean): FriendsData =>
-  d.friends.some((f) => f.id === userId && f.online !== online) ? { ...d, friends: d.friends.map((f) => (f.id === userId ? { ...f, online } : f)) } : d;
+export const setFriendPresence = (d: FriendsData, userId: string, status: PresenceStatus): FriendsData =>
+  d.friends.some((f) => f.id === userId && f.status !== status) ? { ...d, friends: d.friends.map((f) => (f.id === userId ? { ...f, status } : f)) } : d;
 
-export const setDmPresence = (dms: Dm[], userId: string, online: boolean): Dm[] =>
-  dms.some((x) => x.user.id === userId && x.user.online !== online) ? dms.map((x) => (x.user.id === userId ? { ...x, user: { ...x.user, online } } : x)) : dms;
+export const setDmPresence = (dms: Dm[], userId: string, status: PresenceStatus): Dm[] =>
+  dms.some((x) => x.user.id === userId && x.user.status !== status) ? dms.map((x) => (x.user.id === userId ? { ...x, user: { ...x.user, status } } : x)) : dms;
 
 const activity = (d: Dm) => (d.lastMessageAt ? Date.parse(d.lastMessageAt) : 0);
 /** Newest activity first; a channel without messages keeps the server's place (it sorted by creation date). */
@@ -66,7 +70,7 @@ export function bumpDm(dms: Dm[], dmChannelId: string, at: string): Dm[] | null 
 
 /** Friends first online, then by name. */
 export const sortFriends = (friends: Friend[], blockedIds: ReadonlySet<string>) =>
-  [...friends].sort((a, b) => Number(showOnline(b.id, b.online, blockedIds)) - Number(showOnline(a.id, a.online, blockedIds)) || a.username.localeCompare(b.username, "vi"));
+  [...friends].sort((a, b) => Number(showOnline(b.id, b.status, blockedIds)) - Number(showOnline(a.id, a.status, blockedIds)) || a.username.localeCompare(b.username, "vi"));
 
 /** Applies one socket event to the TanStack caches, in place (a cache that is not loaded yet is left to its first fetch). */
 export function applySocialEvent(qc: QueryClient, e: SocialEvent) {
@@ -81,8 +85,8 @@ export function applySocialEvent(qc: QueryClient, e: SocialEvent) {
     case "friend:removed":
       return friends((d) => removePerson(d, e.userId));
     case "presence":
-      friends((d) => setFriendPresence(d, e.userId, e.online));
-      return dms((d) => setDmPresence(d, e.userId, e.online));
+      friends((d) => setFriendPresence(d, e.userId, e.status));
+      return dms((d) => setDmPresence(d, e.userId, e.status));
     case "dm:new":
       return dms((d) => addDm(d, e.dm));
     case "dm:message": {

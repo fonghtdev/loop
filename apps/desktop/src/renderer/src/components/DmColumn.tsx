@@ -1,11 +1,13 @@
 import { UsersThree } from "@phosphor-icons/react";
+import type { PresenceStatus } from "@loop/shared";
 import type { Dm } from "../lib/social";
 import { t } from "../i18n/t";
 import { errorMessage } from "../lib/errors";
 import { arrowNav } from "../lib/focus";
 import { useNav } from "../lib/nav";
 import { dmKey } from "../lib/conversation";
-import { useDms, useIsOnline } from "../lib/queries";
+import { useStatusOf } from "../lib/presence-hooks";
+import { useDms } from "../lib/queries";
 import { useUnreadMark } from "../lib/unread-hooks";
 import { Badge, UnreadDot } from "./Badge";
 import { navRow } from "./navRow";
@@ -18,7 +20,7 @@ import { Tooltip } from "./Tooltip";
 /** Home's channel column: the Friends entry, then the DMs (newest activity first) with an online dot. */
 export function DmColumn() {
   const dms = useDms();
-  const isOnline = useIsOnline();
+  const statusOf = useStatusOf();
   const dmId = useNav((s) => s.dmId);
   return (
     <>
@@ -42,7 +44,7 @@ export function DmColumn() {
           </li>
           {dms.data?.map((dm) => (
             <li key={dm.id}>
-              <DmRow dm={dm} active={dm.id === dmId} online={isOnline(dm.user)} />
+              <DmRow dm={dm} active={dm.id === dmId} status={statusOf(dm.user.id)} />
             </li>
           ))}
         </ul>
@@ -66,7 +68,7 @@ export function DmColumn() {
   );
 }
 
-function DmRow({ dm, active, online }: { dm: Dm; active: boolean; online: boolean }) {
+function DmRow({ dm, active, status }: { dm: Dm; active: boolean; status: PresenceStatus }) {
   const { count, dot } = useUnreadMark(dmKey(dm.id));
   const unread = count > 0 || dot;
   return (
@@ -78,7 +80,7 @@ function DmRow({ dm, active, online }: { dm: Dm; active: boolean; online: boolea
       onClick={() => useNav.setState({ dmId: dm.id })}
       className={`h-12 w-full ${navRow(active, unread, "gap-2.5 px-2")}`}
     >
-      <PresenceAvatar id={dm.user.id} name={dm.user.username} online={online} className="size-8 rounded-full text-xs" />
+      <PresenceAvatar id={dm.user.id} name={dm.user.username} status={status} className="size-8 rounded-full text-xs" />
       <Tooltip label={dm.user.username}>
         <span className="min-w-0 flex-1 truncate">{dm.user.username}</span>
       </Tooltip>

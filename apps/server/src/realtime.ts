@@ -6,10 +6,12 @@ import { Server } from "socket.io";
 import { z } from "zod";
 import { verifyAccessToken } from "./auth/tokens.js";
 import { HttpError } from "./http.js";
-import { hasPermission, Permission } from "@loop/shared";
+import { hasPermission, Permission, type PresenceStatus, presenceAwaySchema, type StatusPref } from "@loop/shared";
+import { prisma } from "./db.js";
 import { hiddenChannels, memberChannelPermissions, requireChannelPermission } from "./guilds/access.js";
 import type { Limits } from "./limiter.js";
-import { friendIds } from "./social/access.js";
+import { effectiveStatus, presenceFields } from "./presence.js";
+import { blockedWith, presenceAudience } from "./social/access.js";
 import type { Voice } from "./voice/enforce.js";
 
 declare module "fastify" {
@@ -20,12 +22,15 @@ declare module "fastify" {
 
 /**
  * Socket.IO is only a push channel: writes and history go through REST.
- * Client -> server: `channel:subscribe` / `channel:unsubscribe` {channelId}, acked {ok:true} | {ok:false,error}.
+ * Client -> server: `channel:subscribe` / `channel:unsubscribe` {channelId}, acked {ok:true} | {ok:false,error};
+ * `presence:away` {away: boolean} (no ack; anything else is ignored).
  * Server -> room `channel:<id>`: `message:new` | `message:update` (message JSON as in REST), `message:delete` {id, channelId}.
  * The sender receives its own events too; clients dedupe by message id.
  * User rooms `user:<id>` (every authenticated socket joins its own) carry DM, friend and presence events:
  * `dm:message:new|update` (message JSON), `dm:message:delete` {id, dmChannelId}, `dm:new` {id, user},
- * `friend:request` {from}, `friend:accepted` {user}, `friend:removed` {userId}, `presence:update` {userId, online},
+ * `friend:request` {from}, `friend:accepted` {user}, `friend:removed` {userId},
+ * `presence:update` {userId, online, status} (to friends + guild co-members, never across a block; `online` = status !== "offline"),
+ * `me:status` {status} (the user's own preference, so their other devices follow),
  * `call:incoming` {dmChannelId, from, video}, `call:declined` {dmChannelId, by}, `call:ended` {dmChannelId}.
  * Guild layout events go to the members' `user:<id>` rooms: `channel:created` (channel JSON), `category:created|updated`
  * (category JSON), `category:deleted`, `layout:updated` (payloads in packages/shared); channel data is filtered per member by VIEW_CHANNEL.
@@ -50,21 +55,30 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
     if (userIds.length) io.to(userIds.map(userRoom)).emit(event, payload);
   };
 
-  /** Users with at least one socket on any instance, asked of the adapter: nothing to go stale after a crash. */
-  const onlineIds = async (userIds: string[]) => {
-    if (!userIds.length) return new Set<string>();
-    const sockets = await io.in(userIds.map(userRoom)).fetchSockets();
-    return new Set<string>(sockets.map((s) => s.data.userId));
+  type Flag = { id: string; away: boolean };
+  const flagsOf = (sockets: { id: string; data: { away?: unknown } }[]): Flag[] => sockets.map((s) => ({ id: s.id, away: s.data.away === true }));
+  const prefsOf = async (userIds: string[]) =>
+    new Map((await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, statusPref: true } })).map((u) => [u.id, u.statusPref as StatusPref]));
+
+  /**
+   * Each user's status as `viewerId` may see it, from the adapter (sockets on every instance, nothing to go stale
+   * after a crash) and the stored preference: invisible -> offline, a block in either direction -> offline.
+   */
+  const statusOf = async (viewerId: string, userIds: string[]) => {
+    const out = new Map<string, PresenceStatus>();
+    if (!userIds.length) return out;
+    const [sockets, prefs, blocked] = await Promise.all([io.in(userIds.map(userRoom)).fetchSockets(), prefsOf(userIds), blockedWith(viewerId)]);
+    const away = new Map<string, boolean[]>();
+    for (const s of sockets) away.set(s.data.userId, [...(away.get(s.data.userId) ?? []), s.data.away === true]);
+    for (const id of userIds) out.set(id, blocked.has(id) ? "offline" : effectiveStatus(prefs.get(id) ?? "invisible", away.get(id) ?? []));
+    return out;
   };
 
-  const announce = async (userId: string, online: boolean) => {
-    emitToUsers(await friendIds(userId), "presence:update", { userId, online });
-  };
-  // ponytail: presence = first socket up (0 -> 1) / last socket down (1 -> 0) as seen by the adapter, friends only,
-  // online/offline only (no idle/dnd; guild member-list presence comes with the client). Two first connects (or
-  // last disconnects) on different instances in the same instant can both see 2 (or 1) and send nothing, and a
-  // crashed instance sends no offline; lists always recompute, so the ceiling is a stale live dot until the next
-  // fetch. Upgrade = a TTL'd presence key in Redis with heartbeats. Best effort: failures are swallowed.
+  // ponytail: presence is recomputed from the adapter on each transition (socket up/down, away flip, preference
+  // change) by comparing the status before and after it; nothing is stored but the preference. Two transitions of
+  // one user on different instances in the same instant can both compute from the same snapshot and send nothing
+  // (or twice), and a crashed instance sends no offline; lists always recompute, so the ceiling is a stale live
+  // status until the next fetch. Upgrade = a TTL'd presence key in Redis with heartbeats. Best effort: failures are swallowed.
   // Presence work talks to Redis through the adapter, so `close` must let it finish before quitting the clients
   // (a command queued on a closing connection rejects inside the adapter, where nobody can catch it).
   // ponytail: the wait is capped at 1 s because a peer that is closing too never answers `fetchSockets` (the
@@ -73,14 +87,37 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
   const DRAIN_MS = 1000;
   let closing = false;
   const presenceTasks = new Set<Promise<void>>();
-  const trackPresence = (userId: string, up: boolean) => {
-    if (closing) return;
-    const task = (async () => {
-      const count = (await io.in(userRoom(userId)).fetchSockets()).length;
-      if (count === (up ? 1 : 0)) await announce(userId, up);
-    })().catch(() => {});
+  const queues = new Map<string, Promise<void>>();
+  /**
+   * Presence work of one user runs in order on this instance, so each step sees the effect of the previous one
+   * (a flag set by an earlier `presence:away` is never read by the connect that came before it).
+   */
+  const enqueue = <T>(userId: string, work: () => Promise<T>) => {
+    const run = (queues.get(userId) ?? Promise.resolve()).then(work);
+    const task = run.then(() => {}, () => {});
+    queues.set(userId, task);
     presenceTasks.add(task);
-    void task.then(() => presenceTasks.delete(task));
+    void task.then(() => {
+      presenceTasks.delete(task);
+      if (queues.get(userId) === task) queues.delete(userId);
+    });
+    return run;
+  };
+  /**
+   * Pushes `presence:update` when the user's status changed: `before` rebuilds the socket flags as they were from
+   * the current ones, `oldPref` is the preference before the change (default: unchanged).
+   */
+  const announceChange = async (userId: string, before: (now: Flag[]) => Flag[], oldPref?: StatusPref) => {
+    const [sockets, prefs] = await Promise.all([io.in(userRoom(userId)).fetchSockets(), prefsOf([userId])]);
+    const pref = prefs.get(userId);
+    if (!pref) return;
+    const now = flagsOf(sockets);
+    const status = effectiveStatus(pref, now.map((f) => f.away));
+    if (effectiveStatus(oldPref ?? pref, before(now).map((f) => f.away)) === status) return;
+    emitToUsers(await presenceAudience(userId), "presence:update", { userId, ...presenceFields(status) });
+  };
+  const trackPresence = (userId: string, before: (now: Flag[]) => Flag[], oldPref?: StatusPref) => {
+    if (!closing) enqueue(userId, () => announceChange(userId, before, oldPref)).catch(() => {});
   };
 
   // ponytail: the token is only checked at handshake, so a socket outlives the 15 min access token;
@@ -97,10 +134,25 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
 
   io.on("connection", (socket) => {
     const userId: string = socket.data.userId;
+    socket.data.away = false;
     socket.join(userRoom(userId));
-    socket.on("disconnect", () => trackPresence(userId, false));
+    const without = (now: Flag[]) => now.filter((f) => f.id !== socket.id);
+    socket.on("disconnect", () => trackPresence(userId, (now) => [...without(now), { id: socket.id, away: socket.data.away === true }]));
 
-    const subscribeAllowed = limits.socketBudget(); // ponytail: per socket and in memory; reconnecting resets it, but connects are limited per IP
+    // ponytail: per socket and in memory; reconnecting resets them, but connects are limited per IP
+    const subscribeAllowed = limits.socketBudget("socket-subscribe");
+    const presenceAllowed = limits.socketBudget("socket-presence");
+    let away = false; // the latest flag asked for; socket.data.away follows it in queue order
+    socket.on("presence:away", (payload: unknown) => {
+      const parsed = presenceAwaySchema.safeParse(payload);
+      if (closing || !parsed.success || parsed.data.away === away) return;
+      const flag = (away = parsed.data.away);
+      const live = presenceAllowed(); // over budget the flag is still kept (lists stay right), only the push is dropped
+      enqueue(userId, async () => {
+        socket.data.away = flag;
+        if (live) await announceChange(userId, (now) => now.map((f) => (f.id === socket.id ? { ...f, away: !flag } : f)));
+      }).catch(() => {});
+    });
     const handle = (action: "join" | "leave") => async (payload: unknown, ack?: unknown) => {
       const reply = typeof ack === "function" ? ack : () => {};
       try {
@@ -121,7 +173,7 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
     };
     socket.on("channel:subscribe", handle("join"));
     socket.on("channel:unsubscribe", handle("leave"));
-    trackPresence(userId, true);
+    trackPresence(userId, without);
   });
 
   // The cluster adapter applies a leave locally only AFTER its Redis publish returns, so do the local part
@@ -157,7 +209,21 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
     /** Both participants' user rooms; no subscribe step. */
     emitDm: (dm: { userLowId: string; userHighId: string }, event: "new" | "update" | "delete", payload: object) =>
       emitToUsers([dm.userLowId, dm.userHighId], `dm:message:${event}`, payload),
-    onlineIds,
+    statusOf,
+    /**
+     * Stores the user's preference in their presence queue (so presence work queued before it still sees the old
+     * one), then pushes the new status if it differs. Resolves once stored; the push is best effort.
+     */
+    setStatus: (userId: string, pref: StatusPref) => {
+      const write = enqueue(userId, async () => {
+        const old = (await prefsOf([userId])).get(userId);
+        await prisma.user.update({ where: { id: userId }, data: { statusPref: pref } });
+        return old;
+      });
+      // Queued right behind the write, so nothing can run between the two.
+      enqueue(userId, async () => !closing && announceChange(userId, (now) => now, await write)).catch(() => {});
+      return write;
+    },
     /** Sockets out of the channel rooms, and the user out of any voice room among them. */
     leaveChannels: (userId: string, channelIds: string[]) => {
       leaveChannels(userId, channelIds);

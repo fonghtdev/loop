@@ -139,20 +139,26 @@ describe("grantable bits and handing out roles (rules 2 and 2b)", () => {
 });
 
 describe("PATCH body is a diff", () => {
-  it("nothing changed -> nothing to send", () => expect(patchRole(helper, { name: helper.name, permissions: helper.permissions })).toBeNull());
+  it("nothing changed -> nothing to send", () => expect(patchRole(helper, { name: helper.name, permissions: helper.permissions, color: null })).toBeNull());
   it("only the changed field goes", () => {
-    expect(patchRole(helper, { name: "Trợ lý", permissions: helper.permissions })).toEqual({ name: "Trợ lý" });
-    expect(patchRole(helper, { name: helper.name, permissions: Permission.MANAGE_MESSAGES })).toEqual({ permissions: Permission.MANAGE_MESSAGES });
+    expect(patchRole(helper, { name: "Trợ lý", permissions: helper.permissions, color: null })).toEqual({ name: "Trợ lý" });
+    expect(patchRole(helper, { name: helper.name, permissions: Permission.MANAGE_MESSAGES, color: null })).toEqual({ permissions: Permission.MANAGE_MESSAGES });
   });
-  it("the name is trimmed before comparing", () => expect(patchRole(helper, { name: ` ${helper.name} `, permissions: helper.permissions })).toBeNull());
-  it("@everyone never sends a name", () => expect(patchRole(everyone, { name: "x", permissions: everyone.permissions })).toBeNull());
+  it("the name is trimmed before comparing", () => expect(patchRole(helper, { name: ` ${helper.name} `, permissions: helper.permissions, color: null })).toBeNull());
+  it("color: set, change, clear (null) and untouched", () => {
+    expect(patchRole(helper, { name: helper.name, permissions: helper.permissions, color: "#112233" })).toEqual({ color: "#112233" });
+    const red = { ...helper, color: "#ff0000" };
+    expect(patchRole(red, { name: red.name, permissions: red.permissions, color: "#ff0000" })).toBeNull();
+    expect(patchRole(red, { name: red.name, permissions: red.permissions, color: null })).toEqual({ color: null });
+  });
+  it("@everyone never sends a name", () => expect(patchRole(everyone, { name: "x", permissions: everyone.permissions, color: null })).toBeNull());
   it("unknown bits survive a toggle of a known one", () => {
     const UNKNOWN = 1 << 20;
     const odd = role("odd", 5, Permission.SEND_MESSAGES | UNKNOWN);
     expect(unknownBits(odd.permissions)).toBe(UNKNOWN);
     const next = setBit(odd.permissions, Permission.VIDEO, true);
-    expect(patchRole(odd, { name: odd.name, permissions: next })).toEqual({ permissions: Permission.SEND_MESSAGES | UNKNOWN | Permission.VIDEO });
-    expect(patchRole(odd, { name: odd.name, permissions: setBit(next, Permission.VIDEO, false) })).toBeNull();
+    expect(patchRole(odd, { name: odd.name, permissions: next, color: null })).toEqual({ permissions: Permission.SEND_MESSAGES | UNKNOWN | Permission.VIDEO });
+    expect(patchRole(odd, { name: odd.name, permissions: setBit(next, Permission.VIDEO, false), color: null })).toBeNull();
   });
 });
 

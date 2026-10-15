@@ -62,7 +62,7 @@ test.afterAll(async () => {
 
 test("not in a call: the strip is there, mic and headphones are disabled with a reason, the gear works", async () => {
   await expect(bar()).toBeHidden();
-  await expect(strip().getByText("Đang hoạt động")).toBeVisible();
+  await expect(strip().getByText("Trực tuyến").first()).toBeVisible();
   await expect(strip().getByText(`${A.user.username}@example.com`)).toBeHidden(); // the email is only in the closed account menu
   await expect(mic()).toBeDisabled();
   await expect(deafen()).toBeDisabled();

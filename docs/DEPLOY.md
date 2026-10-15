@@ -278,6 +278,12 @@ Bot nhạc (`packages/bots/music`) chạy thành một web service free **trong 
 
 Bot chưa kết nối được server (đang ngủ) thì thử lại mỗi 15 giây, không thoát.
 
+**YouTube chặn máy chủ ("Sign in to confirm you're not a bot"):** địa chỉ IP của Render (data centre) thường bị YouTube đòi đăng nhập. Log hiện `[music] yt-dlp: exit 1 ERROR: ... Sign in to confirm you’re not a bot` và bot báo "YouTube đang chặn máy chủ của bot". Cách duy nhất không đổi máy: cho `yt-dlp` cookie của một tài khoản Google.
+1. **Dùng tài khoản Google riêng, bỏ đi được** (không dùng tài khoản chính: YouTube có thể khoá tài khoản bị dùng cho bot).
+2. Xuất cookie đúng cách (theo wiki của yt-dlp, "Exporting YouTube cookies"): mở **cửa sổ ẩn danh**, đăng nhập tài khoản đó, vào `https://www.youtube.com/robots.txt` (cùng cửa sổ), dùng tiện ích xuất `cookies.txt` (định dạng Netscape, ví dụ "Get cookies.txt LOCALLY") chỉ cho youtube.com, rồi **đóng cửa sổ ẩn danh** để YouTube không xoay cookie.
+3. Trên Render (service `loop-music-bot`): **Environment → Secret Files → Add**, tên `cookies.txt`, dán nội dung; thêm biến `YTDLP_COOKIES` = `/etc/secrets/cookies.txt`; deploy lại. Bot sao chép file ra thư mục tạm (Secret File chỉ đọc, còn yt-dlp ghi lại cookie khi thoát).
+4. Giới hạn: cookie hết hạn hoặc bị xoay sau một thời gian (phải xuất lại), YouTube có thể vẫn chặn IP data centre dù có cookie, và việc dùng tài khoản cho bot có thể vi phạm điều khoản của Google. **Chưa kiểm được trên Render thật** (máy tôi không bị chặn). Chạy bot trên máy ở nhà/IP dân cư thì thường không cần cookie.
+
 **Giới hạn đã đo (2026-10-15, Docker ép `--cpus=0.1 --memory=512m`, linux/amd64 giả lập trên Mac):** `yt-dlp` mất ~38 s chỉ để khởi động và ~180 s cho một lần tìm bài đầy đủ (1 CPU: 8 s). Giới hạn chờ cũ 30 s làm tiến trình bị kill và log `[music] yt-dlp:` rỗng. Giờ chờ tối đa 5 phút, báo "Đang tìm bài..." sau 4 s và ghi mã thoát/tín hiệu vào log; nhưng trên gói free một `!play` vẫn có thể mất vài phút (số đo bị giả lập làm chậm thêm, máy Render thật có thể nhanh hơn). Muốn phát nhạc mượt cần máy có ít nhất ~0,5 CPU (gói trả phí hoặc máy khác).
 
 **Đã kiểm (Docker trên Mac, ép `linux/amd64` như Render):** image build; chạy user `node`; `yt-dlp` 2026.08.19 và `ffmpeg` 5.1 chạy được; `--js-runtimes node` được `yt-dlp` chấp nhận; `ytsearch1:` tìm ra video; ống `yt-dlp | ffmpeg` ra đúng 3 giây PCM 48k mono (287376 byte); cổng `PORT` trả 200 `ok`; mất server thì bot ghi log và thử lại; SIGTERM thoát (143).

@@ -7,7 +7,7 @@ const long = "a-very-long-display-name-that-would-never-fit-in-the-channel-colum
 
 describe("account strip identity", () => {
   it("truncates a long name and status instead of overflowing", () => {
-    const html = renderToStaticMarkup(createElement(AccountIdentity, { id: "u1", username: long, status: "Đang hoạt động ".repeat(10) }));
+    const html = renderToStaticMarkup(createElement(AccountIdentity, { id: "u1", username: long, dot: "online", status: "Đang hoạt động ".repeat(10) }));
     expect(html.match(/block truncate/g)).toHaveLength(2);
     expect(html).toContain('class="min-w-0 flex-1"');
   });

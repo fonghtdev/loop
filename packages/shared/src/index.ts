@@ -164,14 +164,17 @@ export const roleNameSchema = z
   .max(100)
   .refine((n) => n !== "@everyone", "tên này dành cho vai trò mặc định");
 
+export const roleColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
+
 export const createRoleSchema = z.object({
   name: roleNameSchema,
   permissions: bitmaskSchema(ALL_PERMISSIONS).default(0),
+  color: roleColorSchema.nullish().transform((c) => c ?? null),
 });
 
 export const updateRoleSchema = z
-  .object({ name: roleNameSchema.optional(), permissions: bitmaskSchema(ALL_PERMISSIONS).optional() })
-  .refine((b) => b.name !== undefined || b.permissions !== undefined, "nothing to update");
+  .object({ name: roleNameSchema.optional(), permissions: bitmaskSchema(ALL_PERMISSIONS).optional(), color: roleColorSchema.nullable().optional() })
+  .refine((b) => b.name !== undefined || b.permissions !== undefined || b.color !== undefined, "nothing to update");
 
 export const overwriteSchema = z
   .object({ allow: bitmaskSchema(CHANNEL_PERMISSIONS), deny: bitmaskSchema(CHANNEL_PERMISSIONS) })
@@ -183,3 +186,13 @@ export const friendRequestSchema = z.object({ username: usernameSchema });
 
 // Ids stay plain strings here: a malformed id is a 404 at the route (like a missing one), not a 400.
 export const openDmSchema = z.object({ userId: z.string() });
+
+/** What a user chooses (persisted); `invisible` looks exactly like `offline` to everyone else. */
+export const STATUS_PREFS = ["online", "idle", "dnd", "invisible"] as const;
+export type StatusPref = (typeof STATUS_PREFS)[number];
+/** What others see: computed from the preference and the user's sockets (see apps/server/src/presence.ts). */
+export type PresenceStatus = "online" | "idle" | "dnd" | "offline";
+export const setStatusSchema = z.object({ status: z.enum(STATUS_PREFS) }).strict();
+/** Socket `presence:away` payload: the client went idle (true) or came back (false). */
+export const presenceAwaySchema = z.object({ away: z.boolean() }).strict();
+export type PresenceUpdateEvent = { userId: string; online: boolean; status: PresenceStatus };

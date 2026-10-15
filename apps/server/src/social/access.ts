@@ -30,12 +30,27 @@ export async function blockedWith(userId: string) {
 export const areFriends = async (a: string, b: string) =>
   (await prisma.friendship.count({ where: { ...pair(a, b), status: "ACCEPTED" } })) > 0;
 
-export async function friendIds(userId: string) {
-  const rows = await prisma.friendship.findMany({
-    where: { status: "ACCEPTED", OR: [{ userLowId: userId }, { userHighId: userId }] },
-    select: { userLowId: true, userHighId: true },
-  });
-  return rows.map((r) => otherOf(r, userId));
+/**
+ * Who receives `userId`'s presence: accepted friends and members of every guild shared with them, minus anyone
+ * with a block in either direction, never the user themself. One query.
+ */
+// ponytail: O(members of every shared guild) per presence transition; upgrade = per-guild rooms (kept in sync on
+// join/leave/kick) or batching transitions, if big guilds make this hot.
+export async function presenceAudience(userId: string) {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT a.id::text AS id FROM (
+      SELECT CASE WHEN f."userLowId" = ${userId}::uuid THEN f."userHighId" ELSE f."userLowId" END AS id
+        FROM "Friendship" f
+        WHERE f.status = 'ACCEPTED' AND (f."userLowId" = ${userId}::uuid OR f."userHighId" = ${userId}::uuid)
+      UNION
+      SELECT other."userId" FROM "Member" mine JOIN "Member" other ON other."guildId" = mine."guildId"
+        WHERE mine."userId" = ${userId}::uuid
+    ) a
+    WHERE a.id <> ${userId}::uuid AND NOT EXISTS (
+      SELECT 1 FROM "Block" b
+      WHERE (b."blockerId" = ${userId}::uuid AND b."blockedId" = a.id) OR (b."blockedId" = ${userId}::uuid AND b."blockerId" = a.id)
+    )`;
+  return rows.map((r) => r.id);
 }
 
 export const userSelect = { id: true, username: true } as const; // never email/passwordHash

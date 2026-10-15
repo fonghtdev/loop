@@ -1,12 +1,16 @@
 import { CaretDown, Check, Gear, Headphones, Microphone, MicrophoneSlash, SignOut } from "@phosphor-icons/react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
-import { devices, session, unlockDeviceLabels, voice } from "../lib/app";
+import { devices, presence, session, unlockDeviceLabels, voice } from "../lib/app";
 import { labelsAvailable, optionsFor, type DeviceKind } from "../lib/devices";
 import { useNav } from "../lib/nav";
+import { dotOfPref, statusRows } from "../lib/presence";
+import { toast } from "../lib/toast";
+import { errorMessage } from "../lib/errors";
 import { isActive } from "../lib/voice-hooks";
 import { ACCOUNT_TRIGGER_SIZE, AccountIdentity, accountMenuLabel } from "./AccountIdentity";
 import { MenuItem, RowMenu } from "./RowMenu";
+import { StatusDot } from "./StatusDot";
 import { Control } from "./VoiceBar";
 import { HeadphonesSlash } from "./VoiceIndicators";
 
@@ -46,6 +50,9 @@ function DeviceMenu({ id, kind, label }: { id: string; kind: Extract<DeviceKind,
 export function AccountStrip() {
   const user = session.useSession((s) => s.user);
   const v = useStore(voice.store);
+  const mine = useStore(presence.store, (s) => s.mine);
+  const rows = statusRows(mine);
+  const current = rows.find((r) => r.selected)!;
   const inCall = isActive(v.status);
   const ready = v.status === "connected";
   const micHint = !inCall ? t("voice.needsCall") : !v.canSpeak ? t("voice.micNoSpeak") : v.deafened ? t("voice.micDeafened") : t("voice.mic");
@@ -60,12 +67,28 @@ export function AccountStrip() {
         size={ACCOUNT_TRIGGER_SIZE}
         className="text-left !text-ink"
         trigger={
-          <AccountIdentity id={user?.id ?? ""} username={user?.username ?? ""} status={t("presence.online")} />
+          <AccountIdentity id={user?.id ?? ""} username={user?.username ?? ""} dot={dotOfPref(mine)} status={current.label} />
         }
       >
         {(close) => (
           <>
             <p className="truncate px-2.5 pt-1 pb-1.5 text-caption text-ink-muted">{user?.email}</p>
+            <div role="group" aria-label={t("presence.pick")} className="mb-1 border-b border-hair pb-1">
+              {rows.map((r) => (
+                <MenuItem
+                  key={r.pref}
+                  icon={<StatusDot status={r.dot} size={12} labelled={false} />}
+                  label={r.label}
+                  description={r.description}
+                  selected={r.selected}
+                  trailing={r.selected ? <Check aria-hidden="true" /> : undefined}
+                  onClick={() => {
+                    close();
+                    presence.choose(r.pref).catch((e) => toast.push(errorMessage(e), "error"));
+                  }}
+                />
+              ))}
+            </div>
             <MenuItem
               icon={<SignOut aria-hidden="true" />}
               label={t("shell.logout")}

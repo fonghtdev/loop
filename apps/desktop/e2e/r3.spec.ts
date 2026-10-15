@@ -323,7 +323,7 @@ test("switching channel: one fade + slide of the main area only; skipped under r
   expect(gap).toBeLessThan(4);
 });
 
-test("member column: owner first, one section per role by position, each member under their highest role, no @everyone, 60 members with long names", async () => {
+test("member column: presence groups (online by role / online / one offline group), no @everyone, 60 members with long names", async () => {
   test.setTimeout(240_000);
   const invite = await api<{ code: string }>(A.token, "POST", `/guilds/${alpha.id}/invites`, {});
   const people: Session[] = [];
@@ -350,18 +350,14 @@ test("member column: owner first, one section per role by position, each member 
   await railButton(BETA).click();
   await railButton(/^Alpha/).click();
   await channelButton(/^cuon/).click();
+  // presence-based groups: only A (and maybe B) hold a socket here, the scripted people are offline and merged into one group
   const headings = members().getByRole("heading", { level: 2 });
-  await expect(headings.first()).toContainText("Chủ máy chủ", { timeout: 10_000 });
-  const positions = Object.fromEntries((await api<{ id: string; position: number }[]>(A.token, "GET", `/guilds/${alpha.id}/roles`)).map((r) => [r.id, r.position]));
-  const modFirst = positions[mod.id] > positions[vip.id];
-  const higher = modFirst ? ["Điều hành", "VIP"] : ["VIP", "Điều hành"];
-  await expect(headings.locator("span:first-child")).toHaveText(["Chủ máy chủ", ...higher, "Thành viên"]);
+  await expect(headings.last()).toContainText("Ngoại tuyến", { timeout: 10_000 });
   await expect(headings.filter({ hasText: "everyone" })).toHaveCount(0);
-  const counts = (await headings.locator("span.numeric").allTextContents()).map(Number);
-  // people[3] holds both roles and is counted once, under the higher one
-  const [higherCount, lowerCount] = modFirst ? [2, 3] : [4, 1];
-  expect(counts).toEqual([1, higherCount, lowerCount, 60 - 1 - higherCount - lowerCount]);
-  expect(counts.map(Number).reduce((a, b) => a + b, 0)).toBe(60);
+  await expect(headings.filter({ hasText: "Chủ máy chủ" })).toHaveCount(0);
+  const counts = (await headings.locator("span.numeric").allTextContents()).map((c) => Number(c.replace("— ", "")));
+  expect(counts.reduce((a, b) => a + b, 0)).toBe(60);
+  expect(counts.at(-1)).toBeGreaterThanOrEqual(58); // the 58 scripted people never connect; B may or may not
   await expect(members().getByRole("listitem")).toHaveCount(60);
 
   // long names: ellipsis, no overflow, in both window sizes

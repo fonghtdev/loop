@@ -28,6 +28,10 @@ export const POLICIES = {
   "voice-token": { max: 30, windowMs: MIN, by: "user" },
   "socket-connect": { max: 60, windowMs: MIN, by: "ip" },
   "socket-subscribe": { max: 100, windowMs: MIN, by: "socket" },
+  // Live pushes of `presence:away` flips (each one fans out to friends + guild co-members); idle detection is minutes apart.
+  "socket-presence": { max: 20, windowMs: MIN, by: "socket" },
+  // Each change fans out the same way.
+  "status-set": { max: 20, windowMs: MIN, by: "user" },
 } satisfies Record<string, Policy>;
 
 export type PolicyName = keyof typeof POLICIES;
@@ -56,9 +60,10 @@ export const ROUTES: Record<string, PolicyName[]> = {
   "POST /attachments": ["attachment-create"],
   "POST /channels/:channelId/voice/token": ["voice-token"],
   "POST /dms/:dmId/call": ["voice-token"],
+  "PUT /me/status": ["status-set"],
   // Global limit only: reads, and writes that need a membership/permission the caller can only get through the above.
   ...only(
-    "POST /auth/logout", "GET /me", "GET /bots",
+    "POST /auth/logout", "GET /me", "GET /me/status", "GET /bots",
     "GET /guilds", "GET /guilds/:guildId", "DELETE /guilds/:guildId", "POST /guilds/:guildId/channels",
     "DELETE /guilds/:guildId/channels/:channelId",
     "POST /guilds/:guildId/categories", "PATCH /guilds/:guildId/categories/:categoryId",

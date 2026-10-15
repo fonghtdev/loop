@@ -86,7 +86,7 @@ test("A -> B: the request is outgoing; B accepts and the friend appears live, on
   await tab(/^Tất cả/).click();
   await expect(friendRows()).toHaveCount(1);
   await expect(friendRows().first()).toContainText(B.user.username);
-  await expect(friendRows().first()).toContainText("Đang hoạt động"); // B's socket is connected
+  await expect(friendRows().first()).toContainText("Trực tuyến"); // B's socket is connected
 });
 
 test("tabs: arrow keys, Home and End move between tabs and select them", async () => {
@@ -162,7 +162,7 @@ let dmId = "";
 test("DM: open from the friends list; messages both ways live; edit and delete are author-only", async () => {
   await friendRows().filter({ hasText: B.user.username }).getByRole("button", { name: `Nhắn tin với ${B.user.username}` }).click();
   await expect(page.getByRole("heading", { name: B.user.username })).toBeVisible();
-  await expect(page.getByText("Đang hoạt động").first()).toBeVisible();
+  await expect(page.getByText("Trực tuyến").first()).toBeVisible();
   await expect(dmButton(B)).toHaveAttribute("aria-current", "page");
   await expect(log().getByText(`Đây là khởi đầu cuộc trò chuyện với ${B.user.username}`)).toBeVisible();
   dmId = (await api<{ id: string }>(B.token, "POST", "/dms", { userId: A.user.id })).id;
@@ -238,12 +238,12 @@ test("DM reconnect catch-up: messages sent while offline arrive once each, in or
 });
 
 test("presence flips live when B's socket disconnects and connects", async () => {
-  await expect(dmButton(B)).toContainText("Đang hoạt động");
+  await expect(dmButton(B)).toContainText("Trực tuyến");
   bConn.close();
-  await expect(dmButton(B)).not.toContainText("Đang hoạt động");
+  await expect(dmButton(B)).not.toContainText("Trực tuyến");
   await expect(page.getByRole("heading", { name: B.user.username }).locator("..").getByText("Ngoại tuyến")).toBeVisible();
   bConn = await connect(B);
-  await expect(dmButton(B)).toContainText("Đang hoạt động");
+  await expect(dmButton(B)).toContainText("Trực tuyến");
 });
 
 test("a send refused by the server (the other side blocked, silently) closes the composer and keeps the text", async () => {
@@ -279,7 +279,7 @@ test("A blocks B: friend gone, composer closed with the reason, history readable
   await expect(composer()).toBeDisabled();
   await expect(composer()).toHaveAttribute("placeholder", new RegExp(`Bạn đã chặn ${B.user.username}`));
   await expect(messageText("B nhắn khi A đang xem DM khác")).toBeVisible();
-  await expect(dmButton(B)).not.toContainText("Đang hoạt động"); // B's socket IS connected; blocked users never show as online
+  await expect(dmButton(B)).not.toContainText("Trực tuyến"); // B's socket IS connected; blocked users never show as online
   await expect(page.getByRole("heading", { name: B.user.username }).locator("..").getByText("Ngoại tuyến")).toBeVisible();
 
   await goFriends();

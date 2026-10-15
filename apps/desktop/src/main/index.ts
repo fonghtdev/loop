@@ -4,13 +4,14 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { autoUpdater } from "electron-updater";
-import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, net, Notification, protocol, safeStorage, session, shell, systemPreferences, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, net, Notification, powerMonitor, protocol, safeStorage, session, shell, systemPreferences, type IpcMainInvokeEvent } from "electron";
 import { APP_ID } from "../shared/app-id";
 import { API_URL, LIVEKIT_ORIGIN, STORAGE_ORIGIN, UPDATE_URL, WS_URL } from "../shared/config";
 import type { Settings } from "../shared/settings";
 import { updatesEnabled, type UpdateStatus } from "../shared/update";
 import { APP_ORIGIN, buildCsp, ensureMediaAccess, isMediaKind, isPermissionAllowed, isSafeExternalUrl, isTrustedSender, isValidRefreshToken, resolveAppFile } from "./security";
 import { installE2eHook, newRecorder } from "./e2e-hook";
+import { createIdleWatch } from "./idle";
 import { createNotifier } from "./notifications";
 import { loginItemSettings, normalizeBadge, revealWindow, shouldHideOnClose, startsHidden, windowIsFocused } from "./policy";
 import { createScreenShare } from "./screen";
@@ -188,6 +189,12 @@ const focusedNow = () => !!win && !win.isDestroyed() && windowIsFocused(win, foc
 // The renderer learns whether it is being looked at (unread marks, notifications) from here, not from the DOM.
 const pushFocus = () => win && !win.isDestroyed() && win.webContents.send("window:focus", focusedNow());
 
+// The renderer tells the server when we are away (no keyboard/mouse system-wide for a while); it re-sends after reconnects.
+const idleWatch = createIdleWatch({
+  getIdleSeconds: () => powerMonitor.getSystemIdleTime(),
+  send: (away) => win && !win.isDestroyed() && win.webContents.send("presence:idle", away),
+});
+
 function createWindow(hidden: boolean) {
   win = new BrowserWindow({
     width: 1280,
@@ -316,7 +323,10 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on("second-instance", showWindow);
   app.on("before-quit", () => (quitting = true));
-  app.on("will-quit", shortcuts.dispose);
+  app.on("will-quit", () => {
+    idleWatch.stop();
+    shortcuts.dispose();
+  });
   app.whenReady().then(() => {
     // Microphone/camera/screen (voice) and writing text to the clipboard, for our own pages only; everything else is refused.
     // Notifications stay refused here on purpose: the renderer asks the main process (IPC `notify:show`) instead.
@@ -337,6 +347,7 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc();
     applySettings(settings.get()); // keeps the login item in step with the stored choice
     startTray();
+    idleWatch.start();
     createWindow(startsHidden({ argv: process.argv, wasOpenedAtLogin: app.getLoginItemSettings().wasOpenedAtLogin }));
     app.on("activate", showWindow);
   });

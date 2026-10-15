@@ -19,8 +19,8 @@ export function createAdminApi({ request, changed, gone }: { request: Request; c
   }
   const member = (g: string, u: string) => `/guilds/${g}/members/${u}`;
   return {
-    createRole: (g: string, body: { name: string; permissions: number }) => call<Role>(g, "POST", `/guilds/${g}/roles`, body),
-    updateRole: (g: string, roleId: string, patch: { name?: string; permissions?: number }) => call<Role>(g, "PATCH", `/guilds/${g}/roles/${roleId}`, patch),
+    createRole: (g: string, body: { name: string; permissions: number; color?: string | null }) => call<Role>(g, "POST", `/guilds/${g}/roles`, body),
+    updateRole: (g: string, roleId: string, patch: { name?: string; permissions?: number; color?: string | null }) => call<Role>(g, "PATCH", `/guilds/${g}/roles/${roleId}`, patch),
     deleteRole: (g: string, roleId: string) => call(g, "DELETE", `/guilds/${g}/roles/${roleId}`),
     assignRole: (g: string, userId: string, roleId: string) => call(g, "PUT", `${member(g, userId)}/roles/${roleId}`),
     unassignRole: (g: string, userId: string, roleId: string) => call(g, "DELETE", `${member(g, userId)}/roles/${roleId}`),
