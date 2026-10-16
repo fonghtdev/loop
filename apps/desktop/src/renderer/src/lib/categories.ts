@@ -165,10 +165,12 @@ export async function commitLayout(qc: QueryClient, guildId: string, next: Tree<
 
 export type GuildEvent =
   | { type: "channel:created"; channel: Omit<Channel, "overwrites"> }
+  | { type: "channel:updated"; channel: Omit<Channel, "overwrites"> }
   | { type: "category:created"; category: Category }
   | { type: "category:updated"; category: Category }
   | { type: "category:deleted"; event: CategoryDeletedEvent }
-  | { type: "layout:updated"; event: LayoutUpdatedEvent };
+  | { type: "layout:updated"; event: LayoutUpdatedEvent }
+  | { type: "roles:updated"; guildId: string };
 
 const upsert = <T extends Idd>(list: T[], item: T, merge: (old: T) => T): T[] =>
   list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? merge(x) : x)) : [...list, item];
@@ -176,7 +178,10 @@ const upsert = <T extends Idd>(list: T[], item: T, merge: (old: T) => T): T[] =>
 /** The new guild data after one event (unknown ids are ignored: the next fetch brings them). Order is never stored, only positions. */
 export function reduceGuild(data: GuildData, e: GuildEvent): GuildData {
   switch (e.type) {
+    case "roles:updated":
+      return data; // nothing of GuildData; applyGuildEvent refetches the roles
     case "channel:created":
+    case "channel:updated":
       return { ...data, channels: upsert(data.channels, { ...e.channel, overwrites: [] }, (old) => ({ ...old, ...e.channel, overwrites: old.overwrites })) };
     case "category:created":
     case "category:updated":
@@ -202,13 +207,15 @@ export function reduceGuild(data: GuildData, e: GuildEvent): GuildData {
   }
 }
 
-const guildIdOf = (e: GuildEvent) => (e.type === "channel:created" ? e.channel.guildId : e.type === "category:created" || e.type === "category:updated" ? e.category.guildId : e.event.guildId);
+const guildIdOf = (e: Exclude<GuildEvent, { type: "roles:updated" }>) => (e.type === "channel:created" || e.type === "channel:updated" ? e.channel.guildId : e.type === "category:created" || e.type === "category:updated" ? e.category.guildId : e.event.guildId);
 
 /** Applies a socket event to the guild's cache; a guild not loaded yet is left to its first fetch. A channel we did not know also refetches (its overwrites are not in the event). */
 export function applyGuildEvent(qc: QueryClient, e: GuildEvent) {
+  // the event carries no roles: refetch them (positions changed, so who outranks whom did)
+  if (e.type === "roles:updated") return void qc.invalidateQueries({ queryKey: ["guild", e.guildId, "roles"] });
   const key = ["guild", guildIdOf(e)];
   const before = qc.getQueryData<GuildData>(key);
   if (!before || (e.type === "layout:updated" && inFlight.has(e.event.guildId))) return;
   qc.setQueryData<GuildData>(key, reduceGuild(before, e));
-  if (e.type === "channel:created" && !before.channels.some((c) => c.id === e.channel.id)) void qc.invalidateQueries({ queryKey: key });
+  if ((e.type === "channel:created" || e.type === "channel:updated") && !before.channels.some((c) => c.id === e.channel.id)) void qc.invalidateQueries({ queryKey: key });
 }

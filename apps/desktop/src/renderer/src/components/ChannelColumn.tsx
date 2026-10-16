@@ -1,6 +1,6 @@
 import { Permission } from "@loop/shared";
 import { ArrowDown, ArrowUp, CaretDown, Check, Copy, FolderSimple, FolderSimplePlus, Gear, Hash, LinkSimple, PencilSimple, Plus, ShieldCheck, SignOut as Leave, SpeakerHigh, Trash } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, useRef, useState, type DragEvent, type FormEvent, type LiHTMLAttributes, type ReactNode } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
@@ -11,20 +11,26 @@ import { buildTree, canShift, commitLayout, dropOn, groupIds, layoutInFlight, la
 import { collapse, useCollapsed } from "../lib/category-collapse";
 import { toast } from "../lib/toast";
 import { useCopy } from "../lib/clipboard";
+import { INVITE_EXPIRY, INVITE_MAX_USES, inviteBody } from "../lib/invites";
 import { errorMessage } from "../lib/errors";
 import { isLayoutDrag, LAYOUT_DRAG } from "../lib/drop";
+import { canDropOn, encodeMove, isMoveDrag, MOVE_DRAG, mayMove, parseMove, type MovePayload } from "../lib/move-members";
 import { arrowNav } from "../lib/focus";
 import { goHome, useNav } from "../lib/nav";
 import type { Channel, Guild } from "../lib/permissions";
 import { openChannel } from "../lib/channel-open";
 import { channelKey } from "../lib/conversation";
 import { useGuild, usePermissions } from "../lib/queries";
-import { useUnreadCount } from "../lib/unread-hooks";
-import { UnreadDot } from "./Badge";
+import { guildIconUrl } from "../lib/identity";
+import { useNameOf } from "../lib/identity-hooks";
+import { useMentionCount, useUnreadCount } from "../lib/unread-hooks";
+import { Badge, UnreadDot } from "./Badge";
 import { useVoiceParticipants } from "../lib/voice-hooks";
 import { channelNameError, normalizeChannelName } from "../lib/validation";
 import { Button } from "./Button";
 import { ConfirmBody } from "./Confirm";
+import { Select } from "./OverwritesPanel";
+import { EditChannelForm } from "./EditChannelForm";
 import { navRow } from "./navRow";
 import { MenuItem, RowMenu } from "./RowMenu";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
@@ -56,6 +62,7 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
   const [newIn, setNewIn] = useState<Category | null>(null);
   const [deleting, setDeleting] = useState<Channel | null>(null);
   const [moving, setMoving] = useState<Channel | null>(null);
+  const [editing, setEditing] = useState<Channel | null>(null);
   const [renaming, setRenaming] = useState<Category | null>(null);
   const [deletingCategory, setDeletingCategory] = useState<Category | null>(null);
   const sections = settingsSections(perms.bits, perms.standing?.isOwner ?? false);
@@ -113,6 +120,43 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
     endDrag();
     if (next) void saveLayout(next, true);
   };
+  // Moving a person between voice channels (MOVE_MEMBERS): its own drag type, so it never mixes with the layout drag above.
+  // `carried` is the person in the air (dragover cannot read the data), `moveOver` the voice channel under the pointer.
+  const carried = useRef<MovePayload | null>(null);
+  const [moveOver, setMoveOver] = useState<string | null>(null);
+  const startMove = (e: DragEvent, payload: MovePayload) => {
+    e.stopPropagation(); // the channel row around this person may be a layout drag source
+    e.dataTransfer.setData(MOVE_DRAG, encodeMove(payload));
+    e.dataTransfer.effectAllowed = "move";
+    carried.current = payload;
+  };
+  const endMove = () => {
+    carried.current = null;
+    setMoveOver(null);
+  };
+  /** Handlers of a voice channel row as a drop target for a person; the layout handlers `layout` stay for every other drag. */
+  const withMoveDrop = (c: Channel, layout: LiHTMLAttributes<HTMLLIElement> | undefined): LiHTMLAttributes<HTMLLIElement> | undefined => {
+    if (c.type !== "VOICE" || !mayMove(perms.bitsIn(c))) return layout;
+    const accepts = () => !!carried.current && canDropOn(carried.current, c, perms.bitsIn(c));
+    return {
+      ...layout,
+      onDragOver: (e) => {
+        if (!isMoveDrag(e.dataTransfer)) return layout?.onDragOver?.(e);
+        if (!accepts()) return setMoveOver(null);
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setMoveOver(c.id);
+      },
+      onDrop: (e) => {
+        if (!isMoveDrag(e.dataTransfer)) return layout?.onDrop?.(e);
+        e.preventDefault();
+        const dragged = parseMove(e.dataTransfer.getData(MOVE_DRAG));
+        const ok = accepts() && dragged && dragged.userId === carried.current?.userId;
+        endMove();
+        if (ok) admin.moveMember(c.id, dragged.userId).catch((err) => toast.push(errorMessage(err), "error"));
+      },
+    };
+  };
   /** Props for a row that can be dragged (source) and/or dropped on (`target` decides from the pointer). */
   const dnd = (source: DragSource | null, target: (e: DragEvent<HTMLLIElement>) => DropTarget | null): LiHTMLAttributes<HTMLLIElement> | undefined =>
     canManage
@@ -134,8 +178,11 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
     <ChannelRow
       key={c.id}
       channel={c}
-      dnd={dnd({ kind: "channel", id: c.id }, (e) => (live.current?.kind === "channel" ? { kind: "channel", id: c.id, position: upper(e) } : null))}
-      drop={mark("channel", c.id)}
+      dnd={withMoveDrop(c, dnd({ kind: "channel", id: c.id }, (e) => (live.current?.kind === "channel" ? { kind: "channel", id: c.id, position: upper(e) } : null)))}
+      drop={moveOver === c.id ? "inside" : mark("channel", c.id)}
+      canMovePeople={c.type === "VOICE" && mayMove(perms.bitsIn(c))}
+      onMoveStart={startMove}
+      onMoveEnd={endMove}
       dragging={drag?.kind === "channel" && drag.id === c.id}
       active={c.id === channelId && !settings}
       canManage={canManage}
@@ -143,6 +190,7 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
       onUp={tree && canShift(siblings, c.id, -1) ? () => void saveLayout(shiftChannel(tree, c.id, -1)) : undefined}
       onDown={tree && canShift(siblings, c.id, 1) ? () => void saveLayout(shiftChannel(tree, c.id, 1)) : undefined}
       onMove={() => setMoving(c)}
+      onEdit={() => setEditing(c)}
       onDelete={() => setDeleting(c)}
     />
   );
@@ -151,6 +199,7 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
     <>
       <GuildMenu
         name={name}
+        icon={guildIconUrl(guildId, guild.data?.guild.iconHash)}
         canInvite={perms.can(Permission.CREATE_INVITE)}
         canManage={canManage}
         onPick={(d) => (d === "channel" ? addChannel(null) : setDialog(d))}
@@ -164,7 +213,7 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
           <ul
             aria-label={t("channels.list")}
             onKeyDown={arrowNav}
-            onDragLeave={(e) => leftList(e) && setOver(null)}
+            onDragLeave={(e) => leftList(e) && (setOver(null), setMoveOver(null))}
             className="flex flex-col gap-0.5"
           >
             {drag?.kind === "channel" && tree.loose.length === 0 && (
@@ -234,6 +283,9 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
       <Dialog open={!!renaming} onClose={() => setRenaming(null)} title={t("category.rename")}>
         {renaming && <CategoryNameForm initial={renaming.name} submit={t("category.save")} action={(n) => admin.renameCategory(guildId, renaming.id, n)} onDone={() => setRenaming(null)} />}
       </Dialog>
+      <Dialog open={!!editing} onClose={() => setEditing(null)} title={t("channels.editTitle")}>
+        {editing && <EditChannelForm guildId={guildId} channel={editing} onDone={() => setEditing(null)} />}
+      </Dialog>
       <Dialog open={!!moving} onClose={() => setMoving(null)} title={t("channels.moveTitle", { name: moving?.name ?? "" })}>
         {moving && tree && (
           <MoveChannelBody
@@ -264,7 +316,7 @@ export function ChannelColumn({ guildId }: { guildId: string }) {
 }
 
 /** One channel line: the channel, its menu (with MANAGE_CHANNELS) and, for a voice channel, who is in it. */
-function ChannelRow({ channel: c, active, canManage, canPermissions, onUp, onDown, onMove, onDelete, dnd, drop, dragging }: { channel: Channel; active: boolean; canManage: boolean; canPermissions: boolean; onUp?: () => void; onDown?: () => void; onMove: () => void; onDelete: () => void; dnd?: LiHTMLAttributes<HTMLLIElement>; drop?: DropTarget["position"]; dragging?: boolean }) {
+function ChannelRow({ channel: c, active, canManage, canPermissions, canMovePeople, onMoveStart, onMoveEnd, onUp, onDown, onMove, onEdit, onDelete, dnd, drop, dragging }: { channel: Channel; active: boolean; canManage: boolean; canPermissions: boolean; canMovePeople: boolean; onMoveStart: (e: DragEvent, payload: MovePayload) => void; onMoveEnd: () => void; onUp?: () => void; onDown?: () => void; onMove: () => void; onEdit: () => void; onDelete: () => void; dnd?: LiHTMLAttributes<HTMLLIElement>; drop?: DropTarget["position"]; dragging?: boolean }) {
   return (
     <li {...dnd} data-drop={drop} className={dragClass(!!dnd?.draggable, drop, dragging)}>
       <div className="group flex items-center">
@@ -283,6 +335,7 @@ function ChannelRow({ channel: c, active, canManage, canPermissions, onUp, onDow
                     }}
                   />
                 )}
+                <MenuItem icon={<PencilSimple aria-hidden="true" />} label={t("channels.edit")} onClick={() => { close(); onEdit(); }} />
                 <MenuItem icon={<FolderSimple aria-hidden="true" />} label={t("channels.move")} onClick={() => { close(); onMove(); }} />
                 {onUp && <MenuItem icon={<ArrowUp aria-hidden="true" />} label={t("channels.moveUp")} onClick={() => { close(); onUp(); }} />}
                 {onDown && <MenuItem icon={<ArrowDown aria-hidden="true" />} label={t("channels.moveDown")} onClick={() => { close(); onDown(); }} />}
@@ -292,7 +345,7 @@ function ChannelRow({ channel: c, active, canManage, canPermissions, onUp, onDow
           </RowMenu>
         )}
       </div>
-      {c.type === "VOICE" && <VoiceMembers channel={c} />}
+      {c.type === "VOICE" && <VoiceMembers channel={c} draggable={canMovePeople} onMoveStart={onMoveStart} onMoveEnd={onMoveEnd} />}
     </li>
   );
 }
@@ -300,6 +353,7 @@ function ChannelRow({ channel: c, active, canManage, canPermissions, onUp, onDow
 function ChannelItem({ channel, active }: { channel: Channel; active: boolean }) {
   const voiceChannel = channel.type === "VOICE";
   const unread = useUnreadCount(channelKey(channel.id)) > 0 && !active;
+  const mentions = useMentionCount(channelKey(channel.id));
   const joined = useStore(voice.store, (s) => s.target?.kind === "channel" && s.target.id === channel.id && s.status !== "disconnected");
   // a voice channel is joined by the click (a user gesture, which the OS prompts for mic need); opened only once joined
   const open = () => openChannel(channel);
@@ -315,23 +369,32 @@ function ChannelItem({ channel, active }: { channel: Channel; active: boolean })
     >
       {voiceChannel ? <SpeakerHigh aria-hidden="true" className={`shrink-0 ${joined ? "text-moss-300" : ""}`} /> : <Hash aria-hidden="true" className="shrink-0" />}
       <span className="min-w-0 flex-1 truncate">{channel.name}</span>
-      {unread && <UnreadDot />}
+      {unread && (mentions > 0 ? <Badge count={mentions} label="unread.mentions" /> : <UnreadDot />)}
     </button>
   );
 }
 
 /** Who is in a voice channel, under its name: initials, name, a ring while speaking; their mic / deafen marks. */
-function VoiceMembers({ channel }: { channel: Channel }) {
+function VoiceMembers({ channel, draggable, onMoveStart, onMoveEnd }: { channel: Channel; draggable: boolean; onMoveStart: (e: DragEvent, payload: MovePayload) => void; onMoveEnd: () => void }) {
   const people = useVoiceParticipants(channel.id);
+  const nameOf = useNameOf();
   if (people.length === 0) return null;
   return (
     <ul aria-label={t("channels.voiceMembers", { name: channel.name })} className="mt-0.5 mb-1 flex flex-col gap-0.5 pl-6">
       {people.map((p) => (
-        <li key={p.userId} data-user={p.userId} data-speaking={p.speaking ? "true" : undefined} className="flex h-10 items-center gap-2 rounded-sm px-1.5 text-small text-ink-muted hover:bg-white/[.04] hover:text-ink">
+        <li
+          key={p.userId}
+          data-user={p.userId}
+          data-speaking={p.speaking ? "true" : undefined}
+          draggable={draggable || undefined}
+          onDragStart={draggable ? (e) => onMoveStart(e, { userId: p.userId, guildId: channel.guildId, channelId: channel.id }) : undefined}
+          onDragEnd={draggable ? onMoveEnd : undefined}
+          className={`${draggable ? "cursor-grab " : ""}flex h-10 items-center gap-2 rounded-sm px-1.5 text-small text-ink-muted hover:bg-white/[.04] hover:text-ink`}
+        >
           <UserCardTrigger user={{ id: p.userId, username: p.username }} guildId={channel.guildId} className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-sm">
-            <Avatar id={p.userId} name={p.username} speaking={!!p.speaking} className="mx-1 size-6 rounded-full text-[10px]" />
-            <Tooltip label={p.username}>
-              <span className={`min-w-0 flex-1 truncate ${p.speaking ? "text-ink" : ""}`}>{p.username}</span>
+            <Avatar id={p.userId} name={nameOf(p.userId, p.username)} speaking={!!p.speaking} className="mx-1 size-6 rounded-full text-[10px]" />
+            <Tooltip label={nameOf(p.userId, p.username)}>
+              <span className={`min-w-0 flex-1 truncate ${p.speaking ? "text-ink" : ""}`}>{nameOf(p.userId, p.username)}</span>
             </Tooltip>
           </UserCardTrigger>
           {p.speaking && <span className="sr-only">{t("voice.speaking")}</span>}
@@ -344,7 +407,7 @@ function VoiceMembers({ channel }: { channel: Channel }) {
 }
 
 /** Server name as the menu button; the menu is a native popover (light dismiss, Esc) anchored under it. */
-function GuildMenu({ name, canInvite, canManage, onPick, onSettings }: { name: string; canInvite: boolean; canManage: boolean; onPick: (d: DialogName) => void; onSettings?: () => void }) {
+function GuildMenu({ name, icon, canInvite, canManage, onPick, onSettings }: { name: string; icon: string | null; canInvite: boolean; canManage: boolean; onPick: (d: DialogName) => void; onSettings?: () => void }) {
   const menu = useRef<HTMLDivElement>(null);
   const pick = (d: DialogName) => {
     menu.current?.hidePopover();
@@ -358,6 +421,7 @@ function GuildMenu({ name, canInvite, canManage, onPick, onSettings }: { name: s
         aria-label={t("guildMenu.open", { name })}
         className="-ml-2 flex h-10 min-w-0 flex-1 items-center gap-2 rounded-control px-2 text-left font-display text-[15px] font-bold [anchor-name:--guild-menu] hover:bg-surface-3"
       >
+        {icon && <Avatar id="" name={name} image={icon} className="size-6 rounded-sm text-[10px]" />}
         <span className="min-w-0 flex-1 truncate">{name}</span>
         <CaretDown aria-hidden="true" className="shrink-0 text-ink-muted" />
       </button>
@@ -388,7 +452,10 @@ function GuildMenu({ name, canInvite, canManage, onPick, onSettings }: { name: s
   );
 }
 
-/** One invite per opening (a query, so StrictMode's double mount does not create two). */
+/**
+ * One invite per opening with the default limits (a query, so StrictMode's double mount does not create two); the
+ * expiry / max-uses choices then make a fresh one on demand.
+ */
 function InviteBody({ guildId, onDone }: { guildId: string; onDone: () => void }) {
   const invite = useQuery({
     queryKey: ["invite", guildId],
@@ -397,6 +464,13 @@ function InviteBody({ guildId, onDone }: { guildId: string; onDone: () => void }
     gcTime: 0,
     retry: false,
   });
+  const [expiry, setExpiry] = useState("");
+  const [maxUses, setMaxUses] = useState("");
+  const remake = useMutation({
+    mutationFn: () => session.client.request<{ code: string }>("POST", `/guilds/${guildId}/invites`, inviteBody(Number(expiry) || null, Number(maxUses) || null)),
+  });
+  const code = remake.data?.code ?? invite.data?.code;
+  const failure = remake.isError ? remake.error : invite.isError ? invite.error : null;
   const { copied, copy } = useCopy();
   return (
     <>
@@ -407,13 +481,13 @@ function InviteBody({ guildId, onDone }: { guildId: string; onDone: () => void }
           {t("invite.creating")}
         </p>
       )}
-      <DialogError message={invite.isError ? errorMessage(invite.error) : ""} />
-      {invite.data && (
+      <DialogError message={failure ? errorMessage(failure) : ""} />
+      {code && (
         <div className="flex items-center gap-2">
           <output aria-label={t("invite.code")} className="flex h-11 min-w-0 flex-1 items-center rounded-control border border-line-strong bg-surface-3 px-3.5 font-mono text-[15px] tracking-wide select-text">
-            <span className="truncate">{invite.data.code}</span>
+            <span className="truncate">{code}</span>
           </output>
-          <Button type="button" onClick={() => void copy(invite.data.code)} className="w-36">
+          <Button type="button" onClick={() => void copy(code)} className="w-36">
             {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
             {copied ? t("common.copied") : t("common.copy")}
           </Button>
@@ -422,6 +496,30 @@ function InviteBody({ guildId, onDone }: { guildId: string; onDone: () => void }
       <p aria-live="polite" className="sr-only">
         {copied ? t("common.copied") : ""}
       </p>
+      <fieldset className="flex flex-col gap-3">
+        <legend className="mb-1 text-sm font-medium">{t("invite.options")}</legend>
+        <div className="flex flex-wrap gap-3">
+          <Select label={t("invite.expiry")} value={expiry} onChange={setExpiry}>
+            {INVITE_EXPIRY.map((o) => (
+              <option key={o.label} value={o.seconds ?? ""}>
+                {t(o.label)}
+              </option>
+            ))}
+          </Select>
+          <Select label={t("invite.maxUses")} value={maxUses} onChange={setMaxUses}>
+            {INVITE_MAX_USES.map((n) => (
+              <option key={n ?? 0} value={n ?? ""}>
+                {n ? t("invite.maxUses.n", { n: String(n) }) : t("invite.maxUses.unlimited")}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div>
+          <Button type="button" variant="secondary" loading={remake.isPending} onClick={() => remake.mutate()}>
+            {t("invite.regenerate")}
+          </Button>
+        </div>
+      </fieldset>
       <DialogActions>
         <Button type="button" variant="ghost" onClick={onDone}>
           {t("common.close")}

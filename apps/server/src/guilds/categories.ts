@@ -1,9 +1,9 @@
 import { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
-import { categoryNameSchema, hasPermission, layoutSchema, type Overwrite, Permission } from "@loop/shared";
+import { categoryNameSchema, hasPermission, layoutSchema, Permission } from "@loop/shared";
 import { prisma } from "../db.js";
 import { HttpError, parse } from "../http.js";
-import { channelPermissions, isUuid, NOT_FOUND, requireGuildPermission } from "./access.js";
+import { bitsInChannel, isUuid, NOT_FOUND, permissionSource, requireGuildPermission } from "./access.js";
 import { lockGuild } from "./routes.js";
 
 type Params = { guildId: string; categoryId: string };
@@ -36,14 +36,14 @@ async function removeCategory(tx: Tx, guildId: string, categoryId: string): Prom
  * caller can see (else 409, or 400 when it names an id that exists but is not theirs to list). Channels the
  * caller cannot see keep their category and relative order and sit after the visible ones of that category.
  */
-async function applyLayout(tx: Tx, guildId: string, layout: ReturnType<typeof layoutSchema.parse>, canView: (overwrites: Overwrite[]) => boolean) {
+async function applyLayout(tx: Tx, guildId: string, layout: ReturnType<typeof layoutSchema.parse>, canView: (channel: Parameters<typeof bitsInChannel>[1]) => boolean) {
   await lockGuild(tx, guildId);
   const [categories, channels] = await Promise.all([
     tx.category.findMany({ where: { guildId } }),
-    tx.channel.findMany({ where: { guildId }, include: { overwrites: true } }),
+    tx.channel.findMany({ where: { guildId, parentChannelId: null }, include: permissionSource }), // threads have no place in the layout
   ]);
-  const visible = channels.filter((c) => canView(c.overwrites));
-  const hidden = channels.filter((c) => !canView(c.overwrites));
+  const visible = channels.filter((c) => canView(c));
+  const hidden = channels.filter((c) => !canView(c));
   const sameSet = (given: string[], expected: string[]) => given.length === expected.length && given.every((id) => expected.includes(id));
   const channelIds = visible.map((c) => c.id);
   const categoryIds = categories.map((c) => c.id);
@@ -84,7 +84,9 @@ export function categoryRoutes(app: FastifyInstance) {
       const category = await prisma.$transaction(async (tx) => {
         await lockGuild(tx, guild.id);
         const last = await tx.category.aggregate({ where: { guildId: guild.id }, _max: { position: true } });
-        return tx.category.create({ data: { guildId: guild.id, name: body.name, position: (last._max.position ?? -1) + 1 } });
+        const created = await tx.category.create({ data: { guildId: guild.id, name: body.name, position: (last._max.position ?? -1) + 1 } });
+        await app.audit(guild.id, req.userId, "channel.category_create", { targetId: created.id, meta: { name: created.name }, tx });
+        return created;
       });
       await app.realtime.emitToGuild(guild.id, "category:created", () => category);
       return reply.code(201).send(category);
@@ -106,6 +108,7 @@ export function categoryRoutes(app: FastifyInstance) {
       throw isNameTaken(e) ? NAME_TAKEN : e;
     }
     const category = await prisma.category.findUniqueOrThrow({ where: { id: categoryId } });
+    await app.audit(guild.id, req.userId, "channel.category_update", { targetId: category.id, meta: { name: category.name } });
     await app.realtime.emitToGuild(guild.id, "category:updated", () => category);
     return category;
   });
@@ -116,7 +119,10 @@ export function categoryRoutes(app: FastifyInstance) {
     if (!isUuid(categoryId)) throw NOT_FOUND;
     const moved = await prisma.$transaction(async (tx) => {
       await lockGuild(tx, guild.id);
-      return removeCategory(tx, guild.id, categoryId);
+      const { name } = (await tx.category.findFirst({ where: { id: categoryId, guildId: guild.id } })) ?? { name: "" };
+      const moved = await removeCategory(tx, guild.id, categoryId); // 404 when it is not this guild's
+      await app.audit(guild.id, req.userId, "channel.category_delete", { targetId: categoryId, meta: { name }, tx });
+      return moved;
     });
     await app.realtime.emitToGuild(guild.id, "category:deleted", (canSee) => ({
       guildId: guild.id,
@@ -131,8 +137,12 @@ export function categoryRoutes(app: FastifyInstance) {
     const { guild } = access;
     const layout = parse(layoutSchema, req.body, reply);
     if (!layout) return;
-    const canView = (overwrites: Overwrite[]) => hasPermission(channelPermissions(access, overwrites), Permission.VIEW_CHANNEL);
-    const result = await prisma.$transaction((tx) => applyLayout(tx, guild.id, layout, canView));
+    const canView = (channel: Parameters<typeof bitsInChannel>[1]) => hasPermission(bitsInChannel(access, channel), Permission.VIEW_CHANNEL);
+    const result = await prisma.$transaction(async (tx) => {
+      const applied = await applyLayout(tx, guild.id, layout, canView);
+      await app.audit(guild.id, req.userId, "channel.layout_update", { tx }); // one entry per layout change, however many rows moved
+      return applied;
+    });
     const payload = (canSee: (id: string) => boolean) => ({
       guildId: guild.id,
       categories: result.categories,

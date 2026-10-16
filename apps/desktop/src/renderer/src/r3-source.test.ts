@@ -22,7 +22,7 @@ describe("redesign R3 chat source rules", () => {
   });
   it("message rows read their sizes from the density variables, not fixed pixels", () => {
     expect(chat).toMatch(/grid-cols-\[var\(--m-av\)_minmax\(0,1fr\)\]/);
-    expect(chat).toMatch(/text-\(length:--m-fs\) leading-\(--m-lh\)/);
+    expect(read("components/MessageText.tsx")).toMatch(/text-\(length:--m-fs\) leading-\(--m-lh\)/); // the text moved out of ChatView with the formatting
   });
   it("copy: the label morphs to the copied text and a polite live region announces it", () => {
     expect(chat).toMatch(/copied \? t\("common\.copied"\) : t\("chat\.copy"\)/);

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { MAX_ATTACHMENTS_PER_MESSAGE } from "./attachments.js";
 import { ALL_PERMISSIONS, CHANNEL_PERMISSIONS } from "./permissions.js";
+import { channelTopicSchema, groupDmNameSchema, threadNameSchema } from "./profiles.js";
 
 export const usernameSchema = z
   .string()
@@ -56,19 +57,29 @@ export const channelSchema = z.object({
   type: channelTypeSchema,
   position: z.number().int().min(0),
   categoryId: z.string().uuid().nullable(),
+  topic: z.string().nullable().optional(), // absent from servers older than profiles
   createdAt: z.string(),
 });
 export type Channel = z.infer<typeof channelSchema>;
 
+export const channelNameSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^[a-z0-9_-]+$/, "chỉ gồm chữ thường, số, - và _");
+
 export const createChannelSchema = z.object({
-  name: z
-    .string()
-    .min(1)
-    .max(100)
-    .regex(/^[a-z0-9_-]+$/, "chỉ gồm chữ thường, số, - và _"),
+  name: channelNameSchema,
   type: channelTypeSchema,
   categoryId: z.string().uuid().optional(),
 });
+
+/** PATCH /channels/:id; `topic` null clears it. */
+export const updateChannelSchema = z
+  .object({ name: channelNameSchema, topic: channelTopicSchema.nullable() })
+  .partial()
+  .strict()
+  .refine((b) => Object.keys(b).length > 0, "nothing to update");
 
 export const categoryNameSchema = z.object({ name: z.string().trim().min(1).max(100) });
 
@@ -127,6 +138,7 @@ export const messageBodySchema = z
       .max(MAX_ATTACHMENTS_PER_MESSAGE)
       .refine((ids) => new Set(ids).size === ids.length, "duplicate attachment")
       .default([]),
+    replyToId: z.string().max(64).optional(), // plain string like the attachment ids: any bad one gives the same 400
   })
   .refine((b) => b.content !== "" || b.attachmentIds.length > 0, "content or attachment required");
 
@@ -144,8 +156,78 @@ export const historyQuerySchema = z
   })
   .refine((q) => !(q.before && q.after), { message: "before and after are mutually exclusive" });
 
+/** Socket `typing` payload: the client is typing in a channel or a DM (never both). Ephemeral, nothing is stored. */
+export const typingSchema = z.union([z.object({ channelId: z.string().uuid() }).strict(), z.object({ dmChannelId: z.string().uuid() }).strict()]);
+/** Server -> room / user room `typing`: `at` = server time in ms. Exactly one of channelId / dmChannelId. */
+export type TypingEvent = { channelId?: string; dmChannelId?: string; userId: string; at: number };
+
+/** PUT /channels/:id/read and /dms/:id/read: the seq of the newest message the caller has seen. */
+export const readBodySchema = z.object({ seq: seqSchema }).strict();
+/** One conversation of GET /me/unread; both counts are capped at 99, conversations with nothing unread are left out. `parentChannelId` is set for a thread. */
+export type UnreadChannel = { channelId: string; guildId: string; parentChannelId?: string; unread: number; mentions: number };
+export type UnreadDm = { dmChannelId: string; unread: number; mentions: number };
+export type UnreadResponse = { channels: UnreadChannel[]; dms: UnreadDm[] };
+/** Socket `read:updated` to the user's own room: another device read up to `lastReadSeq`. */
+export type ReadUpdatedEvent = { channelId?: string; dmChannelId?: string; lastReadSeq: string };
+
+/** Threads (apps/server/CLAUDE.md "Luồng"). POST /channels/:channelId/messages/:messageId/thread. */
+export const createThreadSchema = z.object({ name: threadNameSchema }).strict();
+/** PATCH /threads/:threadId. */
+export const updateThreadSchema = z
+  .object({ name: threadNameSchema, archived: z.boolean() })
+  .partial()
+  .strict()
+  .refine((b) => Object.keys(b).length > 0, "nothing to update");
+/** GET /channels/:channelId/threads: active threads, or the archived ones with `archived=true`. */
+export const threadListQuerySchema = z.object({ archived: z.enum(["true", "false"]).optional() }).strict();
+/** At most this many threads per list (newest activity first). */
+export const MAX_THREADS_LISTED = 50;
+/** Thread JSON (REST, `thread:created` / `thread:updated`, and the starter message's `thread`); `lastMessageAt` = creation, then the newest message. */
+export type ThreadDto = {
+  id: string;
+  guildId: string;
+  parentChannelId: string;
+  name: string;
+  starterMessageId: string | null;
+  createdById: string | null;
+  createdAt: string;
+  lastMessageAt: string | null;
+  archived: boolean;
+  messageCount: number;
+};
+export type ThreadDeletedEvent = { id: string; guildId: string; parentChannelId: string; starterMessageId: string | null };
+
+export const MAX_SEARCH_TERMS = 8;
+const searchTextSchema = z.string().trim().min(1).max(100).regex(/^[^\0]*$/);
+/** GET /guilds/:guildId/messages/search: at least `q` or `authorId`; `before` = seq cursor of the previous page's last row. */
+export const guildSearchQuerySchema = z
+  .object({
+    q: searchTextSchema.optional(),
+    authorId: z.string().uuid().optional(),
+    channelId: z.string().uuid().optional(),
+    before: seqSchema.optional(),
+    limit: z.coerce.number().int().min(1).max(25).default(25),
+  })
+  .strict()
+  .refine((s) => s.q !== undefined || s.authorId !== undefined, { message: "q or authorId required" });
+export const dmSearchQuerySchema = z
+  .object({ q: searchTextSchema, before: seqSchema.optional(), limit: z.coerce.number().int().min(1).max(25).default(25) })
+  .strict();
+export type SearchResponse<M> = { messages: M[]; hasMore: boolean };
+
+/** The words of a search text (letters and digits, at most MAX_SEARCH_TERMS): the server's tsquery terms and the client's highlight terms. */
+export const searchTerms = (q: string) => (q.normalize("NFC").match(/[\p{L}\p{N}]+/gu) ?? []).slice(0, MAX_SEARCH_TERMS);
+
 export * from "./attachments.js";
+export * from "./audit.js";
+export * from "./automod.js";
+export * from "./emoji.js";
+export * from "./gifs.js";
+export * from "./links.js";
+export * from "./mentions.js";
+export * from "./moderation.js";
 export * from "./permissions.js";
+export * from "./profiles.js";
 export * from "./voice.js";
 
 // Only known bits; anything else is a client bug or a probe, so 400 rather than silently masking.
@@ -186,6 +268,30 @@ export const friendRequestSchema = z.object({ username: usernameSchema });
 
 // Ids stay plain strings here: a malformed id is a 404 at the route (like a missing one), not a 400.
 export const openDmSchema = z.object({ userId: z.string() });
+
+/** A group DM holds the creator plus 2..9 others, so 3..10 people; it can shrink below 3 by leaving and stays until empty. */
+export const MAX_GROUP_DM = 10;
+export const MIN_GROUP_DM_INVITEES = 2;
+/** POST /dms/group. Duplicates are a 400; unknown / non-friend ids a 404 at the route, like POST /dms. */
+export const createGroupDmSchema = z
+  .object({
+    userIds: z
+      .array(z.string())
+      .min(MIN_GROUP_DM_INVITEES)
+      .max(MAX_GROUP_DM - 1)
+      .refine((ids) => new Set(ids).size === ids.length, "duplicate user ids"),
+    name: groupDmNameSchema.nullable().optional(),
+  })
+  .strict();
+export const addGroupDmParticipantSchema = z.object({ userId: z.string() }).strict();
+/** PATCH /dms/:dmId (groups only): null or empty clears the name. */
+export const updateGroupDmSchema = z.object({ name: groupDmNameSchema.nullable() }).strict();
+
+export type DmKind = "PAIR" | "GROUP";
+export type DmUserDto = { id: string; username: string; displayName: string | null; avatarHash: string | null; online: boolean; status: PresenceStatus };
+/** GET /dms item: a pair has `user` (the other person); a group lists every participant (the caller included). */
+export type PairDmDto = { id: string; kind: "PAIR"; user: DmUserDto; lastMessageAt: string | null };
+export type GroupDmDto = { id: string; kind: "GROUP"; name: string | null; ownerId: string | null; participants: DmUserDto[]; lastMessageAt: string | null };
 
 /** What a user chooses (persisted); `invisible` looks exactly like `offline` to everyone else. */
 export const STATUS_PREFS = ["online", "idle", "dnd", "invisible"] as const;

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { GIF_HOSTS } from "@loop/shared";
 import { buildCsp, ensureMediaAccess, isMediaKind, isPermissionAllowed, isSafeExternalUrl, isTrustedSender, isValidRefreshToken, resolveAppFile } from "./security";
 import { isAllowedLivekitUrl } from "../shared/url";
 
@@ -61,9 +62,13 @@ describe("buildCsp", () => {
     expect(cloud).toContain("wss://x.livekit.cloud https://x.livekit.cloud");
     expect(cloud).not.toContain("127.0.0.1");
   });
-  it("images come from the storage origin (and blob: previews), in production and dev alike", () => {
-    for (const csp of [buildCsp(origins), buildCsp(origins, "http://localhost:5173")])
-      expect(csp).toContain("img-src 'self' data: blob: http://localhost:3000 http://localhost:9000;");
+  it("images come from the storage origin, the exact GIPHY CDN hosts (never a wildcard) and blob: previews, in production and dev alike", () => {
+    const gifHosts = GIF_HOSTS.map((h) => `https://${h}`).join(" ");
+    for (const csp of [buildCsp(origins), buildCsp(origins, "http://localhost:5173")]) {
+      expect(csp).toContain(`img-src 'self' data: blob: http://localhost:3000 http://localhost:9000 ${gifHosts};`);
+      expect(csp).not.toContain("*");
+      expect(csp).not.toMatch(/connect-src[^;]*giphy/); // the API calls go through our server; the CDN is for <img> only
+    }
   });
   it("the storage origin is the configured one, not a constant", () => {
     const csp = buildCsp({ ...origins, storage: "https://files.example.com" });

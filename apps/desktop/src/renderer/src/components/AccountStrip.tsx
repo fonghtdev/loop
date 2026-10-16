@@ -55,7 +55,7 @@ export function AccountStrip() {
   const current = rows.find((r) => r.selected)!;
   const inCall = isActive(v.status);
   const ready = v.status === "connected";
-  const micHint = !inCall ? t("voice.needsCall") : !v.canSpeak ? t("voice.micNoSpeak") : v.deafened ? t("voice.micDeafened") : t("voice.mic");
+  const micHint = !inCall ? t("voice.needsCall") : v.serverMuted || v.serverDeafened ? t("voice.micServerMuted") : !v.canSpeak ? t("voice.micNoSpeak") : v.deafened ? t("voice.micDeafened") : t("voice.mic");
 
   return (
     <section aria-label={t("shell.account")} className="flex items-center px-1.5 py-2">
@@ -105,8 +105,8 @@ export function AccountStrip() {
         {inCall && !v.micEnabled ? <MicrophoneSlash aria-hidden="true" /> : <Microphone aria-hidden="true" />}
       </Control>
       <DeviceMenu id="mic-devices" kind="audioinput" label={t("voice.mic.devices")} />
-      <Control label={t("voice.deafen")} hint={inCall ? t("voice.deafen") : t("voice.needsCall")} pressed={v.deafened} disabled={!ready} onClick={() => void voice.toggleDeafen()}>
-        {v.deafened ? <HeadphonesSlash aria-hidden="true" /> : <Headphones aria-hidden="true" />}
+      <Control label={t("voice.deafen")} hint={!inCall ? t("voice.needsCall") : v.serverDeafened ? t("voice.deafenServer") : t("voice.deafen")} pressed={v.deafened || v.serverDeafened} disabled={!ready || v.serverDeafened} onClick={() => void voice.toggleDeafen()}>
+        {v.deafened || v.serverDeafened ? <HeadphonesSlash aria-hidden="true" /> : <Headphones aria-hidden="true" />}
       </Control>
       <DeviceMenu id="speaker-devices" kind="audiooutput" label={t("voice.speaker.devices")} />
       <Control label={t("userSettings.open")} hint={t("userSettings.open")} onClick={() => useNav.setState({ settings: "user" })}>

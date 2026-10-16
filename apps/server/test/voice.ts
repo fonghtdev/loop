@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { AccessToken, TokenVerifier } from "livekit-server-sdk";
-import { AudioSource, LocalAudioTrack, LocalVideoTrack, Room, RoomEvent, TrackPublishOptions, TrackSource, VideoSource } from "@livekit/rtc-node";
+import { AudioFrame, AudioSource, AudioStream, LocalAudioTrack, LocalVideoTrack, Room, RoomEvent, TrackPublishOptions, TrackSource, VideoSource } from "@livekit/rtc-node";
 import { expect, vi } from "vitest";
 import { createLivekit } from "../src/voice/livekit.js";
 import { caller, env } from "./helpers.js";
@@ -44,6 +44,28 @@ export async function publishScreen(room: Room, waitMs = 2000) {
     .localParticipant!.publishTrack(track, new TrackPublishOptions({ source: TrackSource.SOURCE_SCREENSHARE }))
     .then(() => "published" as const, () => "refused" as const);
   return Promise.race([publishing, new Promise<"refused">((r) => setTimeout(() => r("refused"), waitMs))]);
+}
+
+/** A microphone that really sends (noise, 10 ms frames) until `stop()`; `publishMic` tracks are silent and send nothing. */
+export async function publishTone(room: Room) {
+  const source = new AudioSource(48000, 1);
+  await room.localParticipant!.publishTrack(LocalAudioTrack.createAudioTrack("tone", source), new TrackPublishOptions({ source: TrackSource.SOURCE_MICROPHONE }));
+  let on = true;
+  void (async () => {
+    while (on) await source.captureFrame(new AudioFrame(new Int16Array(480).map(() => Math.floor(Math.random() * 1000)), 48000, 1, 480));
+  })();
+  return { stop: () => (on = false) };
+}
+
+/** Counts audio frames `room` really receives (from every track it subscribes); `frames` can be reset to 0. */
+export function countFrames(room: Room) {
+  const counter = { frames: 0 };
+  room.on(RoomEvent.TrackSubscribed, (track) => {
+    void (async () => {
+      for await (const _frame of new AudioStream(track)) counter.frames++;
+    })();
+  });
+  return counter;
 }
 
 export { RoomEvent };

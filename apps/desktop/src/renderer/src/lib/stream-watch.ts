@@ -23,3 +23,7 @@ export const pruneWatching = (watching: string[], sharers: ReadonlySet<string>) 
   const kept = watching.filter((id) => sharers.has(id));
   return kept.length === watching.length ? watching : kept;
 };
+
+/** Who says they are watching `streamerId`'s screen (their own cosmetic claim, see voice-flags); never the streamer. */
+export const viewersOf = <T extends { userId: string; watching?: string[] }>(participants: T[], streamerId: string): T[] =>
+  participants.filter((p) => p.userId !== streamerId && p.watching?.includes(streamerId));

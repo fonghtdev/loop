@@ -140,7 +140,7 @@ describe("members", () => {
   it("lists userId, username, isBot, joinedAt, createdAt, roleIds, status only", async () => {
     const { owner, base } = await setup();
     const res = await call("GET", `${base}/members`, owner);
-    expect(res.json()).toEqual([{ userId: expect.any(String), username: "owner", isBot: false, joinedAt: expect.any(String), createdAt: expect.any(String), roleIds: [], status: "offline" }]);
+    expect(res.json()).toEqual([{ userId: expect.any(String), username: "owner", displayName: null, avatarHash: null, isBot: false, joinedAt: expect.any(String), createdAt: expect.any(String), roleIds: [], status: "offline" }]);
     expect(res.body).not.toMatch(/email|passwordHash/);
   });
 

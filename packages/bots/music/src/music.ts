@@ -1,12 +1,13 @@
 import { ApiError, type LoopBot, type Message } from "@loop/bot-sdk";
 import { MAX_QUERY_LENGTH, PREFIX, parseCommand } from "./commands.js";
 import { GuildPlayer, MAX_QUEUE, type Source } from "./player.js";
-import { UserError } from "./source.js";
+import { UserError, sourceTag } from "./source.js";
 
 const LIST_LIMIT = 10;
 const SLOW_HINT_MS = 4000;
 const HELP = [
-  `${PREFIX}play <tên bài | link YouTube> - phát hoặc thêm vào hàng đợi (không kèm tên: tiếp tục nếu đang tạm dừng)`,
+  `${PREFIX}play <tên bài | link YouTube/SoundCloud> - phát hoặc thêm vào hàng đợi (không kèm tên: tiếp tục nếu đang tạm dừng)`,
+  `${PREFIX}play sc <tên bài> - tìm trên SoundCloud (mặc định tìm YouTube, bị chặn thì tự chuyển sang SoundCloud)`,
   `${PREFIX}next <tên bài | link YouTube> - phát ngay sau bài đang phát (chèn lên đầu hàng đợi)`,
   `${PREFIX}pause - tạm dừng`,
   `${PREFIX}resume (hoặc ${PREFIX}continue) - phát tiếp`,
@@ -64,13 +65,13 @@ export function attachMusic(bot: LoopBot, source: Source) {
     if (!channelId) return "Bạn cần vào một kênh thoại trước.";
     // a slow host can need minutes to look a song up: say so instead of staying silent
     const slow = setTimeout(() => void bot.sendMessage(m.channelId!, "Đang tìm bài, máy chủ chậm nên có thể mất vài phút...").catch(() => {}), SLOW_HINT_MS);
-    const track = await source.resolve(query).finally(() => clearTimeout(slow));
+    const track = await source.resolve(query, (text) => void bot.sendMessage(m.channelId!, text).catch(() => {})).finally(() => clearTimeout(slow));
     const session = await join(guildId, channelId, m.channelId!);
     if (session.channelId !== channelId) return "Mình đang phát ở kênh thoại khác.";
     session.text = m.channelId!;
     const ahead = session.player.add(track, next);
     if (ahead === null) return `Hàng đợi đầy (tối đa ${MAX_QUEUE} bài).`;
-    return ahead ? (next ? `Sẽ phát tiếp theo: ${track.title}` : `Đã thêm vào hàng đợi (vị trí ${ahead}): ${track.title}`) : undefined; // the player announces what it starts
+    return ahead ? (next ? `Sẽ phát tiếp theo: ${track.title}${sourceTag(track)}` : `Đã thêm vào hàng đợi (vị trí ${ahead}): ${track.title}${sourceTag(track)}`) : undefined; // the player announces what it starts
   }
 
   async function run(m: Message, cmd: { name: string; args: string }) {

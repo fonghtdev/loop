@@ -1,7 +1,8 @@
+import { AUTOMOD_BLOCKED } from "@loop/shared";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "./auth-client";
 import { channelKey, dmKey } from "./conversation";
-import { createChat, fetchAllAfter, mergeMessages, PAGE_SIZE, type Message } from "./chat";
+import { applyPin, applyReaction, applyUpdate, createChat, fetchAllAfter, mergeMessages, PAGE_SIZE, toggleMine, type Message, type Reaction } from "./chat";
 
 const ME = "me";
 const KEY = channelKey("c1");
@@ -69,6 +70,31 @@ describe("mergeMessages", () => {
     const edited = { ...msg(5), content: "new", editedAt: new Date(2026, 9, 11).toISOString() };
     expect(mergeMessages([edited], [msg(5)])[0].content).toBe("new");
     expect(mergeMessages([msg(5)], [edited])[0].content).toBe("new");
+  });
+});
+
+describe("link previews (embeds)", () => {
+  const embed = (n: number) => ({ url: `https://e${n}.example/`, siteName: null, title: `E${n}`, description: null, thumbnail: null });
+  const withEmbeds = (m: Message, ...n: number[]) => ({ ...m, embeds: n.map(embed) });
+
+  it("message:update brings the previews in, and a stale copy of the same version cannot take them away", () => {
+    const { chat, state } = setup([]);
+    chat.receive(KEY, { type: "message:new", message: msg(1) });
+    chat.receive(KEY, { type: "message:update", message: withEmbeds(msg(1), 1, 2) });
+    expect(state().messages[0].embeds?.map((e) => e.title)).toEqual(["E1", "E2"]);
+    chat.receive(KEY, { type: "message:update", message: msg(1) }); // e.g. the POST answer arriving late
+    expect(state().messages[0].embeds).toHaveLength(2);
+    expect(mergeMessages([withEmbeds(msg(1), 1)], [withEmbeds(msg(1), 1, 2)])[0].embeds).toHaveLength(2);
+  });
+
+  it("an edit replaces the previews (even with fewer)", () => {
+    const edited = { ...withEmbeds(msg(1), 2), editedAt: new Date(2026, 9, 11).toISOString() };
+    expect(applyUpdate([withEmbeds(msg(1), 1, 2)], edited)[0].embeds?.map((e) => e.title)).toEqual(["E2"]);
+    expect(applyUpdate([withEmbeds(msg(1), 1)], { ...edited, embeds: [] })[0].embeds).toEqual([]);
+  });
+
+  it("an update for a message we do not hold adds nothing", () => {
+    expect(applyUpdate([msg(1)], withEmbeds(msg(2), 1))).toEqual([msg(1)]);
   });
 });
 
@@ -192,6 +218,29 @@ describe("optimistic send", () => {
     await chat.send(KEY, text("bỏ"));
     chat.discard(KEY, state().pending[0].tempId);
     expect(state().pending).toEqual([]);
+  });
+
+  it("an AutoMod refusal keeps the text as blocked (no retry), and Sửa lại hands the text back to the composer", async () => {
+    const { chat, state, server } = setup([]);
+    await chat.loadLatest(KEY);
+    server.request.mockRejectedValueOnce(new ApiError(403, "/channels/c1/messages", AUTOMOD_BLOCKED));
+    await chat.send(KEY, text("đồ ngốc <@11111111-1111-4111-8111-111111111111>"));
+    expect(state().pending).toMatchObject([{ status: "failed", blocked: true }]);
+    const calls = server.request.mock.calls.length;
+    await chat.retry(KEY, state().pending[0].tempId); // the same words would be blocked again
+    expect(server.request.mock.calls.length).toBe(calls);
+    chat.reclaim(KEY, state().pending[0].tempId);
+    expect(state().pending).toEqual([]);
+    expect(state().reclaimed).toBe("đồ ngốc <@11111111-1111-4111-8111-111111111111>");
+    chat.clearReclaimed(KEY);
+    expect(state().reclaimed).toBeNull();
+    // any other 403 is an ordinary failure (retry stays)
+    server.request.mockRejectedValueOnce(new ApiError(403, "/channels/c1/messages", "Missing permission"));
+    await chat.send(KEY, text("x"));
+    expect(state().pending[0]).toMatchObject({ status: "failed" });
+    expect(state().pending[0].blocked).toBeUndefined();
+    chat.reclaim(KEY, state().pending[0].tempId); // only blocked ones go back
+    expect(state().pending).toHaveLength(1);
   });
 
   it("closing a channel drops its messages but keeps unsent text", async () => {
@@ -456,5 +505,171 @@ describe("onSent (the checklist's first-message step)", () => {
     expect(onSent).not.toHaveBeenCalled();
     await chat.retry(KEY, chat.get(KEY).pending[0].tempId);
     expect(onSent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("onAuthors (profile store feed)", () => {
+  it("hands over the authors of a history page, a live event, and our own POST answer", async () => {
+    const onAuthors = vi.fn();
+    const named = (seq: number, id: string) => ({ ...msg(seq, id), author: { id, username: id, displayName: `Tên ${id}`, avatarHash: "h1" } });
+    const request = vi.fn(async (method: string) => (method === "GET" ? { messages: [named(1, "a"), named(2, "b")] } : named(3, ME)));
+    const chat = createChat({ request: request as never, myId: () => ME, onAuthors });
+    await chat.loadLatest(KEY);
+    expect(onAuthors).toHaveBeenLastCalledWith([expect.objectContaining({ id: "a", displayName: "Tên a" }), expect.objectContaining({ id: "b" })]);
+    chat.receive(KEY, { type: "message:new", message: named(4, "c") });
+    expect(onAuthors).toHaveBeenLastCalledWith([expect.objectContaining({ id: "c", avatarHash: "h1" })]);
+    chat.receive(KEY, { type: "message:delete", id: "id4" }); // a delete carries no author
+    expect(onAuthors).toHaveBeenCalledTimes(2);
+    await chat.send(KEY, text("hi"));
+    expect(onAuthors).toHaveBeenLastCalledWith([expect.objectContaining({ id: ME })]);
+  });
+});
+
+const react = (emoji: string, count: number, me = false): Reaction => ({ emoji, count, me });
+const ev = (over: Partial<Parameters<typeof applyReaction>[1]> = {}) => ({ emoji: "👍", userId: "other", added: true, count: 1, ...over });
+
+describe("reactions", () => {
+  it("applyReaction: counts come from the event, `me` only moves for our own change", () => {
+    expect(applyReaction([], ev(), ME)).toEqual([react("👍", 1)]);
+    expect(applyReaction([react("👍", 1)], ev({ count: 2 }), ME)).toEqual([react("👍", 2)]);
+    expect(applyReaction([react("👍", 1)], ev({ userId: ME, count: 2 }), ME)).toEqual([react("👍", 2, true)]);
+    expect(applyReaction([react("👍", 2, true)], ev({ userId: "other", added: false, count: 1 }), ME)).toEqual([react("👍", 1, true)]);
+    expect(applyReaction([react("👍", 2, true)], ev({ userId: ME, added: false, count: 1 }), ME)).toEqual([react("👍", 1, false)]);
+  });
+
+  it("applyReaction: a count of 0 removes the chip; other chips and their order stay", () => {
+    expect(applyReaction([react("🔥", 1), react("👍", 1)], ev({ added: false, count: 0 }), ME)).toEqual([react("🔥", 1)]);
+    expect(applyReaction([react("🔥", 1)], ev(), ME).map((r) => r.emoji)).toEqual(["🔥", "👍"]);
+  });
+
+  it("toggleMine adds or takes back one of ours, and drops an emptied chip", () => {
+    expect(toggleMine(undefined, "👍", true)).toEqual([react("👍", 1, true)]);
+    expect(toggleMine([react("👍", 2)], "👍", true)).toEqual([react("👍", 3, true)]);
+    expect(toggleMine([react("👍", 2, true)], "👍", false)).toEqual([react("👍", 1, false)]);
+    expect(toggleMine([react("👍", 1, true)], "👍", false)).toEqual([]);
+  });
+
+  it("an edit (event or response) keeps the reactions we hold", () => {
+    const held = { ...msg(1), reactions: [react("👍", 2, true)] };
+    const edit = { ...msg(1), content: "edited", editedAt: new Date(2030, 0, 1).toISOString(), reactions: [] };
+    expect(applyUpdate([held], edit)[0]).toMatchObject({ content: "edited", reactions: [react("👍", 2, true)] });
+  });
+
+  it("message:reaction events update the right message in place", async () => {
+    const { chat, state } = setup(range(1, 3));
+    await chat.loadLatest(KEY);
+    chat.receive(KEY, { type: "message:reaction", reaction: { messageId: "id2", emoji: "🔥", userId: "other", added: true, count: 1 } });
+    chat.receive(KEY, { type: "message:reaction", reaction: { messageId: "id2", emoji: "🔥", userId: ME, added: true, count: 2 } });
+    chat.receive(KEY, { type: "message:reaction", reaction: { messageId: "gone", emoji: "🔥", userId: ME, added: true, count: 1 } });
+    expect(state().messages.map((m) => m.reactions)).toEqual([undefined, [react("🔥", 2, true)], undefined]);
+  });
+
+  it("react(): optimistic at once, PUT then DELETE, the echo sets the exact count", async () => {
+    const { chat, state, server } = setup(range(1, 1));
+    await chat.loadLatest(KEY);
+    server.request.mockImplementation(async () => undefined as never);
+    const pending = chat.react(KEY, "id1", "👍");
+    expect(state().messages[0].reactions).toEqual([react("👍", 1, true)]); // before the request resolved
+    await pending;
+    expect(server.request).toHaveBeenLastCalledWith("PUT", `/messages/id1/reactions/${encodeURIComponent("👍")}`);
+    chat.receive(KEY, { type: "message:reaction", reaction: { messageId: "id1", emoji: "👍", userId: ME, added: true, count: 3 } });
+    expect(state().messages[0].reactions).toEqual([react("👍", 3, true)]);
+    await chat.react(KEY, "id1", "👍");
+    expect(server.request).toHaveBeenLastCalledWith("DELETE", `/messages/id1/reactions/${encodeURIComponent("👍")}`);
+    expect(state().messages[0].reactions).toEqual([react("👍", 2, false)]);
+  });
+
+  it("react(): a refused request rolls back and throws; a 404 also drops the message", async () => {
+    const { chat, state, server } = setup(range(1, 2));
+    await chat.loadLatest(KEY);
+    server.request.mockRejectedValueOnce(new ApiError(400, "/messages/id1/reactions/x"));
+    await expect(chat.react(KEY, "id1", "👍")).rejects.toThrow();
+    expect(state().messages[0].reactions).toEqual([]);
+    server.request.mockRejectedValueOnce(new ApiError(404, "/messages/id2/reactions/x"));
+    await expect(chat.react(KEY, "id2", "👍")).rejects.toThrow();
+    expect(state().messages.map((m) => m.id)).toEqual(["id1"]);
+  });
+
+  it("react() on a message we do not hold does nothing", async () => {
+    const { chat, server } = setup(range(1, 1));
+    await chat.loadLatest(KEY);
+    const before = server.request.mock.calls.length;
+    await chat.react(KEY, "nope", "👍");
+    expect(server.request.mock.calls.length).toBe(before);
+  });
+});
+
+describe("replies", () => {
+  it("send() puts replyToId in the POST body, a plain send does not", async () => {
+    const { chat, server } = setup(range(1, 1));
+    await chat.loadLatest(KEY);
+    await chat.send(KEY, { ...text("answer"), replyToId: "id1" });
+    await chat.send(KEY, text("plain"));
+    const bodies = server.request.mock.calls.filter((c) => c[0] === "POST").map((c) => c[2]);
+    expect(bodies).toEqual([{ content: "answer", replyToId: "id1" }, { content: "plain" }]);
+  });
+
+  it("a failed reply keeps its target for the retry", async () => {
+    const { chat, state, server } = setup(range(1, 1));
+    await chat.loadLatest(KEY);
+    server.request.mockRejectedValueOnce(new ApiError(500, "/channels/c1/messages"));
+    await chat.send(KEY, { ...text("answer"), replyToId: "id1" });
+    expect(state().pending[0]).toMatchObject({ status: "failed", replyToId: "id1" });
+    await chat.retry(KEY, state().pending[0].tempId);
+    expect(server.request).toHaveBeenLastCalledWith("POST", "/channels/c1/messages", { content: "answer", replyToId: "id1" });
+  });
+});
+
+describe("pins", () => {
+  const pinned = (list: Message[]) => list.filter((m) => m.pinned).map((m) => m.id);
+
+  it("applyPin flips one message and leaves the rest (and unknown ids) alone", () => {
+    const list = [msg(1), msg(2)];
+    expect(pinned(applyPin(list, "id2", true))).toEqual(["id2"]);
+    expect(applyPin(applyPin(list, "id2", true), "id2", false)[1]!.pinned).toBe(false);
+    expect(applyPin(list, "nope", true)).toEqual(list);
+    const already = applyPin(list, "id1", true);
+    expect(applyPin(already, "id1", true)[0]).toBe(already[0]); // no change, same object
+  });
+
+  it("a live pin event updates the held message, and the unpin event undoes it", async () => {
+    const { chat, state } = setup([msg(1), msg(2)]);
+    await chat.loadLatest(KEY);
+    chat.receive(KEY, { type: "message:pin", pin: { messageId: "id1", pinned: true } });
+    expect(pinned(state().messages)).toEqual(["id1"]);
+    chat.receive(KEY, { type: "message:pin", pin: { messageId: "id1", pinned: false } });
+    expect(pinned(state().messages)).toEqual([]);
+  });
+
+  it("an edit keeps the pin the server reports", async () => {
+    const { chat, state } = setup([msg(1)]);
+    await chat.loadLatest(KEY);
+    chat.receive(KEY, { type: "message:pin", pin: { messageId: "id1", pinned: true } });
+    chat.receive(KEY, { type: "message:update", message: { ...msg(1, "other", "edited"), pinned: true, editedAt: "2026-10-10T13:00:00Z" } });
+    expect(state().messages[0]).toMatchObject({ content: "edited", pinned: true });
+  });
+
+  it("chat.pin calls PUT / DELETE and marks the message; a refusal changes nothing and throws", async () => {
+    const { server, chat, state } = setup([msg(1)]);
+    await chat.loadLatest(KEY);
+    server.request.mockImplementationOnce(async () => undefined);
+    await chat.pin(KEY, "id1", true);
+    expect(server.request).toHaveBeenLastCalledWith("PUT", "/messages/id1/pin");
+    expect(pinned(state().messages)).toEqual(["id1"]);
+    server.request.mockImplementationOnce(async () => {
+      throw new ApiError(403, "/messages/id1/pin");
+    });
+    await expect(chat.pin(KEY, "id1", false)).rejects.toThrow();
+    expect(pinned(state().messages)).toEqual(["id1"]);
+  });
+
+  it("a 404 on pin means the message is gone: it leaves the list", async () => {
+    const { server, chat, state } = setup([msg(1)]);
+    await chat.loadLatest(KEY);
+    server.request.mockImplementationOnce(async () => {
+      throw new ApiError(404, "/messages/id1/pin");
+    });
+    await expect(chat.pin(KEY, "id1", true)).rejects.toThrow();
+    expect(state().messages).toEqual([]);
   });
 });

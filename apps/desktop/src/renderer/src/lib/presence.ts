@@ -16,6 +16,10 @@ export const shownStatus = (byUser: Readonly<Record<string, PresenceStatus>>, us
 /** How the user's own choice looks to them: invisible shows as the offline ring, like it does to everyone else. */
 export const dotOfPref = (pref: StatusPref): PresenceStatus => (pref === "invisible" ? "offline" : pref);
 
+/** `shownStatus`, except that we ourselves are what we chose (the server never pushes our own status back to us). */
+export const statusShownFor = (byUser: Readonly<Record<string, PresenceStatus>>, userId: string, blocked: ReadonlySet<string> | null, self: { id: string | undefined; pref: StatusPref }): PresenceStatus =>
+  userId === self.id ? dotOfPref(self.pref) : shownStatus(byUser, userId, blocked);
+
 export const statusLabel = (status: PresenceStatus) =>
   ({ online: t("presence.online"), idle: t("presence.idle"), dnd: t("presence.dnd"), offline: t("presence.offline") })[status];
 
@@ -53,6 +57,7 @@ export function createPresence({ request }: { request: Request }) {
     apply(e: SocialEvent) {
       if (e.type === "presence") merge([{ id: e.userId, status: e.status }]);
       else if (e.type === "dm:new") merge([e.dm.user]);
+      else if (e.type === "dm:group") merge(e.dm.participants);
     },
     setMine,
     async loadMine() {

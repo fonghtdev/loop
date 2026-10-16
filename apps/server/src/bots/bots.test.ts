@@ -200,7 +200,7 @@ describe("rotating and deleting", () => {
     expect((await call("GET", `/guilds/${guild.id}/members`, owner.token)).json().map((m: { userId: string }) => m.userId)).toEqual([owner.id]);
     await eventually(async () => expect(await identities(voiceRoom(voice.id))).toEqual([]));
     const { messages } = (await call("GET", `/channels/${general.id}/messages`, owner.token)).json();
-    expect(messages[0].author).toEqual({ id: bot.id, username: "helper_bot", isBot: true });
+    expect(messages[0].author).toEqual({ id: bot.id, username: "helper_bot", isBot: true, displayName: null, avatarHash: null });
     expect((await call("DELETE", `/bots/${bot.id}`, owner.token)).statusCode).toBe(404);
   });
 
@@ -222,7 +222,7 @@ describe("a bot uses the normal routes", () => {
     expect(members.map((m: { username: string; isBot: boolean }) => [m.username, m.isBot])).toEqual([["owner", false], ["helper_bot", true]]);
     const sent = await call("POST", `/channels/${general.id}/messages`, bot.token, { content: "hello humans" });
     expect(sent.statusCode).toBe(201);
-    expect(sent.json().author).toEqual({ id: bot.id, username: "helper_bot", isBot: true });
+    expect(sent.json().author).toEqual({ id: bot.id, username: "helper_bot", isBot: true, displayName: null, avatarHash: null });
     const voice = await addVoiceChannel(app, owner, guild.id);
     const res = await requestToken(app, bot, voice.id);
     expect(res.statusCode).toBe(200);

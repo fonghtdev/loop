@@ -113,7 +113,14 @@ describe("authenticated routes are keyed by user", () => {
     ["invite join", "invite-join", "POST", () => "/invites/nope/join", undefined, 404],
     ["attachment create", "attachment-create", "POST", () => "/attachments", {}, 400],
     ["voice token", "voice-token", "POST", () => `/channels/${randomUUID()}/voice/token`, undefined, 404],
+    ["voice move", "voice-move", "POST", () => `/channels/${randomUUID()}/voice/move`, { userId: randomUUID() }, 404],
+    ["reaction add", "reaction-change", "PUT", () => `/messages/${randomUUID()}/reactions/${encodeURIComponent("👍")}`, undefined, 404],
+    ["reaction remove", "reaction-change", "DELETE", () => `/messages/${randomUUID()}/reactions/${encodeURIComponent("👍")}`, undefined, 404],
+    ["read state", "read-state", "PUT", () => `/channels/${randomUUID()}/read`, { seq: "1" }, 404],
+    ["message search", "message-search", "GET", () => `/guilds/${randomUUID()}/messages/search?q=hi`, undefined, 404],
     ["status change", "status-set", "PUT", () => "/me/status", { status: "dnd" }, 200],
+    ["profile update", "profile-update", "PATCH", () => "/me/profile", { bio: "hi" }, 200],
+    ["image upload", "image-upload", "POST", () => "/me/avatar/upload", { contentType: "image/png", size: 10 }, 201],
   ] as const)("%s", async (_, policy, method, url, body, firstStatus) => {
     const u = await signUp(plain, "alice");
     const app = limited({ [policy]: { max: 1, windowMs: 60_000 } });
@@ -124,6 +131,12 @@ describe("authenticated routes are keyed by user", () => {
     expect(res.headers["retry-after"]).toBeDefined();
     const other = await signUp(plain, "bob");
     expect((await call(method, url(), other.token, body)).statusCode, "another user is unaffected").toBe(firstStatus);
+  });
+
+  it("public image reads are keyed by IP (no token to key on)", async () => {
+    const app = limited({ "image-read": { max: 2, windowMs: 60_000 } });
+    const send = () => app.inject({ method: "GET", url: `/users/${randomUUID()}/avatar` });
+    expect(await statuses(3, send)).toEqual([404, 404, 429]);
   });
 
   it("the global budget covers every route, including reads", async () => {

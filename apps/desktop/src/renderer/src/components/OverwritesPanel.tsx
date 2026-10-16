@@ -4,15 +4,17 @@ import { useMutation } from "@tanstack/react-query";
 import { useId, useState, type ReactNode } from "react";
 import { t } from "../i18n/t";
 import type { MessageKey } from "../i18n/vi";
-import { callerChannelBits, canManageRole, CHANNEL_BITS, grantableBits, previewPermissions, setTri, triOf, type SettingsCtx, type Tri } from "../lib/admin";
+import { callerChannelBits, canManageRole, canSetMemberOverwrite, CHANNEL_BITS, filterMembers, grantableBits, previewMemberPermissions, previewPermissions, setTri, triOf, type SettingsCtx, type Tri } from "../lib/admin";
 import { admin } from "../lib/app";
 import { errorMessage } from "../lib/errors";
 import { useNav } from "../lib/nav";
-import type { Channel, Role } from "../lib/permissions";
+import { useNameOf } from "../lib/identity-hooks";
+import type { Channel, Member, Role } from "../lib/permissions";
 import { toast } from "../lib/toast";
 import { Banner } from "./Banner";
 import { Button } from "./Button";
 import { Segmented, type SegmentOption } from "./Segmented";
+import { TextField } from "./TextField";
 
 const TRI: SegmentOption<Tri>[] = [
   { value: "allow", label: "", thumb: "bg-moss-900", on: "peer-checked:text-moss-200" },
@@ -35,55 +37,115 @@ export function Select({ label, value, onChange, children }: { label: string; va
   );
 }
 
-/** Per channel and role: allow / default / deny for each channel bit, with a live preview of the outcome. */
+type Target = { kind: "role"; role: Role } | { kind: "member"; member: Member };
+type Kind = Target["kind"];
+
+/** Per channel and role (or member): allow / default / deny for each channel bit, with a live preview of the outcome. */
 export function OverwritesPanel({ ctx }: { ctx: SettingsCtx }) {
   const navChannel = useNav((s) => s.channelId);
+  const nameOf = useNameOf();
   const [channelId, setChannelId] = useState(() => (ctx.channels.some((c) => c.id === navChannel) ? navChannel! : ctx.channels[0]?.id ?? ""));
+  const [kind, setKind] = useState<Kind>("role");
   const roles = [...ctx.roles].filter((r) => canManageRole(ctx.standing, r)).sort((a, b) => b.position - a.position);
   const [roleId, setRoleId] = useState(() => roles.find((r) => r.id !== ctx.guildId)?.id ?? roles[0]?.id ?? "");
+  const [query, setQuery] = useState("");
+  const memberName = (m: Member) => nameOf(m.userId, m.username);
+  const members = filterMembers(ctx.members.filter((m) => canSetMemberOverwrite(ctx.standing, m, ctx.ownerId, ctx.roles)), query, memberName);
+  const [picked, setPicked] = useState("");
   const channel = ctx.channels.find((c) => c.id === channelId);
   const role = roles.find((r) => r.id === roleId);
+  const member = members.find((m) => m.userId === picked) ?? members[0];
+  const target: Target | null = kind === "role" ? (role ? { kind, role } : null) : member ? { kind, member } : null;
+  const hasOwn = (m: Member) => !!channel?.memberOverwrites?.some((o) => o.userId === m.userId);
+  const missing = !channel ? "overwrites.noChannels" : kind === "role" ? "overwrites.noRoles" : query ? "overwrites.noMatch" : "overwrites.noMembers";
 
   return (
     <div className="flex max-w-2xl flex-col gap-4">
       <p className="text-sm leading-relaxed text-ink-muted">{t("overwrites.explain")}</p>
-      {!channel || !role ? (
-        <Banner tone="warning">{t(roles.length === 0 ? "overwrites.noRoles" : "overwrites.noChannels")}</Banner>
+      <div className="flex flex-col gap-1.5">
+        <p id="ow-target" className="text-sm font-medium">
+          {t("overwrites.target")}
+        </p>
+        <Segmented
+          radiogroup
+          labelledBy="ow-target"
+          name="ow-target"
+          value={kind}
+          onChange={setKind}
+          options={[
+            { value: "role", label: t("overwrites.byRole"), thumb: "bg-surface-4", on: "peer-checked:text-ink" },
+            { value: "member", label: t("overwrites.byMember"), thumb: "bg-surface-4", on: "peer-checked:text-ink" },
+          ]}
+        />
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <Select label={t("overwrites.channel")} value={channelId} onChange={setChannelId}>
+          {ctx.channels.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.type === "VOICE" ? t("overwrites.voiceChannel", { name: c.name }) : `# ${c.name}`}
+            </option>
+          ))}
+        </Select>
+        {kind === "role" ? (
+          <Select label={t("overwrites.role")} value={roleId} onChange={setRoleId}>
+            {roles.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <>
+            <div className="min-w-0 flex-1 basis-48">
+              <TextField type="search" label={t("overwrites.memberSearch")} value={query} onChange={(e) => setQuery(e.target.value)} />
+            </div>
+            {members.length > 0 && (
+              <Select label={t("overwrites.member")} value={member?.userId ?? ""} onChange={setPicked}>
+                {members.map((m) => (
+                  <option key={m.userId} value={m.userId}>
+                    {hasOwn(m) ? t("overwrites.hasOwn", { name: memberName(m) }) : memberName(m)}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </>
+        )}
+      </div>
+      {!channel || !target ? (
+        <Banner tone="warning">{t(missing)}</Banner>
       ) : (
-        <>
-          <div className="flex flex-wrap gap-3">
-            <Select label={t("overwrites.channel")} value={channelId} onChange={setChannelId}>
-              {ctx.channels.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.type === "VOICE" ? t("overwrites.voiceChannel", { name: c.name }) : `# ${c.name}`}
-                </option>
-              ))}
-            </Select>
-            <Select label={t("overwrites.role")} value={roleId} onChange={setRoleId}>
-              {roles.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <OverwriteEditor key={`${channel.id}:${role.id}`} ctx={ctx} channel={channel} role={role} />
-        </>
+        <OverwriteEditor
+          key={`${channel.id}:${target.kind === "role" ? target.role.id : target.member.userId}`}
+          ctx={ctx}
+          channel={channel}
+          target={target}
+          name={target.kind === "role" ? target.role.name : memberName(target.member)}
+        />
       )}
     </div>
   );
 }
 
-function OverwriteEditor({ ctx, channel, role }: { ctx: SettingsCtx; channel: Channel; role: Role }) {
-  const existing = channel.overwrites.find((o) => o.roleId === role.id) ?? { allow: 0, deny: 0 };
+function OverwriteEditor({ ctx, channel, target, name }: { ctx: SettingsCtx; channel: Channel; target: Target; name: string }) {
+  const existing =
+    (target.kind === "role" ? channel.overwrites.find((o) => o.roleId === target.role.id) : channel.memberOverwrites?.find((o) => o.userId === target.member.userId)) ?? { allow: 0, deny: 0 };
   const [draft, setDraft] = useState({ allow: existing.allow, deny: existing.deny });
   const held = grantableBits(callerChannelBits(ctx, channel), CHANNEL_PERMISSIONS);
   const changed = draft.allow !== existing.allow || draft.deny !== existing.deny;
   const empty = draft.allow === 0 && draft.deny === 0;
-  const preview = previewPermissions(ctx.roles, ctx.guildId, role.id, channel.overwrites, draft);
+  const preview =
+    target.kind === "role"
+      ? previewPermissions(ctx.roles, ctx.guildId, target.role.id, channel.overwrites, draft)
+      : previewMemberPermissions(ctx.roles, ctx.guildId, target.member, channel, draft);
 
   const save = useMutation({
-    mutationFn: () => (empty ? admin.clearOverwrite(ctx.guildId, channel.id, role.id) : admin.setOverwrite(ctx.guildId, channel.id, role.id, draft)),
+    mutationFn: () => {
+      if (target.kind === "member") {
+        const { userId } = target.member;
+        return empty ? admin.clearMemberOverwrite(ctx.guildId, channel.id, userId) : admin.setMemberOverwrite(ctx.guildId, channel.id, userId, draft);
+      }
+      return empty ? admin.clearOverwrite(ctx.guildId, channel.id, target.role.id) : admin.setOverwrite(ctx.guildId, channel.id, target.role.id, draft);
+    },
     onSuccess: () => toast.push(t("overwrites.saved")),
   });
   const edit = (next: typeof draft) => {
@@ -129,7 +191,7 @@ function OverwriteEditor({ ctx, channel, role }: { ctx: SettingsCtx; channel: Ch
 
       <section aria-label={t("overwrites.preview")} className="relative edge rounded-panel bg-raise p-4 shadow-e2">
         <p className="text-sm font-medium">{t("overwrites.preview")}</p>
-        <p className="mb-2 text-small text-ink-muted [overflow-wrap:anywhere]">{t("overwrites.previewBody", { role: role.name })}</p>
+        <p className="mb-2 text-small text-ink-muted [overflow-wrap:anywhere]">{target.kind === "role" ? t("overwrites.previewBody", { role: name }) : t("overwrites.previewMember", { name })}</p>
         <ul className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
           {CHANNEL_BITS.map((item) => {
             const yes = hasPermission(preview, Permission[item.name]);

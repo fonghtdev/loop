@@ -1,3 +1,4 @@
+import { AUTOMOD_BLOCKED } from "@loop/shared";
 import { t } from "../i18n/t";
 import type { MessageKey } from "../i18n/vi";
 import { ApiError } from "./auth-client";
@@ -13,6 +14,25 @@ const ADMIN_ERRORS: [status: number, serverText: RegExp, key: MessageKey][] = [
   [400, /yourself/, "admin.errors.self"],
   [400, /already own/, "admin.errors.alreadyOwner"],
   [409, /at least one channel/, "admin.errors.lastChannel"],
+  [403, /only reorder roles below/, "admin.errors.reorder"],
+  [409, /Roles changed/, "admin.errors.rolesChanged"],
+  [400, /Too many different reactions/, "reaction.errors.limit"],
+  [409, /Pin limit/, "pin.errors.limit"],
+  [409, /Thread is archived/, "thread.errors.archived"],
+  [409, /Thread already exists/, "thread.errors.exists"],
+  [403, /creator or a moderator/, "thread.errors.forbidden"],
+  [409, /not in this voice channel/, "voice.mod.errors.notInVoice"],
+  [409, /AutoMod rule limit/, "automod.errors.limit"],
+];
+
+// Moving a member to another voice channel (voice/routes.ts), told apart by the server's own text.
+const MOVE_ERRORS: [status: number, serverText: RegExp, key: MessageKey][] = [
+  [409, /not in a voice/, "voice.move.errors.notInVoice"],
+  [409, /already in/, "voice.move.errors.already"],
+  [409, /full/, "voice.errors.full"],
+  [403, /cannot join/, "voice.move.errors.cannotJoin"],
+  [403, /./, "voice.move.errors.forbidden"],
+  [404, /./, "voice.move.errors.gone"],
 ];
 
 /** What to tell the user about a failed call. */
@@ -34,11 +54,18 @@ export function errorMessage(err: unknown): string {
     if (status === 400) return t("voice.errors.notVoice");
     if (status === 409) return t("voice.errors.full");
   }
+  if (/^\/channels\/[^/]+\/voice\/move$/.test(path)) {
+    const move = MOVE_ERRORS.find(([s, text]) => s === status && text.test(err.serverMessage ?? ""));
+    if (move) return t(move[2]);
+  }
   if (/^\/dms\/[^/]+\/call$/.test(path)) {
     if (status === 403) return t("call.errors.notFriends");
     if (status === 404) return t("call.errors.gone");
   }
+  // AutoMod refused a message (send or edit): the server never says which word, neither do we
+  if (status === 403 && err.serverMessage === AUTOMOD_BLOCKED) return t("errors.automodBlocked");
   if (status === 403 && /^\/dms\/[^/]+\/messages$/.test(path)) return t("errors.notFriends");
+  if (status === 403 && /^\/invites\/[^/]+\/join$/.test(path)) return t("errors.banned");
   const admin = ADMIN_ERRORS.find(([s, text]) => s === status && text.test(err.serverMessage ?? ""));
   if (admin) return t(admin[2]);
   if (status === 400) return t("errors.invalid");
@@ -50,7 +77,7 @@ export function errorMessage(err: unknown): string {
   if (status === 409) {
     if (path === "/auth/register") return t("errors.taken");
     if (path.endsWith("/members/me")) return t("errors.ownerCannotLeave");
-    if (path.endsWith("/channels")) return t("errors.channelTaken");
+    if (path.endsWith("/channels") || /^\/channels\/[^/]+$/.test(path)) return t("errors.channelTaken"); // creating, or renaming (PATCH /channels/:id)
     if (/\/categories(\/[^/]+)?$/.test(path)) return t("errors.categoryTaken");
     return t("errors.unknown");
   }

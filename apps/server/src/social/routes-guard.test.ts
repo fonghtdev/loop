@@ -32,23 +32,36 @@ const ROWS: Row[] = [
   { route: "PUT /blocks/:userId", ok: 204, url: (f) => `/blocks/${f.fresh.id}`, miss: { status: 404, url: () => "/blocks/nope" } },
   { route: "DELETE /blocks/:userId", ok: 204, url: (f) => `/blocks/${f.fresh.id}`, miss: { status: 404, url: () => "/blocks/nope" } },
   { route: "POST /dms", ok: 201, url: () => "/dms", body: (f) => ({ userId: f.friend2.id }), miss: { status: 404, body: (f) => ({ userId: f.friend.id }) } },
+  { route: "POST /dms/group", ok: 201, url: () => "/dms/group", body: (f) => ({ userIds: [f.friend.id, f.friend2.id] }), miss: { status: 404 } },
+  { route: "POST /dms/:dmId/participants", ok: 200, url: (f) => `/dms/${f.group.id}/participants`, body: (f) => ({ userId: f.friend3.id }), miss: { status: 404 } },
+  { route: "DELETE /dms/:dmId/participants/me", ok: 204, url: (f) => `/dms/${f.group.id}/participants/me`, miss: { status: 404 } },
+  { route: "DELETE /dms/:dmId/participants/:userId", ok: 204, url: (f) => `/dms/${f.group.id}/participants/${f.friend.id}`, miss: { status: 404 } },
+  { route: "PATCH /dms/:dmId", ok: 200, url: (f) => `/dms/${f.group.id}`, body: () => ({ name: "crew" }), miss: { status: 404 } },
   { route: "GET /dms", ok: 200, url: () => "/dms", own: "lists only the caller's own DM channels" },
   { route: "POST /dms/:dmId/messages", ok: 201, url: (f) => `/dms/${f.dm.id}/messages`, body: () => ({ content: "hi" }), miss: { status: 404 } },
   { route: "GET /dms/:dmId/messages", ok: 200, url: (f) => `/dms/${f.dm.id}/messages`, miss: { status: 404 } },
+  { route: "GET /dms/:dmId/pins", ok: 200, url: (f) => `/dms/${f.dm.id}/pins`, miss: { status: 404 } },
+  { route: "PUT /dms/:dmId/read", ok: 204, url: (f) => `/dms/${f.dm.id}/read`, body: () => ({ seq: "1" }), miss: { status: 404 } },
+  { route: "GET /dms/:dmId/messages/search", ok: 200, url: (f) => `/dms/${f.dm.id}/messages/search?q=hi`, miss: { status: 404 } },
   { route: "GET /me/status", ok: 200, url: () => "/me/status", own: "the caller's own status preference" },
   { route: "PUT /me/status", ok: 200, url: () => "/me/status", body: () => ({ status: "dnd" }), own: "sets the caller's own status preference" },
 ];
 
-/** actor is friends with `friend` (DM open) and `friend2`, has a request from `requester`; `fresh` and `stranger` are unrelated. */
+/**
+ * actor is friends with `friend` (DM open), `friend2` and `friend3`, owns a group with friend + friend2, has a request
+ * from `requester`; `fresh` and `stranger` are unrelated.
+ */
 async function fixture() {
-  const [actor, friend, friend2, requester, fresh, stranger] = await Promise.all(
-    ["actor", "friend", "friend2", "requester", "fresh", "stranger"].map((n) => signUp(app, n)),
+  const [actor, friend, friend2, friend3, requester, fresh, stranger] = await Promise.all(
+    ["actor", "friend", "friend2", "friend3", "requester", "fresh", "stranger"].map((n) => signUp(app, n)),
   );
   await befriend(app, actor, friend);
   await befriend(app, actor, friend2);
+  await befriend(app, actor, friend3);
   await call("POST", "/friends/requests", requester.token, { username: "actor" });
   const dm = (await call("POST", "/dms", actor.token, { userId: friend.id })).json() as { id: string };
-  return { actor, friend, friend2, requester, fresh, stranger, dm };
+  const group = (await call("POST", "/dms/group", actor.token, { userIds: [friend.id, friend2.id] })).json() as { id: string };
+  return { actor, friend, friend2, friend3, requester, fresh, stranger, dm, group };
 }
 
 const send = (row: Row, f: Fixture, token?: string, over?: Row["miss"]) =>

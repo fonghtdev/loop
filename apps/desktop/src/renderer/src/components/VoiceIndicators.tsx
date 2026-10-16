@@ -30,6 +30,19 @@ export function VoiceIndicators({ p, size = 16, className = "" }: { p: Participa
           <span className="sr-only">{t("voice.state.deafOff")}</span>
         </>
       )}
+      {/* a moderator's doing: filled glyph on a red disc, so it differs by shape, not only by colour */}
+      {icons.includes("serverMic") && (
+        <span data-server="mic" className="grid place-items-center rounded-full bg-danger text-on-moss" style={{ width: size + 4, height: size + 4 }}>
+          <MicrophoneSlash aria-hidden="true" weight="fill" size={size - 2} />
+          <span className="sr-only">{t("voice.state.serverMic")}</span>
+        </span>
+      )}
+      {icons.includes("serverDeaf") && (
+        <span data-server="deaf" className="grid place-items-center rounded-full bg-danger text-on-moss" style={{ width: size + 4, height: size + 4 }}>
+          <HeadphonesSlash aria-hidden="true" weight="fill" size={size - 2} />
+          <span className="sr-only">{t("voice.state.serverDeaf")}</span>
+        </span>
+      )}
     </span>
   );
 }

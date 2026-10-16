@@ -34,12 +34,12 @@ describe("friend events", () => {
 
     await call("POST", "/friends/requests", a.token, { username: "bob" });
     await until(() => sb.got["friend:request"]!.length);
-    expect(sb.got["friend:request"]).toEqual([{ from: { id: a.id, username: "alice" } }]);
+    expect(sb.got["friend:request"]).toEqual([{ from: { id: a.id, username: "alice", displayName: null, avatarHash: null } }]);
 
     await call("POST", `/friends/requests/${a.id}/accept`, b.token);
     await until(() => sa.got["friend:accepted"]!.length && sb.got["friend:accepted"]!.length);
-    expect(sa.got["friend:accepted"]).toEqual([{ user: { id: b.id, username: "bob" } }]);
-    expect(sb.got["friend:accepted"]).toEqual([{ user: { id: a.id, username: "alice" } }]);
+    expect(sa.got["friend:accepted"]).toEqual([{ user: { id: b.id, username: "bob", displayName: null, avatarHash: null } }]);
+    expect(sb.got["friend:accepted"]).toEqual([{ user: { id: a.id, username: "alice", displayName: null, avatarHash: null } }]);
 
     await call("DELETE", `/friends/${b.id}`, a.token);
     await until(() => sb.got["friend:removed"]!.length);
@@ -102,7 +102,7 @@ describe("DM events", () => {
     await call("POST", "/dms", b.token, { userId: a.id });
     await until(() => sb.got["dm:new"]!.length);
     await settle();
-    expect(sb.got["dm:new"]).toEqual([{ id: dm.id, user: { id: a.id, username: "alice", online: true, status: "online" } }]);
+    expect(sb.got["dm:new"]).toEqual([{ id: dm.id, user: { id: a.id, username: "alice", displayName: null, avatarHash: null, online: true, status: "online" } }]);
     expect(sa.got["dm:new"]).toEqual([]);
   });
 

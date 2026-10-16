@@ -1,4 +1,7 @@
 import type { Redis } from "ioredis";
+import type { Fetcher } from "./embeds/fetch.js";
+import type { AuditWriter } from "./guilds/audit.js";
+import type { GiphyFetch } from "./gifs/giphy.js";
 import type { PolicyOverrides } from "./rate-limits.js";
 
 function required(name: string): string {
@@ -37,6 +40,10 @@ export function loadEnv() {
     },
     // Secure default: anything but "off" keeps rate limiting on. "off" is for dev, e2e and tests only.
     rateLimit: process.env.RATE_LIMIT !== "off",
+    // Link previews: the server fetches pages linked in messages (its IP shows up at those sites). "off" disables it.
+    linkPreviews: process.env.LINK_PREVIEWS !== "off",
+    // GIF search (GIPHY). Unset = the feature is off and the desktop hides its button. Never sent to clients.
+    giphyApiKey: process.env.GIPHY_API_KEY?.trim() || undefined,
     trustProxy: trustProxy(process.env.TRUST_PROXY),
     port: Number(process.env.PORT ?? 3000),
     // Browser origins allowed to call the API and Socket.IO (desktop renderer: Vite dev origin, `app://loop`).
@@ -47,7 +54,13 @@ export function loadEnv() {
 
 // refreshGraceMs: tests only (0 = no grace); unset = REFRESH_GRACE_MS.
 // rateLimitOverrides: tests only (smaller limits, a private key namespace, a stand-in Redis).
+// gifOverrides: tests only (a fake provider instead of api.giphy.com).
+// embedOverrides: tests only (a fake fetcher instead of the network, a smaller queue).
+// auditWriter: tests only (an audit insert that fails).
 export type Env = ReturnType<typeof loadEnv> & {
   refreshGraceMs?: number;
   rateLimitOverrides?: { policies?: PolicyOverrides; namespace?: string; redis?: Redis };
+  gifOverrides?: { fetchJson?: GiphyFetch; ttlMs?: number };
+  embedOverrides?: { fetcher?: Fetcher; concurrency?: number; queueMax?: number };
+  auditWriter?: AuditWriter;
 };

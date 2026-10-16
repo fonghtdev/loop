@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { capped, createUnread, dmTotal, DM_MARGIN_MS, parseSeen, titleWith, total, unreadOf, type UnreadStorage } from "./unread";
+import { capped, createUnread, dmTotal, mentionsOf, titleWith, total, unreadOf } from "./unread";
 
 const UUID = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
 const DM1 = `dm:${UUID(1)}` as const;
@@ -8,17 +8,12 @@ const CH1 = `channel:${UUID(3)}` as const;
 const ME = "me";
 const THEM = "them";
 
-const disk = () => {
-  const data = new Map<string, string>();
-  const storage: UnreadStorage = { read: (u) => data.get(u) ?? null, write: (u, v) => void data.set(u, v) };
-  return { data, storage };
-};
-let clock = Date.parse("2026-10-10T10:00:00Z");
-const msg = (id: string, seq: string, at = "2026-10-10T10:00:00Z") => ({ id, seq, createdAt: at });
-const make = (d = disk()) => {
-  const u = createUnread({ storage: d.storage, now: () => clock });
-  u.start(ME);
-  return { u, ...d, counts: () => u.store.getState().counts };
+const msg = (id: string, seq: string) => ({ id, seq });
+const make = () => {
+  const reported: [string, string][] = [];
+  const u = createUnread({ report: (key, seq) => void reported.push([key, seq]) });
+  u.start();
+  return { u, reported, counts: () => u.store.getState().counts };
 };
 const count = (u: ReturnType<typeof make>["u"], key: string) => unreadOf(u.store.getState(), key);
 
@@ -125,106 +120,112 @@ describe("reading = open + window focused + list at the bottom", () => {
   });
 });
 
-describe("restart detection for DMs", () => {
-  const dm = (n: number, lastMessageAt: string | null) => ({ id: UUID(n), lastMessageAt });
-
-  it("a DM with activity after what was seen is unread (a dot), within the margin it is not", () => {
-    const d = disk();
-    const first = make(d);
-    first.u.message(DM1, msg("a", "7", "2026-10-10T09:00:00Z"), THEM, ME);
-    first.u.open(DM1);
-    first.u.setFocused(true); // seen up to 09:00:00
-    const again = make(d); // restart
-    again.u.reconcileDms([dm(1, "2026-10-10T09:00:01Z"), dm(2, null)]); // 1 s newer: inside the margin
-    expect(count(again.u, DM1)).toBe(0);
-    again.u.reconcileDms([dm(1, new Date(Date.parse("2026-10-10T09:00:00Z") + DM_MARGIN_MS + 1).toISOString())]);
-    expect(count(again.u, DM1)).toBe(1);
-    expect(again.counts()).toEqual({}); // a dot, not a count
-    expect(dmTotal(again.u.store.getState())).toBe(1);
-  });
-
-  it("a DM seen for the first time is a baseline, not unread", () => {
+describe("sign-out and the server's read pointer", () => {
+  it("reset (sign-out) empties the counts", () => {
     const { u } = make();
-    u.reconcileDms([{ id: UUID(1), lastMessageAt: "2020-01-01T00:00:00Z" }]);
-    expect(count(u, DM1)).toBe(0);
+    u.message(DM1, msg("a", "1"), THEM, ME);
+    u.seed({ channels: [], dms: [{ dmChannelId: UUID(2), unread: 4, mentions: 1 }] });
+    u.reset();
+    expect(u.store.getState()).toEqual({ counts: {}, mentions: {}, guildMentions: {} });
   });
 
-  it("opening the DM clears the dot and it does not come back on the next list update", () => {
-    const d = disk();
-    const first = make(d);
-    first.u.message(DM1, msg("a", "7", "2026-10-10T09:00:00Z"), THEM, ME);
-    first.u.open(DM1);
-    first.u.setFocused(true);
-    const again = make(d);
-    const list = [{ id: UUID(1), lastMessageAt: "2026-10-10T09:30:00Z" }];
-    again.u.reconcileDms(list);
-    expect(count(again.u, DM1)).toBe(1);
-    again.u.setFocused(true);
-    again.u.open(DM1);
-    expect(count(again.u, DM1)).toBe(0);
-    again.u.reconcileDms(list);
-    expect(count(again.u, DM1)).toBe(0);
+  it("reading tells the server how far, once per new high-water mark", () => {
+    const { u, reported } = make();
+    u.setFocused(true);
+    u.open(DM1);
+    u.observe(DM1, msg("a", "5"));
+    u.observe(DM1, msg("a", "5")); // nothing new
+    u.message(DM1, msg("b", "6"), THEM, ME); // arrives on screen
+    u.message(DM1, msg("c", "7"), ME, ME); // our own message also counts as read
+    expect(reported).toEqual([[DM1, "5"], [DM1, "6"], [DM1, "7"]]);
   });
 
-  it("a live count wins over the dot (no double counting)", () => {
-    const d = disk();
-    const first = make(d);
-    first.u.reconcileDms([{ id: UUID(1), lastMessageAt: null }]);
-    const again = make(d);
-    again.u.message(DM1, msg("a", "1", "2026-10-11T00:00:00Z"), THEM, ME);
-    again.u.reconcileDms([{ id: UUID(1), lastMessageAt: "2026-10-11T00:00:00Z" }]);
-    expect(dmTotal(again.u.store.getState())).toBe(1);
+  it("opening a conversation with unread messages reports its newest and clears the badge", () => {
+    const { u, reported } = make();
+    u.message(CH1, msg("a", "9"), THEM, ME);
+    u.message(CH1, msg("b", "10"), THEM, ME);
+    u.setFocused(true);
+    u.open(CH1);
+    expect(count(u, CH1)).toBe(0);
+    expect(reported).toEqual([[CH1, "10"]]);
+  });
+
+  it("a message at or below what was read (catch-up replay) is ignored, compared as numbers", () => {
+    const { u } = make();
+    u.message(CH1, msg("a", "9"), THEM, ME);
+    u.message(CH1, msg("b", "10"), THEM, ME);
+    u.setFocused(true);
+    u.open(CH1); // read up to 10
+    u.open(null);
+    u.message(CH1, msg("a", "9"), THEM, ME);
+    u.message(CH1, msg("b", "10"), THEM, ME);
+    expect(count(u, CH1)).toBe(0); // "9" > "10" as strings would have counted these
   });
 });
 
-describe("per user and sign-out", () => {
-  it("marks are per user: another account sees none of them, the first gets them back", () => {
-    const d = disk();
-    const a = createUnread({ storage: d.storage, now: () => clock });
-    a.start("A");
-    a.message(DM1, msg("m", "5", "2026-10-10T09:00:00Z"), THEM, "A");
-    a.setFocused(true);
-    a.open(DM1);
-    a.start("B");
-    a.message(DM1, msg("m", "5", "2026-10-10T09:00:00Z"), THEM, "B");
-    expect(count(a, DM1)).toBe(1); // B has not read it
-    a.start("A");
-    a.open(null);
-    a.message(DM1, msg("m", "5", "2026-10-10T09:00:00Z"), THEM, "A");
-    expect(count(a, DM1)).toBe(0); // A had
+describe("seeding from the server", () => {
+  const G1 = UUID(40);
+  const state = (u: ReturnType<typeof make>["u"]) => u.store.getState();
+  const response = {
+    channels: [{ channelId: UUID(3), guildId: G1, unread: 7, mentions: 2 }],
+    dms: [{ dmChannelId: UUID(1), unread: 3, mentions: 0 }],
+  };
+
+  it("sets counts, mentions and the server badge for conversations that are not open, in any server", () => {
+    const { u } = make();
+    u.seed(response);
+    expect(state(u).counts).toEqual({ [CH1]: 7, [DM1]: 3 });
+    expect(state(u).mentions).toEqual({ [CH1]: 2 });
+    expect(state(u).guildMentions).toEqual({ [G1]: 2 });
+    expect(dmTotal(state(u))).toBe(3);
   });
 
-  it("reset (sign-out) empties the counts but keeps what the user had read", () => {
-    const d = disk();
-    const { u } = make(d);
-    u.message(DM1, msg("a", "1"), THEM, ME);
-    u.reset();
-    expect(u.store.getState()).toEqual({ counts: {}, dots: {} });
-    expect(d.data.size).toBe(0); // nothing was read, so nothing was saved
+  it("replaces what was counted live (the server counted it too), then live messages add on top", () => {
+    const { u } = make();
+    u.message(CH1, msg("a", "1"), THEM, ME, { guildId: G1 });
+    u.message(DM2, msg("b", "1"), THEM, ME);
+    u.seed(response);
+    expect(count(u, DM2)).toBe(0); // the server said nothing is unread there
+    u.message(CH1, msg("c", "2"), THEM, ME, { guildId: G1 });
+    expect([count(u, CH1), mentionsOf(state(u), CH1), state(u).guildMentions[G1]]).toEqual([8, 3, 3]);
   });
 
-  it("corrupt or hostile stored data is dropped", () => {
-    expect(parseSeen("{not json")).toEqual({});
-    expect(parseSeen(JSON.stringify({ "dm:x": { seq: "1", at: 1 }, [DM1]: { seq: "-1", at: 1 }, [DM2]: { seq: "5", at: 7 } }))).toEqual({ [DM2]: { seq: "5", at: 7 } });
-    expect(parseSeen(null)).toEqual({});
-  });
-
-  it("a storage that throws does not break counting", () => {
-    const u = createUnread({
-      storage: {
-        read: () => {
-          throw new Error("denied");
-        },
-        write: () => {
-          throw new Error("denied");
-        },
-      },
-    });
-    u.start(ME);
-    u.message(DM1, msg("a", "1"), THEM, ME);
-    u.open(DM1);
+  it("does not badge the conversation being read, and reading clears the server's count", () => {
+    const { u } = make();
     u.setFocused(true);
+    u.open(CH1);
+    u.seed(response);
+    expect(count(u, CH1)).toBe(0);
+    expect(count(u, DM1)).toBe(3);
+    u.open(DM1);
     expect(count(u, DM1)).toBe(0);
+    expect(state(u).mentions).toEqual({});
+  });
+});
+
+describe("read:updated from another device", () => {
+  const state = (u: ReturnType<typeof make>["u"]) => u.store.getState();
+
+  it("clears the server's count for that conversation and the live messages it covers", () => {
+    const { u } = make();
+    u.seed({ channels: [], dms: [{ dmChannelId: UUID(1), unread: 5, mentions: 1 }] });
+    u.message(DM1, msg("a", "20"), THEM, ME);
+    u.message(DM1, msg("b", "21"), THEM, ME, { guildId: null });
+    u.serverRead(DM1, "20");
+    expect(count(u, DM1)).toBe(1); // "21" is newer than the other device's pointer
+    expect(mentionsOf(state(u), DM1)).toBe(1);
+    u.serverRead(DM1, "21");
+    expect(count(u, DM1)).toBe(0);
+    expect(state(u).counts).toEqual({});
+  });
+
+  it("makes a later replay of a covered message harmless", () => {
+    const { u } = make();
+    u.serverRead(CH1, "30");
+    u.message(CH1, msg("a", "30"), THEM, ME);
+    expect(count(u, CH1)).toBe(0);
+    u.message(CH1, msg("b", "31"), THEM, ME);
+    expect(count(u, CH1)).toBe(1);
   });
 });
 
@@ -240,5 +241,102 @@ describe("totals and labels", () => {
     expect(capped(10)).toBe("9+");
     expect(titleWith(0)).toBe("Loop");
     expect(titleWith(3)).toBe("(3) Loop");
+  });
+});
+
+describe("mentions", () => {
+  const G1 = UUID(40);
+  const G2 = UUID(41);
+  const CH2 = `channel:${UUID(4)}` as const;
+  const state = (u: ReturnType<typeof make>["u"]) => u.store.getState();
+
+  it("a message that names me counts as unread AND as a mention, per conversation and per server", () => {
+    const { u } = make();
+    u.message(CH1, msg("a", "1"), THEM, ME, { guildId: G1 });
+    u.message(CH1, msg("b", "2"), THEM, ME); // plain
+    u.message(CH2, msg("c", "1"), THEM, ME, { guildId: G2 });
+    u.message(CH2, msg("d", "2"), THEM, ME, { guildId: G2 });
+    expect([count(u, CH1), mentionsOf(state(u), CH1)]).toEqual([2, 1]);
+    expect([count(u, CH2), mentionsOf(state(u), CH2)]).toEqual([2, 2]);
+    expect(state(u).guildMentions).toEqual({ [G1]: 1, [G2]: 2 });
+  });
+
+  it("never for my own message, even one that mentions me", () => {
+    const { u } = make();
+    u.message(CH1, msg("a", "1"), ME, ME, { guildId: G1 });
+    expect(mentionsOf(state(u), CH1)).toBe(0);
+    expect(state(u).guildMentions).toEqual({});
+  });
+
+  it("the same message arriving twice (channel room and mention:new) counts once", () => {
+    const { u } = make();
+    u.message(CH1, msg("a", "1"), THEM, ME, { guildId: G1 });
+    u.message(CH1, msg("a", "1"), THEM, ME, { guildId: G1 });
+    expect([count(u, CH1), mentionsOf(state(u), CH1), state(u).guildMentions[G1]]).toEqual([1, 1, 1]);
+  });
+
+  it("reading the conversation clears its mentions and the server badge; other conversations stay", () => {
+    const { u } = make();
+    u.message(CH1, msg("a", "1"), THEM, ME, { guildId: G1 });
+    u.message(CH2, msg("b", "1"), THEM, ME, { guildId: G1 });
+    u.setFocused(true);
+    u.open(CH1);
+    expect(state(u).mentions).toEqual({ [CH2]: 1 });
+    expect(state(u).guildMentions).toEqual({ [G1]: 1 });
+  });
+
+  it("a mention arriving while the conversation is being read is not counted", () => {
+    const { u } = make();
+    u.setFocused(true);
+    u.open(CH1);
+    u.message(CH1, msg("a", "1"), THEM, ME, { guildId: G1 });
+    expect(state(u).mentions).toEqual({});
+  });
+
+  it("a deleted mention leaves no phantom badge; a mention without a known server counts only per conversation", () => {
+    const { u } = make();
+    u.message(CH1, msg("a", "1"), THEM, ME, { guildId: G1 });
+    u.message(CH1, msg("b", "2"), THEM, ME, { guildId: null });
+    expect([mentionsOf(state(u), CH1), state(u).guildMentions]).toEqual([2, { [G1]: 1 }]);
+    u.deleted(CH1, "a");
+    expect([mentionsOf(state(u), CH1), state(u).guildMentions]).toEqual([1, {}]);
+  });
+
+  it("sign-out forgets them", () => {
+    const { u } = make();
+    u.message(CH1, msg("a", "1"), THEM, ME, { guildId: G1 });
+    u.reset();
+    expect(state(u).mentions).toEqual({});
+    expect(state(u).guildMentions).toEqual({});
+  });
+});
+
+describe("a thread open beside its channel (side slot)", () => {
+  const TH = `channel:${UUID(9)}` as const;
+  it("reads both on screen, each with its own scroll state, and only while the window has focus", () => {
+    const { u, reported } = make();
+    u.setFocused(true);
+    u.open(CH1);
+    u.open(TH, "side");
+    u.message(TH, msg("t1", "5"), THEM, ME);
+    u.message(CH1, msg("c1", "6"), THEM, ME);
+    expect([count(u, TH), count(u, CH1)]).toEqual([0, 0]);
+    expect(reported).toEqual([[TH, "5"], [CH1, "6"]]);
+    u.setPinned(false, "side"); // scrolled up in the thread: its new messages count, the channel's still do not
+    u.message(TH, msg("t2", "7"), THEM, ME);
+    u.message(CH1, msg("c2", "8"), THEM, ME);
+    expect([count(u, TH), count(u, CH1)]).toEqual([1, 0]);
+    u.setPinned(true, "side");
+    expect(count(u, TH), "back at the bottom: read").toBe(0);
+    u.open(null, "side");
+    u.message(TH, msg("t3", "9"), THEM, ME);
+    expect(count(u, TH), "closed panel: counts again").toBe(1);
+  });
+
+  it("seeds a thread's count under its own key, never under the parent channel", () => {
+    const { u } = make();
+    u.seed({ channels: [{ channelId: UUID(9), guildId: "g", parentChannelId: UUID(3), unread: 4, mentions: 1 }], dms: [] });
+    expect([count(u, TH), count(u, CH1), mentionsOf(u.store.getState(), TH)]).toEqual([4, 0, 1]);
+    expect(u.store.getState().guildMentions).toEqual({ g: 1 });
   });
 });

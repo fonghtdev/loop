@@ -1,6 +1,8 @@
-import { ALL_PERMISSIONS, CHANNEL_PERMISSIONS, computePermissions, hasPermission, Permission, type Overwrite, type PermissionName } from "@loop/shared";
+import { ALL_PERMISSIONS, banSchema, CHANNEL_PERMISSIONS, channelTopicSchema, computePermissions, hasPermission, type MemberOverwrite, Permission, updateGuildSchema, type Overwrite, type PermissionName } from "@loop/shared";
 import { t } from "../i18n/t";
 import type { MessageKey } from "../i18n/vi";
+import { normalize } from "./quick-switch";
+import { channelNameError } from "./validation";
 import { permissionsFor, type Channel, type Member, type PermissionData, type Role } from "./permissions";
 
 /*
@@ -26,14 +28,20 @@ export function standingFor(data: PermissionData): Standing | null {
 export type SettingsCtx = { guildId: string; guildName: string; ownerId: string; standing: Standing; roles: Role[]; members: Member[]; channels: Channel[] };
 
 // ---- gating ----
-export type SettingsTab = "roles" | "members" | "overwrites" | "danger";
-const ADMIN_BITS = Permission.ADMINISTRATOR | Permission.MANAGE_ROLES | Permission.KICK_MEMBERS | Permission.MANAGE_CHANNELS;
+export type SettingsTab = "overview" | "roles" | "members" | "bans" | "invites" | "overwrites" | "automod" | "audit" | "danger";
+const ADMIN_BITS = Permission.ADMINISTRATOR | Permission.MANAGE_ROLES | Permission.KICK_MEMBERS | Permission.MANAGE_CHANNELS | Permission.BAN_MEMBERS | Permission.VIEW_AUDIT_LOG;
 
 /** The settings sections the user may open, in tab order; empty = no entry at all (a plain member). */
 export function settingsSections(bits: number, isOwner: boolean): SettingsTab[] {
   if (!isOwner && !(bits & ADMIN_BITS)) return [];
   const manageRoles = hasPermission(bits, Permission.MANAGE_ROLES);
-  const sections: (SettingsTab | false)[] = [manageRoles && "roles", "members", manageRoles && "overwrites", isOwner && "danger"];
+  const overview = isOwner || hasPermission(bits, Permission.ADMINISTRATOR); // the server's own identity: renaming and the icon need ADMINISTRATOR
+  const bans = hasPermission(bits, Permission.BAN_MEMBERS);
+  // server: MANAGE_ROLES lists every invite, CREATE_INVITE only one's own
+  const invites = manageRoles || hasPermission(bits, Permission.CREATE_INVITE);
+  const audit = hasPermission(bits, Permission.VIEW_AUDIT_LOG); // ADMINISTRATOR and the owner hold every bit
+  // AutoMod has no bit of its own: the server lets the owner and ADMINISTRATOR manage it (the same test as `overview`)
+  const sections: (SettingsTab | false)[] = [overview && "overview", manageRoles && "roles", "members", bans && "bans", invites && "invites", manageRoles && "overwrites", overview && "automod", audit && "audit", isOwner && "danger"];
   return sections.filter((s): s is SettingsTab => !!s);
 }
 
@@ -52,6 +60,62 @@ export function canManageMember(s: Standing, target: Member, ownerId: string, ro
   if (target.userId === s.userId) return action === "roles";
   if (target.userId === ownerId) return false;
   return s.isOwner || topPosition(target.roleIds, roles) < s.top;
+}
+
+/** Ban: BAN_MEMBERS plus the kick hierarchy (ADMINISTRATOR passes the bit, never the hierarchy). */
+export const canBan = (s: Standing, target: Member, ownerId: string, roles: Role[]) =>
+  hasPermission(s.bits, Permission.BAN_MEMBERS) && canManageMember(s, target, ownerId, roles, "kick");
+
+/** Choices for how much of a banned member's recent history goes (server: `deleteMessageHours` 0 | 1 | 24 | 168). */
+export const BAN_DELETE_OPTIONS: { hours: number; label: MessageKey }[] = [
+  { hours: 0, label: "ban.delete.none" },
+  { hours: 1, label: "ban.delete.hour" },
+  { hours: 24, label: "ban.delete.day" },
+  { hours: 168, label: "ban.delete.week" },
+];
+/** The reason field against the server's own schema (at most 200 characters, one line, no control characters). */
+export const banReasonError = (reason: string) =>
+  banSchema.safeParse({ reason }).success ? undefined : t([...reason.trim()].length > 200 ? "validation.banReasonLong" : "profile.errors.chars");
+
+/** A member's channel overwrite: MANAGE_ROLES checked by the caller; the target strictly below them, never the owner or oneself. */
+export const canSetMemberOverwrite = (s: Standing, target: Member, ownerId: string, roles: Role[]) => canManageMember(s, target, ownerId, roles, "kick");
+
+/** Members whose name or username contains `query` (accents and case ignored), by name. */
+export function filterMembers(members: Member[], query: string, nameOf: (m: Member) => string) {
+  const q = normalize(query);
+  return members.filter((m) => !q || normalize(nameOf(m)).includes(q) || normalize(m.username).includes(q)).sort((a, b) => nameOf(a).localeCompare(nameOf(b), "vi"));
+}
+
+// ---- role order (server: PUT /guilds/:id/roles/order) ----
+/** Every role but @everyone, highest first: the body the server wants. */
+export const roleOrder = (roles: Role[], guildId: string) =>
+  roles.filter((r) => r.id !== guildId).sort((a, b) => b.position - a.position || a.id.localeCompare(b.id)).map((r) => r.id);
+
+/**
+ * The server's rule for a non-owner: the roles at or above their top open the list in their current order (so nothing
+ * moves to or above them); when two of those share a position only the owner may reorder at all.
+ */
+export function orderAllowed(s: Standing, roles: Role[], guildId: string, order: string[]) {
+  if (s.isOwner) return true;
+  const fixed = roles.filter((r) => r.id !== guildId && r.position >= s.top).sort((a, b) => b.position - a.position);
+  if (new Set(fixed.map((r) => r.position)).size !== fixed.length) return false;
+  return fixed.every((r, i) => order[i] === r.id);
+}
+
+/** Drag and drop: `id` placed before / after `targetId`. null when nothing changes or the server would refuse it. */
+export function dropRole(s: Standing, roles: Role[], guildId: string, order: string[], id: string, targetId: string, where: "before" | "after") {
+  if (id === targetId || !order.includes(id) || !order.includes(targetId)) return null;
+  const rest = order.filter((x) => x !== id);
+  const at = rest.indexOf(targetId) + (where === "after" ? 1 : 0);
+  const next = [...rest.slice(0, at), id, ...rest.slice(at)];
+  if (next.every((x, i) => x === order[i])) return null;
+  return orderAllowed(s, roles, guildId, next) ? next : null;
+}
+
+/** The up (-1) / down (+1) buttons: one step past the neighbour, through `dropRole`'s rules. */
+export function shiftRole(s: Standing, roles: Role[], guildId: string, order: string[], id: string, delta: -1 | 1) {
+  const neighbour = order[order.indexOf(id) + delta];
+  return order.includes(id) && neighbour ? dropRole(s, roles, guildId, order, id, neighbour, delta < 0 ? "before" : "after") : null;
 }
 
 /** Rule 2: only bits the caller holds (in `scope`) can be granted or taken away. */
@@ -103,6 +167,7 @@ export const PERMISSION_GROUPS: { title: MessageKey; items: Info[] }[] = [
     items: [
       { name: "SEND_MESSAGES", label: "perm.SEND_MESSAGES", desc: "perm.SEND_MESSAGES.desc" },
       { name: "MANAGE_MESSAGES", label: "perm.MANAGE_MESSAGES", desc: "perm.MANAGE_MESSAGES.desc" },
+      { name: "MENTION_EVERYONE", label: "perm.MENTION_EVERYONE", desc: "perm.MENTION_EVERYONE.desc" },
     ],
   },
   {
@@ -111,6 +176,8 @@ export const PERMISSION_GROUPS: { title: MessageKey; items: Info[] }[] = [
       { name: "MANAGE_CHANNELS", label: "perm.MANAGE_CHANNELS", desc: "perm.MANAGE_CHANNELS.desc" },
       { name: "MANAGE_ROLES", label: "perm.MANAGE_ROLES", desc: "perm.MANAGE_ROLES.desc" },
       { name: "KICK_MEMBERS", label: "perm.KICK_MEMBERS", desc: "perm.KICK_MEMBERS.desc" },
+      { name: "BAN_MEMBERS", label: "perm.BAN_MEMBERS", desc: "perm.BAN_MEMBERS.desc" },
+      { name: "VIEW_AUDIT_LOG", label: "perm.VIEW_AUDIT_LOG", desc: "perm.VIEW_AUDIT_LOG.desc" },
       { name: "ADMINISTRATOR", label: "perm.ADMINISTRATOR", desc: "perm.ADMINISTRATOR.desc" },
     ],
   },
@@ -121,6 +188,9 @@ export const PERMISSION_GROUPS: { title: MessageKey; items: Info[] }[] = [
       { name: "SPEAK", label: "perm.SPEAK", desc: "perm.SPEAK.desc" },
       { name: "VIDEO", label: "perm.VIDEO", desc: "perm.VIDEO.desc" },
       { name: "STREAM", label: "perm.STREAM", desc: "perm.STREAM.desc" },
+      { name: "MOVE_MEMBERS", label: "perm.MOVE_MEMBERS", desc: "perm.MOVE_MEMBERS.desc" },
+      { name: "MUTE_MEMBERS", label: "perm.MUTE_MEMBERS", desc: "perm.MUTE_MEMBERS.desc" },
+      { name: "DEAFEN_MEMBERS", label: "perm.DEAFEN_MEMBERS", desc: "perm.DEAFEN_MEMBERS.desc" },
     ],
   },
 ];
@@ -152,12 +222,44 @@ export function previewPermissions(roles: Role[], everyoneId: string, roleId: st
   });
 }
 
+/** What `member` would get in the channel once their own overwrite is `draft` (their real roles, every other overwrite as is). */
+export function previewMemberPermissions(roles: Role[], everyoneId: string, member: Member, channel: { overwrites: Overwrite[]; memberOverwrites?: MemberOverwrite[] }, draft: Pair) {
+  return computePermissions({
+    isOwner: false, // the owner is never a target
+    everyoneRole: roles.find((r) => r.id === everyoneId) ?? { id: everyoneId, permissions: 0 },
+    memberRoles: roles.filter((r) => r.id !== everyoneId && member.roleIds.includes(r.id)),
+    overwrites: channel.overwrites,
+    userId: member.userId,
+    memberOverwrites: [...(channel.memberOverwrites ?? []).filter((o) => o.userId !== member.userId), { userId: member.userId, ...draft }],
+  });
+}
+
 /** Deleting a server needs its exact name typed. */
 export const nameMatches = (typed: string, name: string) => typed.trim() === name;
 
 /** The caller's own bits in one of the guild's channels (the same function the server runs). */
-export const callerChannelBits = (ctx: SettingsCtx, channel: Pick<Channel, "overwrites">) =>
+export const callerChannelBits = (ctx: SettingsCtx, channel: Pick<Channel, "overwrites" | "memberOverwrites">) =>
   permissionsFor(
     { userId: ctx.standing.userId, guild: { id: ctx.guildId, name: ctx.guildName, ownerId: ctx.ownerId, createdAt: "" }, roles: ctx.roles, members: ctx.members },
     channel,
   );
+
+// ---- server and channel identity ----
+/** Server name rules of the server's own schema (1..100 after trimming). */
+export const guildNameError = (name: string) => (updateGuildSchema.safeParse({ name }).success ? undefined : t(name.trim() === "" ? "validation.required" : "validation.guildNameLong"));
+
+const topicChars = (s: string) => [...s.trim()].length;
+/** Topic rules of the server's schema (at most 1024 characters, no control or bidi characters; empty = no topic). */
+export const topicError = (topic: string) => (channelTopicSchema.safeParse(topic).success ? undefined : t(topicChars(topic) > 1024 ? "validation.topicLong" : "profile.errors.chars"));
+
+/** Only what changed in the channel edit form (a cleared topic is null); null when nothing changed. */
+export function channelPatch(channel: Pick<Channel, "name" | "topic">, draft: { name: string; topic: string }) {
+  const patch: { name?: string; topic?: string | null } = {};
+  if (draft.name !== channel.name) patch.name = draft.name;
+  const topic = draft.topic.trim() || null;
+  if (topic !== (channel.topic ?? null)) patch.topic = topic;
+  return Object.keys(patch).length ? patch : null;
+}
+
+/** The channel edit form is valid: the name follows the creation rules, the topic its schema. */
+export const channelEditError = (draft: { name: string; topic: string }) => ({ name: channelNameError(draft.name), topic: topicError(draft.topic) });

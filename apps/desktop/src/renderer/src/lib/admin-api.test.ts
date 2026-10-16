@@ -10,7 +10,8 @@ function setup(fail?: Error) {
   });
   const changed = vi.fn(async (g: string) => void calls.push(`changed ${g}`));
   const gone = vi.fn((g: string) => void calls.push(`gone ${g}`));
-  return { api: createAdminApi({ request: request as never, changed, gone }), calls, changed, gone };
+  const upload = vi.fn(async (a: { base: string }) => (calls.push(`upload ${a.base}`), "hash"));
+  return { api: createAdminApi({ request: request as never, upload, changed, gone }), calls, changed, gone, upload };
 }
 
 describe("administration calls and cache refresh", () => {
@@ -24,11 +25,33 @@ describe("administration calls and cache refresh", () => {
     ["setOverwrite", (a: ReturnType<typeof setup>["api"]) => a.setOverwrite("g", "c", "r", { allow: 1, deny: 2 }), 'PUT /channels/c/overwrites/r {"allow":1,"deny":2}'],
     ["clearOverwrite", (a: ReturnType<typeof setup>["api"]) => a.clearOverwrite("g", "c", "r"), "DELETE /channels/c/overwrites/r"],
     ["deleteChannel", (a: ReturnType<typeof setup>["api"]) => a.deleteChannel("g", "c"), "DELETE /guilds/g/channels/c"],
+    ["renameGuild", (a: ReturnType<typeof setup>["api"]) => a.renameGuild("g", "Mới"), 'PATCH /guilds/g {"name":"Mới"}'],
+    ["removeGuildIcon", (a: ReturnType<typeof setup>["api"]) => a.removeGuildIcon("g"), "DELETE /guilds/g/icon"],
+    ["updateChannel", (a: ReturnType<typeof setup>["api"]) => a.updateChannel("g", "c", { name: "n", topic: null }), 'PATCH /channels/c {"name":"n","topic":null}'],
     ["transfer", (a: ReturnType<typeof setup>["api"]) => a.transfer("g", "u"), 'POST /guilds/g/transfer {"userId":"u"}'],
+    ["ban", (a: ReturnType<typeof setup>["api"]) => a.ban("g", "u", { reason: "spam", deleteMessageHours: 24 }), 'PUT /guilds/g/bans/u {"reason":"spam","deleteMessageHours":24}'],
+    ["unban", (a: ReturnType<typeof setup>["api"]) => a.unban("g", "u"), "DELETE /guilds/g/bans/u"],
+    ["revokeInvite", (a: ReturnType<typeof setup>["api"]) => a.revokeInvite("g", "a/b"), "DELETE /guilds/g/invites/a%2Fb"],
+    ["reorderRoles", (a: ReturnType<typeof setup>["api"]) => a.reorderRoles("g", ["r1", "r2"]), 'PUT /guilds/g/roles/order {"roleIds":["r1","r2"]}'],
+    ["setMemberOverwrite", (a: ReturnType<typeof setup>["api"]) => a.setMemberOverwrite("g", "c", "u", { allow: 0, deny: 1 }), 'PUT /channels/c/overwrites/members/u {"allow":0,"deny":1}'],
+    ["clearMemberOverwrite", (a: ReturnType<typeof setup>["api"]) => a.clearMemberOverwrite("g", "c", "u"), "DELETE /channels/c/overwrites/members/u"],
   ])("%s hits the right endpoint, then refreshes the guild's roles, members and channels", async (_name, act, expected) => {
     const { api, calls } = setup();
     await act(api);
     expect(calls).toEqual([expected, "changed g"]);
+  });
+
+  it("the ban and invite lists are plain reads (no refetch)", async () => {
+    const { api, calls } = setup();
+    await api.listBans("g").catch(() => {});
+    await api.listInvites("g").catch(() => {});
+    expect(calls).toEqual(["GET /guilds/g/bans", "GET /guilds/g/invites"]);
+  });
+
+  it("moveMember posts the user to the DESTINATION channel and changes no guild data (no refetch)", async () => {
+    const { api, calls } = setup();
+    await api.moveMember("dest", "u");
+    expect(calls).toEqual(['POST /channels/dest/voice/move {"userId":"u"}']);
   });
 
   it("a refused call (stale picture: 403/404) refreshes too, and still fails for the caller", async () => {
@@ -50,5 +73,19 @@ describe("administration calls and cache refresh", () => {
     await expect(api.deleteGuild("g")).rejects.toThrow();
     expect(gone).not.toHaveBeenCalled();
     expect(changed).toHaveBeenCalledWith("g");
+  });
+});
+
+describe("server icon upload", () => {
+  it("uploads to the guild's icon base, then refreshes the guild", async () => {
+    const { api, calls } = setup();
+    await expect(api.setGuildIcon("g", new File([new Uint8Array(1)], "i.png", { type: "image/png" }))).resolves.toBe("hash");
+    expect(calls).toEqual(["upload /guilds/g/icon", "changed g"]);
+  });
+  it("refreshes the guild when the upload fails too (a 403 means our rights are stale)", async () => {
+    const { api, calls, upload } = setup();
+    upload.mockRejectedValueOnce(new Error("no"));
+    await expect(api.setGuildIcon("g", new File([], "i.png"))).rejects.toThrow("no");
+    expect(calls).toContain("changed g");
   });
 });

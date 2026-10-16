@@ -21,11 +21,21 @@ model User {
   botTokenHash    String?      @unique // SHA-256 of the bot token's secret; null once the bot is deleted
   deletedAt       DateTime? // bots are soft-deleted: their messages keep the author (Message.authorId is Restrict)
   statusPref      String       @default("online") // StatusPref in @loop/shared (CHECK in DB)
+  // Public profile (length CHECKs in the migration). A hash is the random part of the image's storage key and
+  // doubles as the cache buster; null = no image.
+  displayName     String?
+  bio             String?
+  statusText      String?
+  avatarHash      String?
+  bannerHash      String?
+  profileUploads  ProfileUpload[]
   sessions        Session[]
   ownedGuilds     Guild[]
   memberships     Member[]
   invites         Invite[]
   messages        Message[]
+  reactions       Reaction[]
+  mentions        MessageMention[]
   friendshipsLow  Friendship[] @relation("FriendLow")
   friendshipsHigh Friendship[] @relation("FriendHigh")
   friendRequests  Friendship[] @relation("FriendRequester")
@@ -33,7 +43,16 @@ model User {
   blocksReceived  Block[]      @relation("Blocked")
   dmsLow          DmChannel[]  @relation("DmLow")
   dmsHigh         DmChannel[]  @relation("DmHigh")
+  dmsOwned        DmChannel[]  @relation("DmOwner")
+  dmParticipants  DmParticipant[]
   attachments     Attachment[]
+  readStates      ReadState[]
+  bans            GuildBan[]   @relation("Banned")
+  bansIssued      GuildBan[]   @relation("BanIssuer")
+  auditActions    AuditLog[]   @relation("AuditActor")
+  auditTargeted   AuditLog[]   @relation("AuditTarget")
+  autoModRules    AutoModRule[]
+  voiceModsSet    VoiceModState[]
 
   @@index([ownerId])
 }
@@ -61,16 +80,22 @@ model Guild {
   ownerId    String     @db.Uuid
   owner      User       @relation(fields: [ownerId], references: [id])
   createdAt  DateTime   @default(now())
+  iconHash   String? // see User.avatarHash
+  profileUploads ProfileUpload[]
   channels   Channel[]
   categories Category[]
   members    Member[]
   invites    Invite[]
   roles      Role[]
+  bans       GuildBan[]
+  auditLog   AuditLog[]
+  autoModRules AutoModRule[]
 }
 
 enum ChannelType {
   TEXT
   VOICE
+  THREAD // a conversation started from a message of a TEXT channel (its parent); see the threads migration
 }
 
 model Channel {
@@ -78,6 +103,7 @@ model Channel {
   guildId     String             @db.Uuid
   guild       Guild              @relation(fields: [guildId], references: [id], onDelete: Cascade)
   name        String
+  topic       String? // CHECK <= 1024 characters in the migration
   type        ChannelType
   position    Int // order within its category (or within the uncategorised area when categoryId is null)
   categoryId  String?            @db.Uuid
@@ -86,11 +112,24 @@ model Channel {
   category    Category?          @relation(fields: [guildId, categoryId], references: [guildId, id], onDelete: SetNull)
   createdAt   DateTime           @default(now())
   messages    Message[]
-  overwrites  ChannelOverwrite[]
+  overwrites  ChannelOverwrite[] // a thread has none: its permissions are its parent's (guilds/access.ts)
+  memberOverwrites ChannelMemberOverwrite[] // same: none on a thread
   attachments Attachment[]
+  readStates  ReadState[]
+  // Thread only (CHECK: set exactly when type = THREAD). Same-guild parent, cascade: deleting it deletes its threads.
+  parentChannelId  String?   @db.Uuid
+  parent           Channel?  @relation("Threads", fields: [guildId, parentChannelId], references: [guildId, id], onDelete: Cascade)
+  threads          Channel[] @relation("Threads")
+  /// The message the thread was started from (one thread per message). Not a foreign key: the starter may be deleted.
+  starterMessageId String?   @unique @db.Uuid
+  createdById      String?   @db.Uuid // not a foreign key, like Message.pinnedById
+  lastMessageAt    DateTime? // creation, then each new message: orders the thread list
+  archived         Boolean   @default(false)
 
-  @@unique([guildId, name])
+  // Names are unique per guild among non-thread channels: a partial unique index in the threads migration
+  // (Prisma cannot express it; a violation is still P2002).
   @@unique([guildId, id]) // target of composite FKs that keep overwrites inside one guild
+  @@index([parentChannelId])
 }
 
 model Category {
@@ -114,6 +153,8 @@ model Member {
   user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   joinedAt DateTime     @default(now())
   roles    MemberRole[]
+  channelOverwrites ChannelMemberOverwrite[] // go with the membership (leave, kick, ban)
+  voiceMod          VoiceModState? // so does a server mute / deafen
 
   @@unique([guildId, userId])
   @@index([userId])
@@ -147,11 +188,70 @@ model Message {
   content     String
   createdAt   DateTime   @default(now())
   editedAt    DateTime?
+  /// The message this one answers (same channel / DM, checked by the route). Deliberately NOT a foreign key: after the
+  /// target is deleted the id stays, so the reply can still say "deleted" (an ON DELETE SET NULL would forget it).
+  replyToId   String?    @db.Uuid
+  /// True when the text has @everyone / @here and the author held MENTION_EVERYONE when writing it.
+  mentionEveryone Boolean @default(false)
+  /// Pin state lives on the row (one pin per message, no join to list or count). `pinnedById` is not a foreign key, like `replyToId`.
+  pinnedAt    DateTime?
+  pinnedById  String?    @db.Uuid
 
   attachments Attachment[]
+  reactions   Reaction[]
+  mentions    MessageMention[]
+  embeds      MessageEmbed[]
 
   @@index([channelId, seq])
   @@index([dmChannelId, seq])
+  @@index([replyToId])
+  @@index([channelId, pinnedAt])
+  @@index([dmChannelId, pinnedAt])
+}
+
+/// A link preview of one URL in a message's text, filled in the background after a send or an edit (src/embeds).
+/// CHECKs in the migration bound every text column (the code truncates first).
+model MessageEmbed {
+  id          String   @id @default(uuid()) @db.Uuid
+  messageId   String   @db.Uuid
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  /// The normalised href as found in the text (what the card links to).
+  url         String
+  /// Where the last redirect landed.
+  finalUrl    String?
+  siteName    String?
+  title       String?
+  description String?
+  /// Random hex; the thumbnail object is `embeds/<thumbHash>` in storage. Null = no thumbnail.
+  thumbHash   String?
+  /// Order of the URL in the text (0..2).
+  position    Int
+  createdAt   DateTime @default(now())
+
+  @@unique([messageId, url])
+}
+
+/// A `<@userId>` in the text that points at someone who may read the message (checked on write; the rest stays inert text).
+model MessageMention {
+  messageId String  @db.Uuid
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String  @db.Uuid
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
+  @@index([userId])
+}
+
+/// One user's emoji on one message (a single Unicode emoji, validated by the route).
+model Reaction {
+  messageId String   @db.Uuid
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji     String
+  createdAt DateTime @default(now())
+
+  @@id([messageId, userId, emoji])
 }
 
 /// A guild's @everyone role has id = guildId and position 0 (CHECK in the migration); every member has it implicitly.
@@ -195,6 +295,36 @@ model ChannelOverwrite {
   @@index([roleId])
 }
 
+/// A channel overwrite for one member. Composite FKs keep it inside one guild and delete it with the channel or
+/// the membership; CHECK in the migration: a bit is never both allowed and denied.
+model ChannelMemberOverwrite {
+  guildId   String  @db.Uuid
+  channelId String  @db.Uuid
+  userId    String  @db.Uuid
+  allow     Int
+  deny      Int
+  channel   Channel @relation(fields: [guildId, channelId], references: [guildId, id], onDelete: Cascade)
+  member    Member  @relation(fields: [guildId, userId], references: [guildId, userId], onDelete: Cascade)
+
+  @@id([channelId, userId])
+  @@index([guildId, userId])
+}
+
+/// A user banned from a guild (member or not): no invite lets them back in. The reason is for moderators only.
+model GuildBan {
+  guildId    String   @db.Uuid
+  guild      Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  userId     String   @db.Uuid
+  user       User     @relation("Banned", fields: [userId], references: [id], onDelete: Cascade)
+  bannedById String?  @db.Uuid // null once the moderator's account is gone (the ban stays)
+  bannedBy   User?    @relation("BanIssuer", fields: [bannedById], references: [id], onDelete: SetNull)
+  reason     String? // CHECK 1..200 characters in the migration
+  createdAt  DateTime @default(now())
+
+  @@id([guildId, userId])
+  @@index([userId])
+}
+
 enum FriendStatus {
   PENDING
   ACCEPTED
@@ -226,20 +356,45 @@ model Block {
   @@index([blockedId])
 }
 
-/// Two participants, stored as userLowId < userHighId (CHECK) so get-or-create cannot race into two channels.
+enum DmKind {
+  PAIR
+  GROUP
+}
+
+/// A PAIR has both userLowId < userHighId (CHECK) so get-or-create cannot race into two channels; a GROUP has
+/// neither (CHECK) and a name/owner. Membership of BOTH kinds is the DmParticipant table (a trigger fills it for
+/// every PAIR insert, so older code that only writes the pair columns stays consistent).
 model DmChannel {
-  id            String       @id @default(uuid()) @db.Uuid
-  userLowId     String       @db.Uuid
-  userLow       User         @relation("DmLow", fields: [userLowId], references: [id], onDelete: Cascade)
-  userHighId    String       @db.Uuid
-  userHigh      User         @relation("DmHigh", fields: [userHighId], references: [id], onDelete: Cascade)
-  createdAt     DateTime     @default(now())
+  id            String          @id @default(uuid()) @db.Uuid
+  kind          DmKind          @default(PAIR)
+  userLowId     String?         @db.Uuid
+  userLow       User?           @relation("DmLow", fields: [userLowId], references: [id], onDelete: Cascade)
+  userHighId    String?         @db.Uuid
+  userHigh      User?           @relation("DmHigh", fields: [userHighId], references: [id], onDelete: Cascade)
+  ownerId       String?         @db.Uuid // GROUP only; may remove others, passes on when they leave
+  owner         User?           @relation("DmOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  name          String? // GROUP only, <= 100 characters (CHECK)
+  iconHash      String? // GROUP only, reserved (no upload route yet)
+  createdAt     DateTime        @default(now())
   lastMessageAt DateTime? // set with each message insert; orders GET /dms
+  participants  DmParticipant[]
   messages      Message[]
   attachments   Attachment[]
+  readStates    ReadState[]
 
   @@unique([userLowId, userHighId])
   @@index([userHighId])
+}
+
+model DmParticipant {
+  dmChannelId String    @db.Uuid
+  dmChannel   DmChannel @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
+  userId      String    @db.Uuid
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt    DateTime  @default(now())
+
+  @@id([dmChannelId, userId])
+  @@index([userId])
 }
 
 enum AttachmentStatus {
@@ -268,4 +423,87 @@ model Attachment {
 
   @@index([messageId])
   @@index([uploaderId, status])
+}
+
+/// A pending avatar / banner / guild icon upload (kind `icon` has a guildId). Deleted by `complete`; stale ones are swept.
+model ProfileUpload {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind        String // ImageKind in @loop/shared (CHECK in DB)
+  guildId     String?  @db.Uuid
+  guild       Guild?   @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  contentType String
+  size        Int
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+/// How far a user has read one conversation. Exactly one of channelId / dmChannelId (CHECK in the migration), each
+/// with its own partial unique index with the user, so the model has a plain id and is written with raw upserts
+/// (messages/read-state.ts). Unread and mention counts are computed from messages after lastReadSeq.
+model ReadState {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String     @db.Uuid
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channelId   String?    @db.Uuid
+  channel     Channel?   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  dmChannelId String?    @db.Uuid
+  dmChannel   DmChannel? @relation(fields: [dmChannelId], references: [id], onDelete: Cascade)
+  lastReadSeq BigInt
+  updatedAt   DateTime   @default(now())
+
+  @@index([channelId])
+  @@index([dmChannelId])
+}
+
+/// One moderation / admin change in a guild (src/guilds/audit.ts). `metadata` follows AUDIT_META in @loop/shared
+/// (CHECK <= 1 KB in the migration); never message content or secrets. Kept 90 days (hourly sweep in server.ts).
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  guildId      String   @db.Uuid
+  guild        Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  actorId      String?  @db.Uuid // null once the account is gone (the entry stays)
+  actor        User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action       String
+  targetUserId String?  @db.Uuid
+  targetUser   User?    @relation("AuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  targetId     String? // role / channel / thread / AutoMod rule id, as text
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now())
+
+  @@index([guildId, createdAt(sort: Desc), id])
+  @@index([createdAt])
+}
+
+/// A keyword filter (src/guilds/automod.ts); at most 5 per guild, 1..100 keywords (CHECKs in the migration).
+model AutoModRule {
+  id          String   @id @default(uuid()) @db.Uuid
+  guildId     String   @db.Uuid
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  name        String
+  enabled     Boolean  @default(true)
+  keywords    String[]
+  createdById String?  @db.Uuid
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([guildId])
+}
+
+/// A server mute / deafen set by a moderator (src/voice/routes.ts). Lasts until lifted or until the membership goes
+/// (composite FK cascade); the voice token and voice.enforce take it off the member's channel rights.
+model VoiceModState {
+  guildId      String   @db.Uuid
+  userId       String   @db.Uuid
+  member       Member   @relation(fields: [guildId, userId], references: [guildId, userId], onDelete: Cascade)
+  serverMute   Boolean  @default(false)
+  serverDeafen Boolean  @default(false)
+  setById      String?  @db.Uuid
+  setBy        User?    @relation(fields: [setById], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+
+  @@id([guildId, userId])
 }

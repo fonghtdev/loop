@@ -10,7 +10,7 @@ import { clampVolume, effectiveVolume, pruneWatching, subscriptionChanges } from
 import { noiseConfig, reasonOf, type NoiseLevel } from "./noise";
 import { createSpeechDetector, type LevelProbe, type TapAudio } from "./speech-level";
 import type { SoundKind } from "./sounds";
-import { encodeDeafened, parseDeafened } from "./voice-flags";
+import { encodeFlags, parseFlags } from "./voice-flags";
 import type { Participant } from "./voice-presence";
 
 /** What a session is joined to: a guild voice channel or a DM call. `name` is for the voice bar. */
@@ -48,6 +48,9 @@ export type VoiceState = {
   /** What the running share is (source, quality, sound, name for the panel card); null exactly when `screenEnabled` is false. */
   stream: ShareChoice | null;
   deafened: boolean;
+  /** A moderator's server mute / deafen of us in this channel (token, then `voice:moderated`); LiveKit enforces it, this explains it. */
+  serverMuted: boolean;
+  serverDeafened: boolean;
   /** The microphone state to restore on undeafen. */
   micBeforeDeafen: boolean;
   /** Why the mic, camera or screen share could not start (permission denied), shown in the bar. */
@@ -88,7 +91,7 @@ export type NoiseProcessor = TrackProcessor<Track.Kind.Audio, AudioProcessorOpti
 /** The microphone cleaning: the chosen level, and the processor for it (null = none; `onFail` is told when it cannot start). */
 export type NoiseDeps = { level: () => NoiseLevel; processor: (level: NoiseLevel, onFail: (reason?: string) => void) => NoiseProcessor | null };
 
-type TokenResponse = { token: string; url: string; canSpeak: boolean; canVideo: boolean; canStream: boolean };
+type TokenResponse = { token: string; url: string; canSpeak: boolean; canVideo: boolean; canStream: boolean; serverMuted?: boolean; serverDeafened?: boolean };
 type Deps = {
   request: <T>(method: "POST", path: string, body?: unknown) => Promise<T>;
   createRoom: () => RoomLike;
@@ -156,6 +159,8 @@ const RESET: Omit<VoiceState, "sessionId" | "notice"> = {
   screenEnabled: false,
   stream: null,
   deafened: false,
+  serverMuted: false,
+  serverDeafened: false,
   micBeforeDeafen: false,
   mediaNote: null,
   participants: [],
@@ -200,7 +205,8 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     const screen = p.getTrackPublication("screen_share");
     // someone who may not speak has no microphone state to show; for everyone else a missing or muted track is "mic off"
     const micOff = rightsOf(p.permissions ?? { canPublish: true, canPublishSources: [] }).canSpeak && (!mic || mic.isMuted);
-    return { userId: p.identity, username: p.name || p.identity, isLocal, speaking: speaking.has(p.identity) || measured.has(p.identity), video: cam?.track && !cam.isMuted ? cam.track : undefined, screen: screen?.track && !screen.isMuted ? screen.track : undefined, sharing: !!screen, micOff, deafened: parseDeafened(p.metadata) };
+    const flags = parseFlags(p.metadata);
+    return { userId: p.identity, username: p.name || p.identity, isLocal, speaking: speaking.has(p.identity) || measured.has(p.identity), video: cam?.track && !cam.isMuted ? cam.track : undefined, screen: screen?.track && !screen.isMuted ? screen.track : undefined, sharing: !!screen, micOff, deafened: flags.deafened, watching: flags.watching };
   };
   /** One sound per share that really started / ended since the last look. Our own share stays "on" while a quality / source change re-captures it. */
   const streamSounds = (participants: Participant[]) => {
@@ -545,8 +551,9 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     for (const e of ["trackPublished", "trackUnpublished"]) on(e, publicationsChanged);
   }
 
-  /** Tells the others (cosmetically, see voice-flags) whether we are deafened; a refusal (older server) is harmless. */
-  const publishDeafened = (on: boolean) => void room?.localParticipant.setMetadata(encodeDeafened(on)).catch(() => undefined);
+  /** Tells the others (cosmetically, see voice-flags) whether we are deafened and whose streams we watch; a refusal (older server) is harmless. */
+  const publishFlags = () => void room?.localParticipant.setMetadata(encodeFlags(get())).catch(() => undefined);
+  store.subscribe((s, prev) => (s.deafened !== prev.deafened || s.watching.join() !== prev.watching.join()) && publishFlags());
 
   function leave() {
     if (get().status === "idle") return;
@@ -581,7 +588,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
       fail(id, t("voice.errors.origin"));
       return false;
     }
-    set({ status: "connecting", canSpeak: tok.canSpeak, canVideo: tok.canVideo, canStream: tok.canStream });
+    set({ status: "connecting", canSpeak: tok.canSpeak, canVideo: tok.canVideo, canStream: tok.canStream, serverMuted: !!tok.serverMuted, serverDeafened: !!tok.serverDeafened });
     const r = createRoom();
     room = r;
     wire(r, id);
@@ -653,12 +660,10 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
         sound("mute", false); // heard before the hearing goes; deafened = silent for every other sound
         sink.setMuted(true);
         set({ deafened: true, micBeforeDeafen: s.micEnabled });
-        publishDeafened(true);
         applyStreamAudio();
         if (s.micEnabled) await setMic(false);
       } else {
         sink.setMuted(false);
-        publishDeafened(false);
         const restore = s.micBeforeDeafen;
         set({ deafened: false, micBeforeDeafen: false });
         sound("unmute");
@@ -677,6 +682,18 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     },
     /** The noise level changed in settings: the live session follows at once (queued behind mic jobs, like a device change). */
     applyNoise: () => serial(moveNoise),
+    /**
+     * `voice:moderated`: a moderator changed our server mute / deafen. Applies only to the voice channel we are in (an
+     * old event or another channel changes nothing); returns the state before, or null when ignored. The rights
+     * themselves arrive from LiveKit (ParticipantPermissionsChanged -> canSpeak), this only says why.
+     */
+    moderated({ channelId, serverMute, serverDeafen }: { channelId: string; serverMute: boolean; serverDeafen: boolean }) {
+      const s = get();
+      if (s.target?.kind !== "channel" || s.target.id !== channelId || !isActive(s.status)) return null;
+      const before = { serverMuted: s.serverMuted, serverDeafened: s.serverDeafened };
+      set({ serverMuted: serverMute, serverDeafened: serverDeafen });
+      return before;
+    },
     notify: (notice: string) => set({ notice }),
     dismissNotice: () => set({ notice: null }),
   };

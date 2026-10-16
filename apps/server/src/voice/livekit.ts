@@ -10,7 +10,8 @@ declare module "fastify" {
 export const TOKEN_TTL_SECONDS = 600;
 const REQUEST_TIMEOUT_SECONDS = 5;
 
-export type Rights = { speak: boolean; video: boolean; stream: boolean };
+/** `listen` = may subscribe to others' tracks (false only while server-deafened). */
+export type Rights = { speak: boolean; video: boolean; stream: boolean; listen: boolean };
 // No participant count: LiveKit refreshes Room.numParticipants only every few seconds; `participants()` is live.
 export type RoomInfo = { name: string; maxParticipants: number };
 export type Seat = Rights & { userId: string; username: string; sharing: boolean };
@@ -66,6 +67,7 @@ export function createLivekit({ url, apiUrl, apiKey, apiSecret }: Env["livekit"]
           speak: allows(TrackSource.MICROPHONE),
           video: allows(TrackSource.CAMERA),
           stream: allows(TrackSource.SCREEN_SHARE),
+          listen: p.permission?.canSubscribe ?? true,
           sharing: p.tracks.some((t) => t.source === TrackSource.SCREEN_SHARE),
         };
       });
@@ -77,7 +79,7 @@ export function createLivekit({ url, apiUrl, apiKey, apiSecret }: Env["livekit"]
       token.addGrant({
         roomJoin: true,
         room,
-        canSubscribe: true,
+        canSubscribe: rights.listen,
         canPublishData: false,
         // ponytail: cosmetic only. Clients publish their own deafen flag as participant metadata so others can draw the
         // headphones-off icon; never use it for a decision (a client may lie about its own icon). Not part of
@@ -89,12 +91,16 @@ export function createLivekit({ url, apiUrl, apiKey, apiSecret }: Env["livekit"]
       return token.toJwt();
     },
 
-    /** Applies at once on a live connection: LiveKit unpublishes what is no longer allowed. */
+    /**
+     * Applies at once on a live connection: LiveKit unpublishes what is no longer allowed. Without `listen` it stops
+     * forwarding every track to that participant within a few hundred ms and resumes when `listen` comes back (LiveKit
+     * 1.9.0; the client gets no unsubscribe event, measured in voice/moderation.test.ts by counting audio frames).
+     */
     setRights: (room: string, userId: string, rights: Rights) =>
       ignoreMissing(
         client.updateParticipant(room, userId, {
           permission: {
-            canSubscribe: true,
+            canSubscribe: rights.listen,
             canPublishData: false,
             canUpdateMetadata: true, // the permission-side name of the token's canUpdateOwnMetadata
             canPublish: sourcesOf(rights).length > 0,

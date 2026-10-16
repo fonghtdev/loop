@@ -132,7 +132,7 @@ describe("memberJoin and the welcome bot", () => {
     const { code } = (await call("POST", `/guilds/${guild.id}/invites`, owner.token, {})).json();
     await call("POST", `/invites/${code}/join`, newcomer.token);
     await until(() => joins.length === 1);
-    expect(joins).toEqual([{ guildId: guild.id, user: { id: newcomer.id, username: "newcomer", isBot: false } }]);
+    expect(joins).toEqual([{ guildId: guild.id, user: { id: newcomer.id, username: "newcomer", isBot: false, displayName: null, avatarHash: null } }]);
     await call("POST", `/invites/${code}/join`, newcomer.token); // joining again is no news
     await settle();
     expect(joins).toHaveLength(1);

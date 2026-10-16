@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { GuildPlayer, MAX_QUEUE, PAUSE_LIMIT_MS, type Connection } from "./player.js";
 import type { Track } from "./source.js";
 
-const track = (n: number): Track => ({ id: `id${n}`, title: `song ${n}`, duration: 1 });
+const track = (n: number): Track => ({ id: `id${n}`, title: `song ${n}`, duration: 1, source: "youtube", page: `https://www.youtube.com/watch?v=id${n}` });
 
 /** A connection whose playback ends when `finish()` is called, `stop()` is called, or with an error. */
 function fakeConn() {
@@ -13,7 +13,10 @@ function fakeConn() {
   const played: string[] = [];
   const conn = {
     played,
-    playPcm: vi.fn((_pcm: AsyncIterable<Buffer>) => {
+    playPcm: vi.fn((pcm: AsyncIterable<Buffer>) => {
+      void (async () => {
+        for await (const _ of pcm); // like the real connection, pull the audio
+      })().catch(() => {});
       return new Promise<void>((resolve, reject) => ((end = resolve), (fail = reject)));
     }),
     stop: vi.fn(() => end?.()),
@@ -26,21 +29,25 @@ function fakeConn() {
   return conn satisfies Connection & Record<string, unknown>;
 }
 
-function setup() {
+function setup(prefetch = false) {
   const conn = fakeConn();
   const opened: { track: Track; signal: AbortSignal }[] = [];
+  const warmed: { track: Track; signal: AbortSignal }[] = [];
   const source = {
     resolve: vi.fn(),
     open: (t: Track, signal: AbortSignal) => {
       opened.push({ track: t, signal });
       conn.played.push(t.id);
-      return (async function* () {})(); // these tests never read the audio
+      return (async function* () {
+        if (prefetch) yield Buffer.from([0]); // audible: the next track may be prepared
+      })();
     },
+    ...(prefetch && { prefetch: vi.fn((track: Track, signal: AbortSignal) => (warmed.push({ track, signal }), new Promise<void>(() => {}))) }),
   };
   const said: string[] = [];
   const onClose = vi.fn();
   const player = new GuildPlayer(conn, source as any, (t) => said.push(t), onClose);
-  return { conn, opened, said, onClose, player };
+  return { conn, opened, said, onClose, player, warmed, source };
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -249,5 +256,61 @@ describe("GuildPlayer", () => {
         vi.useRealTimers();
       }
     });
+  });
+});
+
+describe("GuildPlayer prefetch", () => {
+  it("prepares only the next track, only once it is audible, only one at a time, and never twice", async () => {
+    const { player, warmed, conn } = setup(true);
+    player.add(track(1));
+    player.add(track(2));
+    player.add(track(3));
+    await tick();
+    expect(warmed.map((w) => w.track.id)).toEqual(["id2"]); // not id3: the job for id2 is still running
+    await tick();
+    expect(warmed).toHaveLength(1); // more audio chunks do not start it again
+    conn.finish(); // track 2 starts: its job is cancelled, track 3 becomes next
+    await tick();
+    expect(warmed[0]!.signal.aborted).toBe(true);
+    expect(warmed.map((w) => w.track.id)).toEqual(["id2", "id3"]);
+  });
+
+  it("a track put in front with !next is prepared instead, and the displaced job is cancelled", async () => {
+    const { player, warmed } = setup(true);
+    player.add(track(1));
+    player.add(track(2));
+    await tick();
+    player.add(track(9), true);
+    await tick();
+    expect(warmed[0]!.signal.aborted).toBe(true);
+    expect(warmed.map((w) => w.track.id)).toEqual(["id2", "id9"]);
+  });
+
+  it("stop cancels the background job", async () => {
+    const { player, warmed } = setup(true);
+    player.add(track(1));
+    player.add(track(2));
+    await tick();
+    await player.stop();
+    expect(warmed[0]!.signal.aborted).toBe(true);
+  });
+
+  it("nothing is prepared when the queue is empty, or before anything plays; a source without prefetch is fine", async () => {
+    const a = setup(true);
+    a.player.add(track(1));
+    await tick();
+    expect(a.warmed).toEqual([]);
+    const b = setup();
+    b.player.add(track(1));
+    b.player.add(track(2));
+    await tick();
+    expect(b.conn.played).toEqual(["id1"]);
+  });
+
+  it("announces a fallback source next to the title", async () => {
+    const { player, said } = setup();
+    player.add({ ...track(1), source: "soundcloud" });
+    await tick();
+    expect(said).toEqual(["Đang phát: song 1 (SoundCloud)"]);
   });
 });

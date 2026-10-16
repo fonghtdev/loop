@@ -44,7 +44,8 @@ export function createStorage({ endpoint, region, bucket, accessKey, secretKey }
         signableHeaders: new Set(["content-type", "content-length"]),
       }),
 
-    presignGet: (Key: string, contentType: string, contentDisposition: string) =>
+    /** `contentType` undefined = serve the type the object was stored with. */
+    presignGet: (Key: string, contentType: string | undefined, contentDisposition: string) =>
       getSignedUrl(
         client,
         new GetObjectCommand({ Bucket, Key, ResponseContentType: contentType, ResponseContentDisposition: contentDisposition }),
@@ -83,6 +84,10 @@ export function createStorage({ endpoint, region, bucket, accessKey, secretKey }
         throw e;
       }
     },
+
+    /** Server-side upload of bytes the server itself verified (link preview thumbnails). */
+    put: (Key: string, body: Uint8Array, contentType: string) =>
+      client.send(new PutObjectCommand({ Bucket, Key, Body: body, ContentType: contentType })).then(() => undefined),
 
     /** Deleting a missing key is not an error. */
     remove: (Key: string) => client.send(new DeleteObjectCommand({ Bucket, Key })).then(() => undefined),

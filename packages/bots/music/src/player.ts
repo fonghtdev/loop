@@ -1,4 +1,4 @@
-import type { Track } from "./source.js";
+import { sourceTag, type Track } from "./source.js";
 
 export const MAX_QUEUE = 25;
 /** A pause that nobody ends would hold the voice channel (and a stalled download) forever. */
@@ -12,9 +12,12 @@ export interface Connection {
   on(event: "disconnect", listener: () => void): unknown;
 }
 export interface Source {
-  resolve(query: string): Promise<Track>;
+  /** `notify` reports a change of plan while it works (a source refuses us, so the next one is tried). */
+  resolve(query: string, notify?: (text: string) => void): Promise<Track>;
   /** PCM s16le mono 48 kHz; kills what it started when `signal` aborts or the consumer stops reading. */
   open(track: Track, signal: AbortSignal): AsyncIterable<Buffer>;
+  /** Gets a queued track ready (its stream URL) so it starts without a lookup; may be aborted. */
+  prefetch?(track: Track, signal: AbortSignal): Promise<void>;
 }
 
 /** Queue and playback loop of one guild. Leaves the channel and calls `onClose` when the queue runs dry, on `stop()` or when the connection drops. */
@@ -27,6 +30,8 @@ export class GuildPlayer {
   private paused = false;
   private release?: () => void;
   private pauseTimer?: ReturnType<typeof setTimeout>;
+  private warming?: { track: Track; ctl: AbortController };
+  private readonly warmed = new WeakSet<Track>();
 
   constructor(
     private readonly conn: Connection,
@@ -74,9 +79,25 @@ export class GuildPlayer {
   /** The source's audio, but it stops handing out chunks while paused (so playback starves and the download backs up) and wakes on resume / skip / stop. */
   private async *gated(pcm: AsyncIterable<Buffer>): AsyncGenerator<Buffer> {
     for await (const chunk of pcm) {
+      this.warm(); // the current track is audible, so now the next one may use the (tiny) CPU
       while (this.paused) await new Promise<void>((wake) => (this.release = wake));
       yield chunk;
     }
+  }
+
+  /** Gets the track at the front of the queue ready in the background: one at a time, each track once, dropped when it is not wanted any more. */
+  private warm() {
+    const next = this.pending[0];
+    if (!this.source.prefetch || !this.current || !next || this.warmed.has(next)) return;
+    this.warming?.ctl.abort(); // the front changed (`next` was used): the old one is no longer first in line
+    this.warmed.add(next);
+    const job = (this.warming = { track: next, ctl: new AbortController() });
+    void this.source.prefetch(next, job.ctl.signal).catch(() => {}).finally(() => this.warming === job && (this.warming = undefined));
+  }
+
+  private unwarm() {
+    this.warming?.ctl.abort();
+    this.warming = undefined;
   }
 
   /** Tracks ahead of the new one (0 = it plays now), or null when the queue is full. `next` puts it first in line instead of last. */
@@ -86,6 +107,7 @@ export class GuildPlayer {
     if (next) this.pending.unshift(track);
     else this.pending.push(track);
     if (!this.running) void this.run();
+    else if (next) this.warm();
     return ahead;
   }
 
@@ -107,7 +129,8 @@ export class GuildPlayer {
     while (!this.closed && (this.current = this.pending.shift())) {
       const track = this.current;
       const ctl = (this.abort = new AbortController());
-      this.say(`Đang phát: ${track.title}`);
+      if (this.warming?.track === track) this.unwarm(); // it plays now: let playing do the lookup
+      this.say(`Đang phát: ${track.title}${sourceTag(track)}`);
       try {
         await this.conn.playPcm(this.gated(this.source.open(track, ctl.signal)));
       } catch (e) {
@@ -125,6 +148,7 @@ export class GuildPlayer {
     this.closed = true;
     this.pending = [];
     this.current = undefined;
+    this.unwarm();
     this.cut();
     this.onClose();
     await this.conn.leave().catch(() => {});

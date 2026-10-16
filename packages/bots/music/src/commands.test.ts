@@ -17,16 +17,28 @@ describe("parseCommand", () => {
 describe("classify", () => {
   it("takes links on the known YouTube hosts", () => {
     for (const url of ["https://www.youtube.com/watch?v=dQw4w9WgXcQ", "https://youtu.be/dQw4w9WgXcQ", "http://m.youtube.com/watch?v=x", "https://music.youtube.com/watch?v=x", "https://youtube.com/watch?v=x"])
-      expect(classify(url)).toEqual({ url });
+      expect(classify(url)).toEqual({ url, source: "youtube" });
   });
 
   it("keeps a link with &list= as one link (the player asks for a single video)", () => {
     const url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL123";
-    expect(classify(url)).toEqual({ url });
+    expect(classify(url)).toEqual({ url, source: "youtube" });
   });
 
-  it("treats look-alike hosts, other schemes and other sites as a search", () => {
-    for (const q of ["https://youtube.com.evil.com/watch?v=x", "https://evil.com/?u=youtube.com", "https://notyoutube.com/x", "javascript:alert(1)", "file:///etc/passwd", "ftp://youtube.com/x", "https://example.com/a.mp3", "lofi beats", "https://user@evil.com@youtube.com.evil.com/"])
+  it("SoundCloud links are recognised by host; any other public http(s) link is passed on as a plain link", () => {
+    for (const url of ["https://soundcloud.com/a/b", "https://on.soundcloud.com/xyz", "https://m.soundcloud.com/a/b"]) expect(classify(url)).toEqual({ url, source: "soundcloud" });
+    for (const url of ["https://example.com/a.mp3", "http://radio.example.org/stream", "https://youtube.com.evil.com/watch?v=x", "https://notyoutube.com/x"])
+      expect(classify(url)).toEqual({ url, source: "url" });
+  });
+
+  it("never fetches the host's own network or other schemes: those stay a search", () => {
+    for (const q of ["http://127.0.0.1:8080/x", "http://10.0.0.5/a.mp3", "http://[::1]/a", "http://localhost/a", "http://redis/a", "https://db.internal/a", "https://printer.local/a", "https://user:pw@example.com/a", "https://user@evil.com@youtube.com.evil.com/", "javascript:alert(1)", "file:///etc/passwd", "ftp://youtube.com/x"])
       expect(classify(q)).toEqual({ search: q });
+  });
+
+  it("`sc <text>` searches SoundCloud only; plain text is a normal search; `sc` alone or inside a word is not the switch", () => {
+    expect(classify("sc lofi beats")).toEqual({ search: "lofi beats", only: "soundcloud" });
+    expect(classify("SC lofi")).toEqual({ search: "lofi", only: "soundcloud" });
+    for (const q of ["lofi beats", "sc", "scarface theme", "my sc song"]) expect(classify(q)).toEqual({ search: q });
   });
 });

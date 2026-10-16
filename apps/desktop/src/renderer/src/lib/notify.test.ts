@@ -12,6 +12,7 @@ const base: NotifyDecision = {
   blocked: false,
   settings: { notifications: true },
   myStatus: "online",
+  mentioned: false,
 };
 const decide = (over: Partial<NotifyDecision>) => shouldNotify({ ...base, ...over });
 
@@ -40,8 +41,26 @@ describe("shouldNotify", () => {
     expect(decide({ myStatus: "dnd", kind: "call" })).toBe(false);
     for (const myStatus of ["online", "idle", "invisible"] as const) expect(decide({ myStatus })).toBe(true);
   });
-  it("never for a guild channel (there are no mentions yet)", () => {
+  it("an ordinary channel message never notifies", () => {
     expect(decide({ conversation: "channel:c1" })).toBe(false);
+    expect(decide({ conversation: "channel:c1", windowFocused: true, openConversation: "dm:d1" })).toBe(false);
+  });
+  it("a channel message that mentions me notifies, with the usual silencers", () => {
+    const channel = { conversation: "channel:c1", mentioned: true } as const;
+    expect(decide(channel)).toBe(true);
+    expect(decide({ ...channel, windowFocused: true, openConversation: "channel:c2" })).toBe(true);
+    expect(decide({ ...channel, windowFocused: true, openConversation: "channel:c1" })).toBe(false); // looking at it
+    expect(decide({ ...channel, myStatus: "dnd" })).toBe(false);
+    expect(decide({ ...channel, isOwn: true })).toBe(false);
+    expect(decide({ ...channel, blocked: true })).toBe(false);
+    expect(decide({ ...channel, settings: { notifications: false } })).toBe(false);
+  });
+  it("a mention flag never turns a call into a channel notification", () => {
+    expect(decide({ conversation: "channel:c1", mentioned: true, kind: "call" })).toBe(false);
+  });
+  it("a DM is unaffected by the flag", () => {
+    expect(decide({ mentioned: true })).toBe(true);
+    expect(decide({ mentioned: true, windowFocused: true, openConversation: "dm:d1" })).toBe(false);
   });
   it("an incoming call follows the same rules", () => {
     expect(decide({ kind: "call" })).toBe(true);
@@ -63,12 +82,24 @@ const dm = (over: Partial<Message>): Message => ({
   ...over,
 });
 
+const U1 = "00000000-0000-4000-8000-00000000000a";
+const U2 = "00000000-0000-4000-8000-00000000000b";
+
 describe("notice builders", () => {
   it("a message: sender as title, text as body (one line, capped); a file-only message says so", () => {
     expect(messageNotice(dm({}))).toEqual({ conversationKey: "dm:0a1b2c3d-0000-4000-8000-000000000001", title: "Ngọc", body: "xin chào", kind: "message" });
     expect(messageNotice(dm({ content: "a\n\n  b" })).body).toBe("a b");
     expect(messageNotice(dm({ content: "x".repeat(500) })).body).toHaveLength(200);
     expect(messageNotice(dm({ content: "  " })).body).toBe("đã gửi một tệp");
+  });
+  it("a channel message notice points at its channel and reads mentions as names", () => {
+    const m = dm({ dmChannelId: null, channelId: "0a1b2c3d-0000-4000-8000-0000000000c1", content: `hi <@${U1}> and <@${U2}>` });
+    expect(messageNotice(m, (id) => (id === U1 ? "Ann" : undefined))).toEqual({
+      conversationKey: "channel:0a1b2c3d-0000-4000-8000-0000000000c1",
+      title: "Ngọc",
+      body: `hi @Ann and <@${U2}>`,
+      kind: "message",
+    });
   });
   it("a call: the caller's name and a fixed line", () => {
     expect(callNotice("d1", "Ngọc", false)).toEqual({ conversationKey: "call:d1", title: "Ngọc", body: "Cuộc gọi đến", kind: "call" });

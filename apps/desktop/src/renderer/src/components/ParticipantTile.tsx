@@ -1,5 +1,6 @@
 import { useEffect, useRef, type CSSProperties } from "react";
 import { t } from "../i18n/t";
+import { useDisplayName } from "../lib/identity-hooks";
 import { move, spring } from "../lib/motion";
 import type { Tile } from "../lib/voice-grid";
 import { Avatar } from "./Avatar";
@@ -28,6 +29,7 @@ export function Video({ source, fit = "cover" }: { source: NonNullable<Tile["p"]
  */
 export function ParticipantTile({ tile, guildId, onGone, className = "" }: { tile: Tile; guildId: string | null; onGone: (userId: string) => void; className?: string }) {
   const { p, state } = tile;
+  const name = useDisplayName(p.userId, p.username);
   const el = useRef<HTMLLIElement>(null);
   const entered = useRef(state === "enter");
 
@@ -58,14 +60,14 @@ export function ParticipantTile({ tile, guildId, onGone, className = "" }: { til
         <Video source={p.video} />
       ) : (
         <div aria-hidden="true" className="grid h-full place-items-center pb-[8cqw]">
-          <Avatar id={p.userId} name={p.username} speaking={!!p.speaking} className="size-[clamp(36px,26cqw,88px)] rounded-full text-[clamp(13px,9cqw,30px)]" />
+          <Avatar id={p.userId} name={name} speaking={!!p.speaking} className="size-[clamp(36px,26cqw,88px)] rounded-full text-[clamp(13px,9cqw,30px)]" />
         </div>
       )}
       <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-1 rounded-panel opacity-(--lv) shadow-[inset_0_0_0_2px_var(--color-cosmic-300),inset_0_0_36px_-4px_var(--color-cosmic-glow)] transition-opacity duration-140 ease-(--ease-out-soft)" />
       <div className="absolute bottom-2 left-2 z-1 flex max-w-[calc(100%-16px)] items-center gap-1.5">
-        <Tooltip label={p.username}>
+        <Tooltip label={name}>
           <UserCardTrigger user={{ id: p.userId, username: p.username }} guildId={guildId} className="min-w-0 truncate rounded-control bg-surface-0/80 px-2.5 py-1 text-caption font-medium text-ink hover:bg-surface-0">
-            {p.username}
+            {name}
             {p.isLocal && ` ${t("voice.you")}`}
           </UserCardTrigger>
         </Tooltip>

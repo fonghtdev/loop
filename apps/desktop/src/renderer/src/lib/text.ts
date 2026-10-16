@@ -1,19 +1,10 @@
+import { trimUrlTrailing as trimTrailing } from "@loop/shared";
 import { isSafeExternalUrl } from "../../../shared/url";
 
 export type TextPart = { text: string; href?: string };
 
 // Only http(s) candidates are ever considered, so javascript:, data:, file: and friends stay plain text.
 const URL_CANDIDATE = /\bhttps?:\/\/[^\s<>"]+/gi;
-const TRAILING = /[.,;:!?'"…)\]}]$/;
-
-/** Sentence punctuation after a link is not part of it; a ")" stays when the link opened one (wiki links). */
-function trimTrailing(url: string): string {
-  while (TRAILING.test(url)) {
-    if (url.endsWith(")") && (url.match(/\(/g)?.length ?? 0) >= (url.match(/\)/g)?.length ?? 0)) break;
-    url = url.slice(0, -1);
-  }
-  return url;
-}
 
 /** Plain text split into text and link parts (rendered as React text, never as HTML). */
 export function linkify(text: string): TextPart[] {

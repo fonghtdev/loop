@@ -85,6 +85,15 @@ describe("reduceGuild (realtime events, applied by id)", () => {
     const held = data([{ ...ch("n", 3, "A"), overwrites: [{ roleId: "r", allow: 1, deny: 0 }] as never }]);
     expect(reduceGuild(held, e).channels[0]!.overwrites).toHaveLength(1);
   });
+  it("channel:updated merges the new name and topic, keeps overwrites and position, and is idempotent", () => {
+    const held = data([{ ...ch("n", 3, "A"), overwrites: [{ roleId: "r", allow: 1, deny: 0 }] as never }]);
+    const e = { type: "channel:updated", channel: { ...ch("n", 3, "A"), name: "moi", topic: "chủ đề" } } as const;
+    const once = reduceGuild(held, e);
+    expect(once.channels[0]).toMatchObject({ name: "moi", topic: "chủ đề", position: 3 });
+    expect(once.channels[0]!.overwrites).toHaveLength(1);
+    expect(reduceGuild(once, e).channels).toEqual(once.channels);
+    expect(reduceGuild(once, { ...e, channel: { ...e.channel, topic: null } }).channels[0]!.topic).toBeNull();
+  });
   it("category:created / updated upsert by id (a late 'created' after 'updated' does not duplicate)", () => {
     let d = reduceGuild(data([]), { type: "category:created", category: cat("C", 2, "Mới") });
     d = reduceGuild(d, { type: "category:updated", category: cat("C", 2, "Đổi tên") });
@@ -125,6 +134,16 @@ describe("reduceGuild (realtime events, applied by id)", () => {
 
 describe("applyGuildEvent (the cache)", () => {
   const key = ["guild", G];
+  it("roles:updated refetches only the guild's roles (the event carries none)", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(key, data([]));
+    qc.setQueryData([...key, "roles"], []);
+    qc.setQueryData([...key, "members"], []);
+    applyGuildEvent(qc, { type: "roles:updated", guildId: G });
+    expect(qc.getQueryState([...key, "roles"])!.isInvalidated).toBe(true);
+    expect(qc.getQueryState([...key, "members"])!.isInvalidated).toBe(false);
+    expect(qc.getQueryState(key)!.isInvalidated).toBe(false);
+  });
   it("updates the loaded guild in place, leaves an unloaded one alone", () => {
     const qc = new QueryClient();
     applyGuildEvent(qc, { type: "category:created", category: cat("C", 2) });
@@ -141,6 +160,19 @@ describe("applyGuildEvent (the cache)", () => {
     applyGuildEvent(qc, { type: "channel:created", channel: ch("fresh", 1, "A") });
     expect(qc.getQueryState(key)!.isInvalidated).toBe(true);
     expect(ids(qc.getQueryData<GuildData>(key)!.channels)).toEqual(["known", "fresh"]);
+  });
+});
+
+describe("applyGuildEvent: channel:updated", () => {
+  it("updates a known channel in place without a refetch; an unknown one refetches", () => {
+    const qc = new QueryClient();
+    const key = ["guild", G];
+    qc.setQueryData(key, data([ch("known", 0, "A")]));
+    applyGuildEvent(qc, { type: "channel:updated", channel: { ...ch("known", 0, "A"), name: "moi" } });
+    expect(qc.getQueryData<GuildData>(key)!.channels[0]!.name).toBe("moi");
+    expect(qc.getQueryState(key)!.isInvalidated).toBe(false);
+    applyGuildEvent(qc, { type: "channel:updated", channel: ch("fresh", 1, "A") });
+    expect(qc.getQueryState(key)!.isInvalidated).toBe(true);
   });
 });
 

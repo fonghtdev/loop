@@ -31,7 +31,7 @@ describe("open a DM", () => {
     await befriend(app, a, b);
     const first = await call("POST", "/dms", a.token, { userId: b.id });
     expect(first.statusCode).toBe(201);
-    expect(first.json()).toEqual({ id: expect.any(String), user: { id: b.id, username: "bob", online: false, status: "offline" } });
+    expect(first.json()).toEqual({ id: expect.any(String), user: { id: b.id, username: "bob", displayName: null, avatarHash: null, online: false, status: "offline" } });
     const again = await call("POST", "/dms", a.token, { userId: b.id });
     const theirs = await call("POST", "/dms", b.token, { userId: a.id });
     expect([again.statusCode, theirs.statusCode]).toEqual([200, 200]);
@@ -89,7 +89,7 @@ describe("messages", () => {
     expect(res.statusCode).toBe(201);
     const msg = res.json();
     expect(msg).toMatchObject({ channelId: null, dmChannelId: dm.id, content: "hi", editedAt: null, author: { id: a.id, username: "alice" } });
-    expect(Object.keys(msg.author).sort()).toEqual(["id", "isBot", "username"]);
+    expect(Object.keys(msg.author).sort()).toEqual(["avatarHash", "displayName", "id", "isBot", "username"]);
     expect(typeof msg.seq).toBe("string");
     await send(b, url, "yo");
     expect((await history(b, url)).map((m) => m.content)).toEqual(["hi", "yo"]);

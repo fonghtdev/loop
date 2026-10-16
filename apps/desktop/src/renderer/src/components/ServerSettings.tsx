@@ -7,17 +7,27 @@ import { errorMessage } from "../lib/errors";
 import { useNav } from "../lib/nav";
 import { useGuild, useMembers, usePermissions, useRoles } from "../lib/queries";
 import { useTabIndicator } from "../lib/tabs-hooks";
+import { AuditPanel } from "./AuditPanel";
+import { AutoModPanel } from "./AutoModPanel";
+import { BansPanel } from "./BansPanel";
 import { DangerPanel } from "./DangerPanel";
+import { InvitesPanel } from "./InvitesPanel";
 import { MembersPanel } from "./MembersPanel";
+import { OverviewPanel } from "./OverviewPanel";
 import { OverwritesPanel } from "./OverwritesPanel";
 import { RolesPanel } from "./RolesPanel";
 import { LoadError, Skeleton } from "./States";
 import { Tooltip } from "./Tooltip";
 
 const TAB_LABELS: Record<SettingsTab, MessageKey> = {
+  overview: "settings.tab.overview",
   roles: "settings.tab.roles",
   members: "settings.tab.members",
+  bans: "settings.tab.bans",
+  invites: "settings.tab.invites",
   overwrites: "settings.tab.overwrites",
+  automod: "settings.tab.automod",
+  audit: "settings.tab.audit",
   danger: "settings.tab.danger",
 };
 
@@ -109,9 +119,14 @@ export function ServerSettings({ guildId }: { guildId: string }) {
       <div id="settings-panel" role="tabpanel" aria-labelledby={tab ? `settings-tab-${tab}` : undefined} className="min-h-0 flex-1 overflow-y-auto p-4">
         {failed && <LoadError message={errorMessage(failed.error)} onRetry={() => queries.forEach((q) => void q.refetch())} />}
         {!failed && (!ctx || !tab) && <Skeleton rows={6} />}
+        {ctx && tab === "overview" && <OverviewPanel ctx={ctx} />}
         {ctx && tab === "roles" && <RolesPanel ctx={ctx} />}
         {ctx && tab === "members" && <MembersPanel ctx={ctx} />}
+        {ctx && tab === "bans" && <BansPanel ctx={ctx} />}
+        {ctx && tab === "invites" && <InvitesPanel ctx={ctx} />}
         {ctx && tab === "overwrites" && <OverwritesPanel ctx={ctx} />}
+        {ctx && tab === "automod" && <AutoModPanel ctx={ctx} />}
+        {ctx && tab === "audit" && <AuditPanel ctx={ctx} />}
         {ctx && tab === "danger" && <DangerPanel ctx={ctx} />}
       </div>
     </section>

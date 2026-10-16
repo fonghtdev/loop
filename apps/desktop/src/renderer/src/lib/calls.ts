@@ -3,7 +3,7 @@ import { t } from "../i18n/t";
 import type { Voice } from "./voice";
 
 export type CallEvent =
-  | { type: "incoming"; dmChannelId: string; from: { id: string; username: string }; video: boolean }
+  | { type: "incoming"; dmChannelId: string; from: { id: string; username: string; displayName?: string | null; avatarHash?: string | null }; video: boolean }
   | { type: "declined"; dmChannelId: string; by: { id: string } }
   | { type: "ended"; dmChannelId: string };
 
@@ -23,6 +23,8 @@ export const FRESH_CALL_MS = 3_000;
 type Deps = {
   voice: Pick<Voice, "store" | "joinDm" | "leave" | "notify">;
   request: (method: "POST", path: string) => Promise<unknown>;
+  /** A group DM: one person declining does not end the call for the caller (the others may still answer). */
+  isGroup?: (dmId: string) => boolean;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (id: unknown) => void;
@@ -33,7 +35,7 @@ type Deps = {
  * picked up) and the voice session itself (a connected DM session = active). idle = none of them.
  * Events are scoped by DM id and ignored when they do not belong to what is on screen.
  */
-export function createCalls({ voice, request, now = Date.now, setTimer = setTimeout, clearTimer = (id) => clearTimeout(id as never) }: Deps) {
+export function createCalls({ voice, request, isGroup = () => false, now = Date.now, setTimer = setTimeout, clearTimer = (id) => clearTimeout(id as never) }: Deps) {
   const store = createStore<{ incoming: Incoming | null; ringing: Ringing | null }>(() => ({ incoming: null, ringing: null }));
   const get = store.getState;
   let timer: unknown;
@@ -100,7 +102,7 @@ export function createCalls({ voice, request, now = Date.now, setTimer = setTime
       }
       if (e.type === "declined") {
         const r = get().ringing;
-        if (r?.dmId !== e.dmChannelId) return;
+        if (r?.dmId !== e.dmChannelId || isGroup(e.dmChannelId)) return;
         stopRinging();
         voice.leave();
         return voice.notify(t("call.declined", { name: r.name }));

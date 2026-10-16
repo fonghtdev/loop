@@ -1,6 +1,7 @@
 import { hasPermission, Permission } from "@loop/shared";
 import { createStore } from "zustand/vanilla";
 import { canHandOutRole, canManageMember, callerChannelBits, type SettingsCtx } from "./admin";
+import type { Profile } from "./identity";
 import type { Member, Role } from "./permissions";
 import { NEUTRAL_ROLE_COLOR } from "./role-colors";
 import type { FriendsData } from "./social";
@@ -59,6 +60,17 @@ export function cardActions(i: { selfId: string; userId: string; isBot: boolean;
   return { message, friend: friend[i.relation], block: "block" };
 }
 
+// ---- who the person says they are ----
+/**
+ * What the head of the card shows. The fetched profile wins over what the store knew (it also has the bio); with neither
+ * the card still has the username. `handle` (@username) appears only when a display name replaces it as the title.
+ */
+export function cardIdentity(username: string, stored: Profile | undefined, fetched: Profile & { bio?: string | null } | undefined) {
+  const pick = <K extends keyof Profile>(k: K) => (fetched?.[k] !== undefined ? fetched[k] : stored?.[k]) ?? null;
+  const displayName = pick("displayName");
+  return { title: displayName || username, handle: displayName ? `@${username}` : null, statusText: pick("statusText"), bannerHash: pick("bannerHash"), bio: fetched?.bio ?? null };
+}
+
 // ---- dates and roles ----
 const dateFormat = new Intl.DateTimeFormat("vi-VN", { day: "numeric", month: "long", year: "numeric" });
 
@@ -86,12 +98,11 @@ export function filterRoles(roles: Role[], query: string) {
 export const stepIndex = (index: number, delta: 1 | -1, length: number) => (length === 0 ? -1 : (index + delta + length) % length);
 
 /**
- * What the roles block of the card shows. The owner has no roles block (a crown by the name instead). "+" depends only on
+ * What the roles block of the card shows. "+" depends only on
  * the right to manage this member's roles, NOT on what is left to hand out (an empty picker says so itself). Without that
  * right the chips are read-only, and the block is hidden when there is nothing to show.
  */
-export function rolesView(i: { isOwner: boolean; chipCount: number; mod: ModView | null }) {
-  if (i.isOwner) return { show: false, canAdd: false };
+export function rolesView(i: { chipCount: number; mod: ModView | null }) {
   const canAdd = i.mod?.canRoles ?? false;
   return { show: canAdd || i.chipCount > 0, canAdd };
 }

@@ -196,6 +196,9 @@ Cùng bộ `deploy/` chạy được trên Mac/PC có Docker. Nhưng:
 - [ ] Bật cập nhật bảo mật tự động: `sudo apt-get install -y unattended-upgrades && sudo dpkg-reconfigure -plow unattended-upgrades`.
 - [ ] Sao lưu chạy định kỳ và đã thử khôi phục.
 - [ ] `RATE_LIMIT` bật (compose cố định `on`), `TRUST_PROXY=1` (đúng một proxy là Caddy; thêm CDN phía trước thì phải đổi).
+- [ ] Xem trước liên kết (`LINK_PREVIEWS`, mặc định bật; `off` để tắt): server tự tải trang web mà người dùng dán vào tin nhắn, nên IP của VM/Render xuất hiện trong log của các trang đó và VM cần đi ra internet (cổng 80/443). Bộ tải (`apps/server/src/embeds/fetch.ts`) chặn mọi địa chỉ nội bộ/metadata, nhưng nếu nhà cung cấp có dịch vụ nội bộ trên địa chỉ công khai, hãy chặn ở tường lửa đi ra, hoặc tắt tính năng. Không đặt `NODE_USE_ENV_PROXY`/proxy đi ra cho tiến trình server (proxy tự phân giải tên và vô hiệu hoá việc ghim IP).
+- [ ] Ảnh GIF trong khung soạn tin (`GIPHY_API_KEY`, tuỳ chọn; không đặt = tắt hẳn, desktop ẩn nút GIF): lấy khoá miễn phí ở https://developers.giphy.com (đăng nhập, *Create an App*, chọn *API*; khoá beta giới hạn khoảng 100 lượt gọi/giờ, đủ cho nhóm nhỏ; muốn hơn thì xin lên *Production* và phải làm đúng quy định hiển thị của GIPHY). Server tự cache 5 phút mỗi truy vấn và giới hạn 60 lượt/phút/người để tiết kiệm hạn mức. Bắt buộc của GIPHY: hiện nhãn "Powered by GIPHY" (đã có trong cửa sổ chọn GIF). **Riêng tư:** ảnh GIF tải thẳng từ CDN của GIPHY (`media0`..`media4.giphy.com`, `i.giphy.com`) về máy người xem, nên GIPHY thấy IP của họ (người dùng có thể tắt ở Cài đặt, "Hiện ảnh GIF"); khoá API chỉ nằm ở server. Phương án thay thế nếu GIPHY đổi điều khoản: Tenor (cùng dạng tìm kiếm + nổi bật; cần viết lại `apps/server/src/gifs/giphy.ts` và danh sách máy chủ ảnh trong `packages/shared/src/gifs.ts` cùng CSP ở `apps/desktop/src/main/security.ts`).
+  - Render: Dashboard -> service `loop-server` -> *Environment* -> *Add Environment Variable* `GIPHY_API_KEY` = khoá -> *Save, rebuild and deploy*. VM/compose: thêm `GIPHY_API_KEY=...` vào `deploy/.env`, rồi `docker compose up -d`.
 - [ ] Bucket R2 riêng tư; token R2 chỉ cho bucket đó; token LiveKit chỉ nằm trong `.env`.
 - [ ] Cập nhật image định kỳ: `docker compose ... pull && up -d --build`.
 
@@ -286,5 +289,33 @@ Bot chưa kết nối được server (đang ngủ) thì thử lại mỗi 15 gi
 
 **Giới hạn đã đo (2026-10-15, Docker ép `--cpus=0.1 --memory=512m`, linux/amd64 giả lập trên Mac):** `yt-dlp` mất ~38 s chỉ để khởi động và ~180 s cho một lần tìm bài đầy đủ (1 CPU: 8 s). Giới hạn chờ cũ 30 s làm tiến trình bị kill và log `[music] yt-dlp:` rỗng. Giờ chờ tối đa 5 phút, báo "Đang tìm bài..." sau 4 s và ghi mã thoát/tín hiệu vào log; nhưng trên gói free một `!play` vẫn có thể mất vài phút (số đo bị giả lập làm chậm thêm, máy Render thật có thể nhanh hơn). Muốn phát nhạc mượt cần máy có ít nhất ~0,5 CPU (gói trả phí hoặc máy khác).
 
+**Nguồn nhạc, bộ nhớ đệm, chuẩn bị bài kế (2026-10-15):**
+- `!play <tên>` tìm YouTube trước; nếu `yt-dlp` báo bị chặn (bot check, 403/429, rate-limit) bot nhắn "YouTube chặn máy chủ, đang thử SoundCloud..." rồi tìm bằng `scsearch1:` và ghi `(SoundCloud)` cạnh tên bài. `!play sc <tên>` chỉ tìm SoundCloud; link SoundCloud hoặc link http(s) công khai khác (không phải IP/tên nội bộ) được đưa nguyên cho `yt-dlp`. Video không khả dụng hoặc quá chậm thì KHÔNG chuyển nguồn.
+- Mỗi bài chỉ tốn MỘT lần chạy `yt-dlp` (tên + link luồng cùng lúc); phát bằng `ffmpeg` đọc thẳng link luồng (có header của `yt-dlp`), không chạy `yt-dlp` lần hai. Link luồng quá 20 phút hoặc `ffmpeg` không đọc được thì tự quay về cách cũ `yt-dlp | ffmpeg`. Kết quả tìm được nhớ 6 giờ (100 mục, không nhớ link luồng); khi bài đang phát, bot chuẩn bị bài kế (một việc nền một lúc, huỷ khi `!stop`).
+- Biến môi trường (đều tuỳ chọn, đặt ở *Environment* của service): `MUSIC_SOURCES` (mặc định `youtube,soundcloud`; `soundcloud,youtube` đổi thứ tự; `soundcloud` tắt YouTube, nên dùng khi YouTube luôn chặn để khỏi tốn một lượt chạy), `YTDLP_COOKIES` (đường dẫn secret file, xem trên), `YTDLP_YT_CLIENT` (client YouTube của yt-dlp, vd `android_vr`; chưa kiểm tác dụng chống chặn).
+- **Cập nhật bot**: đẩy commit lên GitHub; nếu service đang để *Auto-Deploy: On Commit* Render tự build lại. Nếu để *Off*: *Manual Deploy → Deploy latest commit*. Cookie/secret file và biến môi trường giữ nguyên qua các lần deploy (chỉ cần sửa khi cookie hết hạn: thay nội dung Secret File rồi deploy lại).
+
+**Số đo cục bộ (Docker Mac, `linux/amd64` giả lập, 2026-10-15; thời gian dao động theo tải máy, đo một lần mỗi ô):**
+
+| | binary PyInstaller (đang dùng) | pip trong venv + `compileall` |
+|---|---|---|
+| `--version`, `--cpus=0.1`, container mới | 20 s, 23 s | 6 s, 12 s |
+| `--version` lần 2 trong cùng container | 30 s (lần 1: 30 s) | 13 s (lần 1: 14 s) |
+| `scsearch1:` đầy đủ (`--print`, 0,1 CPU) | 20 s | 13 s |
+| `ytsearch1:` đầy đủ (`--print`, 0,1 CPU) | 23 s | 17 s |
+| CPU đầy: `scsearch1:` / `ytsearch1:` | 2-4 s / 3-5 s | |
+| Có 2 s PCM đầu tiên (CPU đầy), `open()` thật, link luồng có sẵn | SoundCloud (m3u8) 1,1 s; YouTube 0,3 s | |
+| Như trên nhưng qua `yt-dlp \| ffmpeg` (cách cũ) | SoundCloud 2,5 s; YouTube 6,1 s | |
+
+Kết luận đo được: bản pip khởi động nhanh hơn ~1,5-3 lần; link luồng bỏ được lần chạy `yt-dlp` thứ hai (2,5-6 s ở CPU đầy, và ở 0,1 CPU là toàn bộ 20+ s khởi động); các client YouTube (`android_vr`, `tv`, `web_safari`, mặc định) không khác tốc độ (2,4-2,9 s), `tv`/`web_safari` còn lỗi khi không có cookie. Chạy `--version` lần hai không nhanh hơn lần đầu nên bot không có bước "khởi động trước". Số 180 s đo trước đó không tái hiện lại ở lần đo này (20-23 s); chưa rõ nguyên nhân (tải máy lúc đo, hay khác biệt giữa lần chạy), nên đừng coi con số nào là của Render thật.
+
+**Đã áp dụng trong `deploy/render-bot/Dockerfile`:** bản pip đã biên dịch sẵn thay cho binary, thêm `python3 python3-venv`:
+```
+RUN python3 -m venv /opt/ytdlp && /opt/ytdlp/bin/pip install --no-cache-dir "yt-dlp[default]" \
+ && /opt/ytdlp/bin/python -m compileall -q /opt/ytdlp/lib >/dev/null \
+ && ln -s /opt/ytdlp/bin/yt-dlp /usr/local/bin/yt-dlp
+```
+(`[default]` kéo theo `yt-dlp-ejs` để giải thử thách JS của YouTube cùng `--js-runtimes node` trong `/etc/yt-dlp.conf`; image lớn thêm khoảng 100 MB; pip lấy bản mới nhất lúc build nên cần build lại khi YouTube đổi.) Chưa kiểm trên Render thật.
+
 **Đã kiểm (Docker trên Mac, ép `linux/amd64` như Render):** image build; chạy user `node`; `yt-dlp` 2026.08.19 và `ffmpeg` 5.1 chạy được; `--js-runtimes node` được `yt-dlp` chấp nhận; `ytsearch1:` tìm ra video; ống `yt-dlp | ffmpeg` ra đúng 3 giây PCM 48k mono (287376 byte); cổng `PORT` trả 200 `ok`; mất server thì bot ghi log và thử lại; SIGTERM thoát (143).
-**Chưa kiểm:** Render thật (Blueprint, workspace, build); YouTube có chặn IP của Render ("Sign in to confirm you're not a bot", khi đó cần cookie, chưa hỗ trợ) — thử trên máy nhà chỉ chứng minh IP nhà; phát tiếng thật trong phòng LiveKit với server production; 0,1 CPU của gói free có đủ để phát không giật; ngưỡng "lưu lượng ra ngoài cao bất thường" mà Render có thể khoá; điều khoản Render về nhiều workspace.
+**Chưa kiểm:** Render thật (Blueprint, workspace, build); YouTube có chặn IP của Render ("Sign in to confirm you're not a bot"; khi đó bot tự chuyển SoundCloud, cookie là tuỳ chọn) và SoundCloud có chặn IP Render hay không — thử trên máy nhà chỉ chứng minh IP nhà; tốc độ thật trên 0,1 CPU của Render sau tối ưu (chỉ đo giả lập Docker); phát tiếng thật trong phòng LiveKit với server production; 0,1 CPU của gói free có đủ để phát không giật; ngưỡng "lưu lượng ra ngoài cao bất thường" mà Render có thể khoá; điều khoản Render về nhiều workspace.

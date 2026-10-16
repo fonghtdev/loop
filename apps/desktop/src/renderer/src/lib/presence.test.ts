@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { asPref, asStatus, createPresence, dotOfPref, shownStatus, statusLabel, statusRows } from "./presence";
+import { asPref, asStatus, createPresence, dotOfPref, shownStatus, statusShownFor, statusLabel, statusRows } from "./presence";
 
 const make = (request = vi.fn()) => ({ request, p: createPresence({ request: request as never }) });
 const byUser = (p: ReturnType<typeof make>["p"]) => p.store.getState().byUser;
@@ -89,5 +89,16 @@ describe("status model", () => {
       ["invisible", "offline", "Ẩn", false],
     ]);
     expect(rows.map((r) => r.description)).toEqual([undefined, undefined, "Bạn sẽ không nhận thông báo trên máy này", "Bạn sẽ hiện là ngoại tuyến với mọi người"]);
+  });
+});
+
+describe("statusShownFor", () => {
+  const known = { me: "online", you: "idle" } as const;
+  it("shows our own choice, not the stale pushed value; invisible is offline", () => {
+    expect(statusShownFor(known, "me", new Set(), { id: "me", pref: "invisible" })).toBe("offline");
+    expect(statusShownFor(known, "me", new Set(), { id: "me", pref: "dnd" })).toBe("dnd");
+  });
+  it("leaves everyone else to the pushed status", () => {
+    expect(statusShownFor(known, "you", new Set(), { id: "me", pref: "invisible" })).toBe("idle");
   });
 });

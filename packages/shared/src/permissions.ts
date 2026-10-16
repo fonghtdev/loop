@@ -12,6 +12,12 @@ export const Permission = {
   SPEAK: 1 << 9, // publish the microphone
   VIDEO: 1 << 10, // publish the camera
   STREAM: 1 << 11, // share the screen
+  MOVE_MEMBERS: 1 << 12, // move someone to another voice channel (needs it in both channels); not in @everyone
+  MENTION_EVERYONE: 1 << 13, // write @everyone / @here so it counts as a mention of all; not in @everyone
+  BAN_MEMBERS: 1 << 14, // ban / unban and list bans; guild-wide (not in overwrites), not in @everyone
+  VIEW_AUDIT_LOG: 1 << 15, // read the guild's audit log; guild-wide (not in overwrites), not in @everyone
+  MUTE_MEMBERS: 1 << 16, // server-mute someone in a voice channel; channel-overwritable, not in @everyone
+  DEAFEN_MEMBERS: 1 << 17, // server-deafen someone in a voice channel; channel-overwritable, not in @everyone
 } as const;
 
 export type PermissionName = keyof typeof Permission;
@@ -35,10 +41,16 @@ export const CHANNEL_PERMISSIONS =
   Permission.CONNECT |
   Permission.SPEAK |
   Permission.VIDEO |
-  Permission.STREAM;
+  Permission.STREAM |
+  Permission.MOVE_MEMBERS |
+  Permission.MENTION_EVERYONE |
+  Permission.MUTE_MEMBERS |
+  Permission.DEAFEN_MEMBERS;
 
 type RolePerms = { id: string; permissions: number };
 export type Overwrite = { roleId: string; allow: number; deny: number };
+/** A channel overwrite for one member (same bits and rules as a role's). */
+export type MemberOverwrite = { userId: string; allow: number; deny: number };
 
 export type PermissionInput = {
   isOwner: boolean;
@@ -47,17 +59,22 @@ export type PermissionInput = {
   memberRoles: RolePerms[];
   /** The channel's overwrites (any roles; foreign ones are ignored). Omit for guild-wide permissions. */
   overwrites?: Overwrite[];
+  /** The member these permissions are for: picks their entry in `memberOverwrites`. */
+  userId?: string;
+  /** The channel's member overwrites (anyone's; only `userId`'s applies). Only read when `overwrites` is given. */
+  memberOverwrites?: MemberOverwrite[];
 };
 
 /**
- * The usual role-based algorithm with channel overwrites (no member-specific overwrites):
+ * The usual (Discord) algorithm with channel overwrites:
  * 1. owner -> everything; 2. base = @everyone | every member role; ADMINISTRATOR in base -> everything;
  * 3. channel: apply the @everyone overwrite (deny, then allow); then OR the deny of all the member's role
  *    overwrites and the allow of all of them, apply the denies, then the allows (so any role's allow beats
- *    any role's deny, and both beat @everyone's overwrite);
+ *    any role's deny, and both beat @everyone's overwrite); then the member's own overwrite (deny, then allow),
+ *    which beats every role;
  * 4. without VIEW_CHANNEL in a channel the member has no permission there at all.
  */
-export function computePermissions({ isOwner, everyoneRole, memberRoles, overwrites }: PermissionInput) {
+export function computePermissions({ isOwner, everyoneRole, memberRoles, overwrites, userId, memberOverwrites }: PermissionInput) {
   if (isOwner) return ALL_PERMISSIONS;
   let perms = memberRoles.reduce((p, r) => p | r.permissions, everyoneRole.permissions);
   if (perms & Permission.ADMINISTRATOR) return ALL_PERMISSIONS;
@@ -74,6 +91,8 @@ export function computePermissions({ isOwner, everyoneRole, memberRoles, overwri
     deny |= o.deny;
   }
   perms = (perms & ~deny) | allow;
+  const mine = userId === undefined ? undefined : memberOverwrites?.find((o) => o.userId === userId);
+  if (mine) perms = (perms & ~mine.deny) | mine.allow;
   return perms & Permission.VIEW_CHANNEL ? perms : 0;
 }
 

@@ -21,13 +21,13 @@ describe("friend requests", () => {
     const [a, b] = await Promise.all([signUp("alice"), signUp("bob")]);
     const sent = await request(a, b);
     expect(sent.statusCode).toBe(201);
-    expect(sent.json()).toEqual({ status: "PENDING", user: { id: b.id, username: "bob" } });
-    expect(await lists(a)).toEqual({ friends: [], incoming: [], outgoing: [{ id: b.id, username: "bob" }] });
-    expect(await lists(b)).toEqual({ friends: [], incoming: [{ id: a.id, username: "alice" }], outgoing: [] });
+    expect(sent.json()).toEqual({ status: "PENDING", user: { id: b.id, username: "bob", displayName: null, avatarHash: null } });
+    expect(await lists(a)).toEqual({ friends: [], incoming: [], outgoing: [{ id: b.id, username: "bob", displayName: null, avatarHash: null }] });
+    expect(await lists(b)).toEqual({ friends: [], incoming: [{ id: a.id, username: "alice", displayName: null, avatarHash: null }], outgoing: [] });
 
     expect((await call("POST", `/friends/requests/${a.id}/accept`, b.token)).statusCode).toBe(200);
     for (const [me, other] of [[a, b], [b, a]] as const) {
-      expect(await lists(me)).toEqual({ friends: [{ id: other.id, username: other.name, online: false, status: "offline" }], incoming: [], outgoing: [] });
+      expect(await lists(me)).toEqual({ friends: [{ id: other.id, username: other.name, displayName: null, avatarHash: null, online: false, status: "offline" }], incoming: [], outgoing: [] });
     }
   });
 
@@ -115,7 +115,7 @@ describe("friend requests", () => {
   it("the lists never expose email or password hash", async () => {
     const [a, b] = await Promise.all([signUp("alice"), signUp("bob")]);
     await befriend(app, a, b);
-    expect(Object.keys((await lists(a)).friends[0]).sort()).toEqual(["id", "online", "status", "username"]);
+    expect(Object.keys((await lists(a)).friends[0]).sort()).toEqual(["avatarHash", "displayName", "id", "online", "status", "username"]);
   });
 });
 
@@ -130,7 +130,7 @@ describe("blocks", () => {
     expect(await prisma.friendship.count()).toBe(0);
     expect(await prisma.block.count()).toBe(2);
     expect((await call("GET", "/blocks", a.token)).json()).toEqual(
-      expect.arrayContaining([{ id: b.id, username: "bob" }, { id: c.id, username: "carol" }]),
+      expect.arrayContaining([{ id: b.id, username: "bob", displayName: null, avatarHash: null }, { id: c.id, username: "carol", displayName: null, avatarHash: null }]),
     );
     expect((await call("GET", "/blocks", b.token)).json()).toEqual([]); // the blocked user sees nothing
   });

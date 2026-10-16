@@ -2,7 +2,9 @@ import { Gear, Hash, House, MagnifyingGlass, SpeakerHigh, UsersThree } from "@ph
 import { useQueries } from "@tanstack/react-query";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { t } from "../i18n/t";
+import { useStore } from "zustand";
 import { queryClient, session } from "../lib/app";
+import { profiles } from "../lib/profiles";
 import { openDm } from "../lib/social-actions";
 import { goHome, useNav } from "../lib/nav";
 import { openChannel } from "../lib/channel-open";
@@ -15,9 +17,9 @@ import { closeQuickSwitch, restoreFocus, toggleQuickSwitch, useQuickSwitch } fro
 import { DMS_KEY, type Dm } from "../lib/social";
 import { guildQuery, useDms, useFriends, useGuilds } from "../lib/queries";
 import { toast } from "../lib/toast";
-import { useUnreadMark } from "../lib/unread-hooks";
+import { useUnreadCount } from "../lib/unread-hooks";
 import { Avatar } from "./Avatar";
-import { Badge, UnreadDot } from "./Badge";
+import { Badge } from "./Badge";
 import { OrbitArt } from "./Illustrations";
 import { navRow } from "./navRow";
 import { openGuild } from "./ServerRail";
@@ -120,7 +122,8 @@ function Palette() {
     queries: ids.map(guildQuery),
     combine: (rs) => ({ channels: Object.fromEntries(rs.map((r, i) => [ids[i], r.data?.channels])), loading: rs.some((r) => r.isPending) }),
   });
-  const items = useMemo(() => buildItems({ guilds: guilds ?? [], channels, dms: dms ?? [], friends: friends ?? [] }), [guilds, channels, dms, friends]);
+  const byId = useStore(profiles.store, (s) => s.byId);
+  const items = useMemo(() => buildItems({ guilds: guilds ?? [], channels, dms: dms ?? [], friends: friends ?? [], profiles: byId, myId: userId }), [guilds, channels, dms, friends, byId, userId]);
   const recents = useMemo(() => {
     const here = recentKeyOf(useNav.getState(), queryClient.getQueryData<Dm[]>(DMS_KEY));
     return resolveRecents(readRecents(userId ?? "").filter((k) => k !== here), items);
@@ -218,7 +221,7 @@ const Hint = ({ keys, label }: { keys: string; label: string }) => (
 );
 
 function Option({ id, item, ranges, active, onHover, onPick }: { id: string; item: Item; ranges: Range[]; active: boolean; onHover: () => void; onPick: () => void }) {
-  const mark = useUnreadMark(item.convKey ?? "");
+  const unread = useUnreadCount(item.convKey ?? "");
   return (
     <div
       id={id}
@@ -236,7 +239,7 @@ function Option({ id, item, ranges, active, onHover, onPick }: { id: string; ite
         </span>
         <span className="block truncate text-caption text-ink-muted">{item.sub}</span>
       </span>
-      {mark.count > 0 ? <Badge count={mark.count} /> : mark.dot && <UnreadDot />}
+      {unread > 0 && <Badge count={unread} />}
       {active && (
         <kbd aria-hidden="true" className="rounded-xs bg-surface-4 px-1.5 py-0.5 text-micro font-semibold text-ink-muted">
           ↵
@@ -248,7 +251,7 @@ function Option({ id, item, ranges, active, onHover, onPick }: { id: string; ite
 
 const tile = "grid size-8 shrink-0 place-items-center rounded-control bg-surface-4 text-ink-muted";
 function Lead({ item }: { item: Item }) {
-  if (item.avatarId) return <Avatar id={item.avatarId} name={item.name} className={`size-8 text-xs ${item.kind === "server" ? "rounded-control" : "rounded-full"}`} />;
+  if (item.avatarId) return <Avatar id={item.avatarId} name={item.name} image={item.image} className={`size-8 text-xs ${item.kind === "server" ? "rounded-control" : "rounded-full"}`} />;
   const icon: ReactNode =
     item.kind === "channel" ? (
       item.voice ? <SpeakerHigh aria-hidden="true" /> : <Hash aria-hidden="true" />

@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { HttpError } from "../http.js";
 import { channelIdOfRoom, dmIdOfRoom } from "./rooms.js";
 import type { RoomEvent } from "./livekit.js";
+import { seatDtos } from "./enforce.js";
 
 /** Tells subscribers of a voice channel who is in it now; a joiner is re-checked first (see below). */
 async function voiceEvent(app: FastifyInstance, { type, room, userId, screenShare }: RoomEvent, channelId: string) {
@@ -14,16 +15,25 @@ async function voiceEvent(app: FastifyInstance, { type, room, userId, screenShar
   // `userId` only picks whom to re-check: enforce() recomputes their rights from the database.
   if (type === "participant_joined" && userId) await app.voice.enforce(channel.guildId, [userId]);
   const seats = type === "room_finished" ? [] : await app.livekit.participants(room!);
-  app.realtime.emit(channelId, "voice:update", { channelId, participants: seats.map(({ userId, username, sharing }) => ({ userId, username, sharing })) });
+  app.realtime.emit(channelId, "voice:update", { channelId, participants: await seatDtos(channel.guildId, seats) });
 }
 
-/** A DM call is over when its room finishes or the last participant leaves; both may fire, clients treat it as idempotent. */
-async function dmEvent(app: FastifyInstance, { type, room }: RoomEvent, dmId: string) {
+/**
+ * A DM call is over when its room finishes or the last participant leaves; both may fire, clients treat it as
+ * idempotent. A joiner who is no longer a participant (left / removed from a group with a still valid token) is put out.
+ */
+async function dmEvent(app: FastifyInstance, { type, room, userId }: RoomEvent, dmId: string) {
+  if (type === "participant_joined" && userId) {
+    if (!(await prisma.dmParticipant.count({ where: { dmChannelId: dmId, userId } }))) {
+      await app.livekit.removeParticipant(room!, userId).catch((e) => app.log.error({ err: String((e as Error)?.message) }, "voice remove failed"));
+    }
+    return;
+  }
   if (type !== "participant_left" && type !== "room_finished") return;
-  const dm = await prisma.dmChannel.findUnique({ where: { id: dmId } });
-  if (!dm) return;
+  const participants = (await prisma.dmParticipant.findMany({ where: { dmChannelId: dmId }, select: { userId: true } })).map((p) => p.userId);
+  if (!participants.length) return;
   if (type === "participant_left" && (await app.livekit.participants(room!)).length) return;
-  app.realtime.emitToUsers([dm.userLowId, dm.userHighId], "call:ended", { dmChannelId: dm.id });
+  app.realtime.emitToUsers(participants, "call:ended", { dmChannelId: dmId });
 }
 
 /**

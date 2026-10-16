@@ -18,6 +18,7 @@ import type { MessageKey } from "../i18n/vi";
 import { errorMessage } from "../lib/errors";
 import { isFirstRun } from "../lib/firstrun";
 import { useFirstRun } from "../lib/firstrun-hooks";
+import { useDisplayName } from "../lib/identity-hooks";
 import { useStatusOf } from "../lib/presence-hooks";
 import { statusLabel } from "../lib/presence";
 import { useBlocks, useFriends } from "../lib/queries";
@@ -210,16 +211,17 @@ function ListState({ query, empty }: { query: { isPending: boolean; isError: boo
 }
 
 function Row({ user, status, subtitle, children }: { user: PublicUser; status?: PresenceStatus; subtitle?: string; children: ReactNode }) {
+  const name = useDisplayName(user.id, user.username);
   return (
     <li className="relative flex min-h-16 items-center gap-3 rounded-card px-3 py-2 transition-colors duration-(--duration-fast) hover:bg-white/[.04] not-first:before:absolute not-first:before:top-0 not-first:before:right-3 not-first:before:left-16 not-first:before:h-px not-first:before:bg-hair hover:before:opacity-0 [&:hover+li]:before:opacity-0">
       {status ? (
-        <PresenceAvatar id={user.id} name={user.username} status={status} ring={2} labelled={false} className="size-10 rounded-full text-sm" />
+        <PresenceAvatar id={user.id} name={name} status={status} ring={2} labelled={false} className="size-10 rounded-full text-sm" />
       ) : (
-        <Avatar id={user.id} name={user.username} className="size-10 rounded-full text-sm" />
+        <Avatar id={user.id} name={name} className="size-10 rounded-full text-sm" />
       )}
       <span className="min-w-0 flex-1">
-        <Tooltip label={user.username}>
-          <span className="block truncate text-chat font-semibold text-ink select-text">{user.username}</span>
+        <Tooltip label={name}>
+          <span className="block truncate text-chat font-semibold text-ink select-text">{name}</span>
         </Tooltip>
         {subtitle && <span className="block truncate text-caption text-ink-muted">{subtitle}</span>}
       </span>

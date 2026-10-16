@@ -87,6 +87,22 @@ describe("rights changes through the API reach live sessions", () => {
     expect(await identities(f.room)).toEqual([f.bob.id]);
   });
 
+  it("a ban removes the participant, the other stays", async () => {
+    const f = await fixture();
+    expect((await call("PUT", `/guilds/${f.guild.id}/bans/${f.alice.id}`, f.owner.token, {})).statusCode).toBe(204);
+    await gone(f, f.alice.id);
+    expect(await identities(f.room)).toEqual([f.bob.id]);
+  });
+
+  it("a member overwrite denying CONNECT removes only that member", async () => {
+    const f = await fixture();
+    const res = await call("PUT", `/channels/${f.voice.id}/overwrites/members/${f.alice.id}`, f.owner.token, { allow: 0, deny: P.CONNECT });
+    expect(res.statusCode).toBe(200);
+    await gone(f, f.alice.id);
+    expect(await identities(f.room)).toEqual([f.bob.id]);
+    expect((await requestToken(app, f.alice, f.voice.id)).statusCode).toBe(403);
+  });
+
   it("leaving the guild removes the participant", async () => {
     const f = await fixture();
     await call("DELETE", `/guilds/${f.guild.id}/members/me`, f.bob.token);

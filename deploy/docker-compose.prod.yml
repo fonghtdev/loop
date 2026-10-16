@@ -32,6 +32,10 @@ services:
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?set LIVEKIT_API_KEY}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET}
       CORS_ORIGINS: ${CORS_ORIGINS:-app://loop}
+      # Link previews (the server fetches pages linked in messages); "off" disables them.
+      LINK_PREVIEWS: ${LINK_PREVIEWS:-on}
+      # GIF search (GIPHY); empty = the feature is off.
+      GIPHY_API_KEY: ${GIPHY_API_KEY:-}
       # Fixed on purpose: limiting on, exactly one proxy (Caddy) in front of the server.
       RATE_LIMIT: "on"
       TRUST_PROXY: "1"

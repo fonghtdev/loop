@@ -12,7 +12,7 @@ export type Limits = {
   /** Client address of a Socket.IO handshake, with the same proxy trust as HTTP. */
   socketIp(headers: Record<string, unknown>, address: string): string;
   /** A fresh in-memory counter for one socket: true while under the given per-socket policy. */
-  socketBudget(name: "socket-subscribe" | "socket-presence"): () => boolean;
+  socketBudget(name: "socket-subscribe" | "socket-presence" | "socket-typing"): () => boolean;
 };
 
 const ipOf = (req: FastifyRequest) => normalizeIP(req.ip);

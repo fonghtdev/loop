@@ -1,22 +1,19 @@
 import type { Prisma } from "@prisma/client";
-import { Permission } from "@loop/shared";
 import { HttpError } from "../http.js";
-import { isUuid, requireChannelPermission } from "../guilds/access.js";
-import { requireDm, requireFriendsUnblocked } from "../social/access.js";
+import { isUuid, requireWritableChannel } from "../guilds/access.js";
+import { requireDmWritable } from "../social/access.js";
 
 type Target = { channelId: string | null; dmChannelId: string | null };
 
 /**
  * Uploading to (or completing an upload for) a conversation needs exactly what sending a message there needs:
- * channel = VIEW + SEND_MESSAGES on a text channel, DM = participant + friends and not blocked.
+ * channel = VIEW + SEND_MESSAGES on a text channel or an open thread, DM = participant (+ friends and not blocked for a pair).
  */
 export async function requireCanSend(userId: string, target: Target) {
   if (target.channelId) {
-    const { channel } = await requireChannelPermission(target.channelId, userId, Permission.SEND_MESSAGES);
-    if (channel.type !== "TEXT") throw new HttpError(400, "Only text channels accept messages");
+    await requireWritableChannel(target.channelId, userId);
   } else {
-    const { otherId } = await requireDm(target.dmChannelId!, userId);
-    await requireFriendsUnblocked(userId, otherId);
+    await requireDmWritable(target.dmChannelId!, userId);
   }
 }
 

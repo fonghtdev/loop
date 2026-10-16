@@ -79,15 +79,23 @@ function setup(first: string = "a1", refreshes: (string | null)[] = ["a2", "a3"]
   const deps = {
     onEvent: vi.fn(),
     onActivity: vi.fn(),
+    onMention: vi.fn(),
     onSubscribed: vi.fn(),
     onRefused: vi.fn(),
     onSocial: vi.fn(),
     onMyStatus: vi.fn(),
     onGuild: vi.fn(),
+    onUserUpdated: vi.fn(),
+    onGuildUpdated: vi.fn(),
     onWatched: vi.fn(),
     onWatchRefused: vi.fn(),
     onVoiceUpdate: vi.fn(),
     onCall: vi.fn(),
+    onVoiceMoved: vi.fn(),
+    onVoiceModerated: vi.fn(),
+    onTyping: vi.fn(),
+    onRead: vi.fn(),
+    onThread: vi.fn(),
     onReconnected: vi.fn(),
   };
   const rt = createRealtime({
@@ -375,6 +383,55 @@ describe("DM, friend and presence events", () => {
     expect(s.onGuild).toHaveBeenCalledTimes(5);
   });
 
+  it("roles:updated reaches onGuild; a payload without a guild id does not", async () => {
+    const s = await connected();
+    s.socket().fire("roles:updated", { guildId: "g" });
+    s.socket().fire("roles:updated", {});
+    expect(s.onGuild.mock.calls.map((c) => c[0])).toEqual([{ type: "roles:updated", guildId: "g" }]);
+  });
+
+  it("channel:updated reaches onGuild like channel:created", async () => {
+    const s = await connected();
+    s.socket().fire("channel:updated", { id: "c", guildId: "g", topic: "x" });
+    s.socket().fire("channel:updated", null);
+    expect(s.onGuild.mock.calls.map((c) => c[0].type)).toEqual(["channel:updated"]);
+  });
+
+  it("user:updated and guild:updated are validated; malformed ones and ones after stop are dropped", async () => {
+    const s = await connected();
+    const sock = s.socket();
+    const user = { id: "u", username: "an", displayName: "Anh", avatarHash: null, bannerHash: null, statusText: "bận" };
+    sock.fire("user:updated", user);
+    sock.fire("user:updated", { ...user, avatarHash: 5 });
+    sock.fire("user:updated", { id: "u" });
+    sock.fire("user:updated", null);
+    expect(s.onUserUpdated.mock.calls).toEqual([[user]]);
+    sock.fire("guild:updated", { id: "g", name: "Nhóm", iconHash: "abc" });
+    sock.fire("guild:updated", { id: "g", name: "Nhóm" });
+    sock.fire("guild:updated", { id: "g", name: 7, iconHash: null });
+    expect(s.onGuildUpdated.mock.calls).toEqual([[{ id: "g", name: "Nhóm", iconHash: "abc" }]]);
+    const late = [...(sock.handlers.get("user:updated") ?? [])];
+    s.rt.stop();
+    late.forEach((fn) => fn(user));
+    expect(s.onUserUpdated).toHaveBeenCalledTimes(1);
+  });
+
+  it("group DM events: dm:new of a group and dm:updated become dm:group, dm:removed passes the id; malformed ones are dropped", async () => {
+    const s = await connected();
+    const sock = s.socket();
+    const g = { id: "g1", kind: "GROUP", name: null, ownerId: "u", participants: [{ id: "u", username: "u", status: "online" }], lastMessageAt: null };
+    sock.fire("dm:new", g);
+    sock.fire("dm:updated", { ...g, name: "Crew" });
+    sock.fire("dm:removed", { dmChannelId: "g1" });
+    for (const bad of [null, { id: "g1" }, { ...g, participants: "x" }, { ...g, kind: "PAIR" }]) sock.fire("dm:updated", bad);
+    sock.fire("dm:removed", {});
+    expect(s.onSocial.mock.calls.map((c) => c[0])).toEqual([
+      { type: "dm:group", dm: g },
+      { type: "dm:group", dm: { ...g, name: "Crew" } },
+      { type: "dm:removed", dmChannelId: "g1" },
+    ]);
+  });
+
   it("malformed payloads are dropped", async () => {
     const s = await connected();
     for (const [event, payload] of [["friend:request", null], ["friend:removed", {}], ["presence:update", undefined], ["dm:new", { id: "x" }], ["dm:message:new", null]] as const)
@@ -474,6 +531,62 @@ describe("watched voice channels", () => {
     expect(s.socket().subscribes()).toHaveLength(0);
   });
 
+  it("voice:moved is forwarded with who moved us, malformed ones are dropped, none after stop", async () => {
+    const s = await connected();
+    const sock = s.socket();
+    sock.fire("voice:moved", { channelId: "v2", by: { id: "u", username: "mod" } });
+    sock.fire("voice:moved", { channelId: 7, by: { username: "mod" } });
+    sock.fire("voice:moved", { channelId: "v3" });
+    sock.fire("voice:moved", null);
+    expect(s.onVoiceMoved.mock.calls).toEqual([[{ channelId: "v2", byName: "mod" }]]);
+    const handlers = [...(sock.handlers.get("voice:moved") ?? [])];
+    s.rt.stop();
+    handlers.forEach((fn) => fn({ channelId: "v4", by: { username: "mod" } }));
+    expect(s.onVoiceMoved).toHaveBeenCalledTimes(1);
+  });
+
+  it("voice:moderated is forwarded with the state and who did it, malformed ones are dropped", async () => {
+    const s = await connected();
+    const sock = s.socket();
+    sock.fire("voice:moderated", { channelId: "v1", serverMute: true, serverDeafen: false, by: { id: "u", username: "mod" } });
+    sock.fire("voice:moderated", { channelId: "v1", serverMute: "yes", serverDeafen: false, by: { username: "mod" } });
+    sock.fire("voice:moderated", { channelId: "v1", serverMute: true, serverDeafen: false });
+    sock.fire("voice:moderated", null);
+    expect(s.onVoiceModerated.mock.calls).toEqual([[{ channelId: "v1", serverMute: true, serverDeafen: false, byName: "mod" }]]);
+  });
+
+  it("typing and read:updated are forwarded as conversation keys, malformed ones dropped, none after stop", async () => {
+    const s = await connected();
+    const sock = s.socket();
+    sock.fire("typing", { channelId: "c1", userId: "u1", at: 1 });
+    sock.fire("typing", { dmChannelId: "d1", userId: "u2", at: 1 });
+    sock.fire("typing", { channelId: "c1" });
+    sock.fire("typing", { userId: "u3" });
+    sock.fire("typing", null);
+    expect(s.onTyping.mock.calls).toEqual([[channelKey("c1"), "u1"], [dmKey("d1"), "u2"]]);
+    sock.fire("read:updated", { channelId: "c1", lastReadSeq: "42" });
+    sock.fire("read:updated", { dmChannelId: "d1", lastReadSeq: "7" });
+    sock.fire("read:updated", { channelId: "c1", lastReadSeq: "-1" });
+    sock.fire("read:updated", { channelId: "c1", lastReadSeq: 5 });
+    sock.fire("read:updated", { lastReadSeq: "5" });
+    expect(s.onRead.mock.calls).toEqual([[channelKey("c1"), "42"], [dmKey("d1"), "7"]]);
+    const handlers = [...(sock.handlers.get("typing") ?? [])];
+    s.rt.stop();
+    handlers.forEach((fn) => fn({ channelId: "c1", userId: "u1" }));
+    expect(s.onTyping).toHaveBeenCalledTimes(2);
+  });
+
+  it("sendTyping emits the right payload per kind, and nothing while offline", async () => {
+    const s = await connected();
+    const sock = s.socket();
+    s.rt.sendTyping(channelKey("c1"));
+    s.rt.sendTyping(dmKey("d1"));
+    expect(sock.emitted.filter((e) => e.event === "typing").map((e) => e.payload)).toEqual([{ channelId: "c1" }, { dmChannelId: "d1" }]);
+    sock.drop();
+    s.rt.sendTyping(channelKey("c1"));
+    expect(sock.emitted.filter((e) => e.event === "typing")).toHaveLength(2);
+  });
+
   it("call events are forwarded, malformed ones dropped, none after stop", async () => {
     const s = await connected();
     const sock = s.socket();
@@ -520,6 +633,43 @@ describe("tracked text channels (unread) and activity", () => {
     expect(s.onEvent).toHaveBeenCalledTimes(1);
   });
 
+  it("reaction events reach the open conversation as message:reaction (channel and DM)", async () => {
+    const s = await connected();
+    s.rt.setConversation(channelKey("c1"));
+    const sock = s.socket();
+    const change = { messageId: "m1", emoji: "👍", userId: "u", added: true, count: 1 };
+    sock.fire("message:reaction", { ...change, channelId: "c1" });
+    sock.fire("message:reaction", { ...change, channelId: "c2" }); // another conversation: activity only
+    sock.fire("dm:message:reaction", { ...change, dmChannelId: "d1" });
+    sock.fire("message:reaction", null);
+    expect(s.onEvent.mock.calls).toEqual([[channelKey("c1"), { type: "message:reaction", reaction: { ...change, channelId: "c1" } }]]);
+    expect(s.onActivity).toHaveBeenCalledTimes(3);
+  });
+
+  it("pin events reach the open conversation as message:pin (channel and DM)", async () => {
+    const s = await connected();
+    s.rt.setConversation(channelKey("c1"));
+    const sock = s.socket();
+    sock.fire("message:pin", { messageId: "m1", channelId: "c1", pinned: true });
+    sock.fire("message:pin", { messageId: "m2", channelId: "c2", pinned: true }); // another conversation: activity only
+    sock.fire("dm:message:pin", { messageId: "m3", dmChannelId: "d1", pinned: false });
+    sock.fire("message:pin", null);
+    expect(s.onEvent.mock.calls).toEqual([[channelKey("c1"), { type: "message:pin", pin: { messageId: "m1", channelId: "c1", pinned: true } }]]);
+    expect(s.onActivity).toHaveBeenCalledTimes(3);
+  });
+
+  it("mention:new reaches onMention whatever is open; a malformed one is dropped", async () => {
+    const s = await connected();
+    const sock = s.socket();
+    sock.fire("mention:new", { guildId: "g1", channelId: "c9", message: msg("c9") });
+    sock.fire("mention:new", { guildId: "g1", message: { id: "x", channelId: null } });
+    sock.fire("mention:new", { message: msg("c9") });
+    sock.fire("mention:new", null);
+    sock.fire("mention:new", { guildId: "g1", channelId: "t9", parentChannelId: "c9", message: msg("t9") });
+    expect(s.onMention.mock.calls).toEqual([["g1", msg("c9"), null], ["g1", msg("t9"), "c9"]]);
+    expect(s.onActivity).not.toHaveBeenCalled();
+  });
+
   it("subscribes to the tracked set, resubscribes after a reconnect, drops removed ones, forgets refused ones", async () => {
     const s = await connected();
     s.rt.setTracked(["t1", "t2"]);
@@ -543,5 +693,55 @@ describe("tracked text channels (unread) and activity", () => {
     expect(unsubs(s.socket())).toEqual([]); // t2 is tracked too
     s.rt.setConversation(null);
     expect(unsubs(s.socket())).toEqual(["other"]);
+  });
+});
+
+describe("threads", () => {
+  async function connected() {
+    const s = setup();
+    s.rt.start();
+    await flush();
+    s.socket().accept();
+    return s;
+  }
+  const subs = (sock: FakeSocket) => sock.subscribes().map((e) => (e.payload as { channelId: string }).channelId);
+  const unsubs = (sock: FakeSocket) => sock.emitted.filter((e) => e.event === "channel:unsubscribe").map((e) => (e.payload as { channelId: string }).channelId);
+  const thread = { id: "t1", parentChannelId: "c1", guildId: "g1", name: "plans", starterMessageId: "m1", createdById: "u", createdAt: "2026-10-10T00:00:00Z", lastMessageAt: null, archived: false, messageCount: 0 };
+
+  it("listens to the side panel's thread next to the main channel, both after a reconnect, and delivers both", async () => {
+    const s = await connected();
+    s.rt.setConversation(channelKey("c1"));
+    s.rt.setConversation(channelKey("t1"), "side");
+    expect(subs(s.socket())).toEqual(["c1", "t1"]);
+    s.socket().subscribes().forEach((e) => e.ack?.({ ok: true }));
+    expect(s.onSubscribed.mock.calls).toEqual([[channelKey("c1")], [channelKey("t1")]]);
+    s.socket().fire("message:new", msg("t1"));
+    s.socket().fire("message:new", msg("c1"));
+    s.socket().fire("message:new", msg("elsewhere"));
+    expect(s.onEvent.mock.calls.map(([key]) => key)).toEqual([channelKey("t1"), channelKey("c1")]);
+    s.socket().drop();
+    s.socket().accept();
+    expect(subs(s.socket()).slice(2)).toEqual(["c1", "t1"]);
+    s.rt.setConversation(null, "side");
+    expect(unsubs(s.socket())).toEqual(["t1"]);
+    s.rt.setConversation(channelKey("c1"), "side"); // the same conversation in both: no second subscribe, and closing one keeps it
+    s.rt.setConversation(null, "side");
+    expect(unsubs(s.socket())).toEqual(["t1"]);
+  });
+
+  it("passes thread events on and drops malformed ones", async () => {
+    const s = await connected();
+    const sock = s.socket();
+    sock.fire("thread:created", thread);
+    sock.fire("thread:updated", { ...thread, archived: true });
+    sock.fire("thread:deleted", { id: "t1", guildId: "g1", parentChannelId: "c1", starterMessageId: "m1" });
+    sock.fire("thread:created", { id: "t2" });
+    sock.fire("thread:updated", null);
+    sock.fire("thread:deleted", { parentChannelId: "c1" });
+    expect(s.onThread.mock.calls).toEqual([
+      [{ type: "thread:created", thread }],
+      [{ type: "thread:updated", thread: { ...thread, archived: true } }],
+      [{ type: "thread:deleted", gone: { id: "t1", guildId: "g1", parentChannelId: "c1", starterMessageId: "m1" } }],
+    ]);
   });
 });

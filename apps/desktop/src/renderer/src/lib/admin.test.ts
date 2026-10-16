@@ -21,6 +21,9 @@ import {
   unknownBits,
   type Standing,
   type Tri,
+  channelPatch,
+  guildNameError,
+  topicError,
 } from "./admin";
 import type { Member, Role } from "./permissions";
 
@@ -44,15 +47,46 @@ describe("settings gating", () => {
     return settingsSections(s.bits, s.isOwner);
   };
   it("a plain member sees no entry at all", () => expect(sections("plain")).toEqual([]));
-  it("the owner sees every section including the dangerous one", () => expect(sections("owner")).toEqual(["roles", "members", "overwrites", "danger"]));
-  it("ADMINISTRATOR (not owner) sees all but the owner-only section", () => expect(sections("b")).toEqual(["roles", "members", "overwrites"]));
-  it("MANAGE_ROLES only: roles, members and overwrites", () => {
-    expect(settingsSections(Permission.MANAGE_ROLES, false)).toEqual(["roles", "members", "overwrites"]);
+  it("the owner sees every section including the dangerous one", () => expect(sections("owner")).toEqual(["overview", "roles", "members", "bans", "invites", "overwrites", "automod", "audit", "danger"]));
+  it("ADMINISTRATOR (not owner) sees all but the owner-only section", () => expect(sections("b")).toEqual(["overview", "roles", "members", "bans", "invites", "overwrites", "automod", "audit"]));
+  it("VIEW_AUDIT_LOG alone opens the settings with the log; AutoMod stays owner / ADMINISTRATOR", () => {
+    expect(settingsSections(Permission.VIEW_AUDIT_LOG, false)).toEqual(["members", "audit"]);
+    expect(settingsSections(ALL_PERMISSIONS & ~Permission.ADMINISTRATOR, false)).not.toContain("automod");
+  });
+  it("MANAGE_ROLES only: roles, members, every invite and overwrites", () => {
+    expect(settingsSections(Permission.MANAGE_ROLES, false)).toEqual(["roles", "members", "invites", "overwrites"]);
+  });
+  it("the overview (name and icon of the server) needs ADMINISTRATOR or ownership, MANAGE_ROLES alone is not enough", () => {
+    expect(settingsSections(Permission.ADMINISTRATOR, false)[0]).toBe("overview");
+    expect(settingsSections(Permission.MANAGE_ROLES | Permission.MANAGE_CHANNELS, false)).not.toContain("overview");
+    expect(settingsSections(0, true)[0]).toBe("overview");
   });
   it("KICK_MEMBERS only: just the member list", () => expect(settingsSections(Permission.KICK_MEMBERS, false)).toEqual(["members"]));
   it("MANAGE_CHANNELS only: just the member list", () => expect(settingsSections(Permission.MANAGE_CHANNELS, false)).toEqual(["members"]));
   it("bits that are not admin actions open nothing", () => {
     expect(settingsSections(Permission.MANAGE_MESSAGES | Permission.CREATE_INVITE | 1811, false)).toEqual([]);
+  });
+});
+
+describe("server and channel identity forms", () => {
+  it("guildNameError mirrors the server schema (1..100 after trimming)", () => {
+    expect(guildNameError("Nhóm")).toBeUndefined();
+    expect(guildNameError("   ")).toMatch(/Vui lòng điền/);
+    expect(guildNameError("a".repeat(101))).toMatch(/100/);
+  });
+  it("topicError allows empty and multi-line text, refuses control characters and over 1024 characters", () => {
+    expect(topicError("")).toBeUndefined();
+    expect(topicError("dòng 1\ndòng 2")).toBeUndefined();
+    expect(topicError("a\u0007b")).toBeDefined();
+    expect(topicError("😀".repeat(1024))).toBeUndefined(); // counted in characters, not UTF-16 units
+    expect(topicError("😀".repeat(1025))).toMatch(/1024/);
+  });
+  it("channelPatch sends only what changed; a cleared topic is null; nothing changed is null", () => {
+    const c = { name: "chung", topic: "cũ" };
+    expect(channelPatch(c, { name: "chung", topic: "cũ" })).toBeNull();
+    expect(channelPatch(c, { name: "moi", topic: "cũ" })).toEqual({ name: "moi" });
+    expect(channelPatch(c, { name: "chung", topic: "  " })).toEqual({ topic: null });
+    expect(channelPatch({ name: "chung" }, { name: "chung", topic: "" })).toBeNull(); // no topic stays no topic
   });
 });
 

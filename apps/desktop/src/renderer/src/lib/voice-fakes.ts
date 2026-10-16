@@ -140,7 +140,7 @@ export class FakeMicTrack {
   }
 }
 
-export function setupVoice(token: Partial<{ canSpeak: boolean; canVideo: boolean; canStream: boolean; url: string }> = {}, onRoom?: (r: FakeRoom) => void) {
+export function setupVoice(token: Partial<{ canSpeak: boolean; canVideo: boolean; canStream: boolean; url: string; serverMuted: boolean; serverDeafened: boolean }> = {}, onRoom?: (r: FakeRoom) => void) {
   const rooms: FakeRoom[] = [];
   const sink = new FakeSink();
   const request = vi.fn(async (_m: "POST", _p: string, _b?: unknown): Promise<unknown> => ({ token: "tok", url: "ws://lk", canSpeak: true, canVideo: true, canStream: true, ...token }));

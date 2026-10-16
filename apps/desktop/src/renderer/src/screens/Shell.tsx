@@ -20,10 +20,11 @@ import { VoiceBar } from "../components/VoiceBar";
 import { VoiceRoom } from "../components/VoiceRoom";
 import { ColumnHeader, EmptyState } from "../components/States";
 import { ToastHost } from "../components/Toast";
+import { ThreadPanel } from "../components/Threads";
 import { UserCardHost } from "../components/UserCard";
 import { t } from "../i18n/t";
 import { ApiError } from "../lib/auth-client";
-import { queryClient, realtime, revalidateGuild, session, unread, voice, voicePresence } from "../lib/app";
+import { queryClient, realtime, revalidateGuild, session, threadPanel, unreadSync, voice, voicePresence } from "../lib/app";
 import { buildTree, displayOrder } from "../lib/categories";
 import { collapse } from "../lib/category-collapse";
 import { density } from "../lib/density";
@@ -97,6 +98,13 @@ export function Shell() {
   const isVoiceChannel = !!channels?.some((c) => c.id === channelId && c.type === "VOICE");
   // the voice room gives the member column's width to its tiles; every other place keeps the 4 columns
   const voiceRoomOpen = isVoiceChannel && !!guildId && !settings;
+  // an open thread takes the member column's place (a little wider) next to its channel
+  const openThread = useStore(threadPanel.store, (s) => s.thread);
+  const threadOpen = !!openThread && !!guildId && !settings && !isVoiceChannel && openThread.parentChannelId === channelId;
+  useEffect(() => {
+    if (settings || !guildId) threadPanel.close();
+    else if (channelId) threadPanel.follow(channelId); // null = still loading: keep it
+  }, [guildId, channelId, settings]);
 
   // The voice channels of the open server are watched for who is in them (see realtime.setWatched); the key keeps
   // the effect from re-running on every refetch of the same list.
@@ -107,16 +115,13 @@ export function Shell() {
   }, [watchKey]);
   useEffect(() => voicePresence.clear(), [guildId]);
 
-  // The text channels of the open server are listened to for unread counts, the DM list drives restart detection.
+  // The text channels of the open server are listened to for live unread counts; the counts of every server come from the server.
   const textKey = channels?.filter((c) => c.type === "TEXT").map((c) => c.id).join(",") ?? "";
   useEffect(() => {
     realtime.setTracked(textKey ? textKey.split(",") : []);
+    unreadSync.refresh(); // the server just opened was not listened to: its counts come from the server
     return () => realtime.setTracked([]);
   }, [textKey]);
-  const dms = useDms().data;
-  useEffect(() => {
-    if (dms) unread.reconcileDms(dms);
-  }, [dms]);
 
   useEffect(() => {
     if (user) useNav.setState(readLastPlace(user.id));
@@ -185,7 +190,7 @@ export function Shell() {
           </Banner>
         )}
       </div>
-      <div className={`grid min-h-0 flex-1 ${voiceRoomOpen ? "grid-cols-[72px_240px_minmax(0,1fr)]" : "grid-cols-[72px_240px_minmax(0,1fr)_240px]"}`}>
+      <div className={`grid min-h-0 flex-1 ${voiceRoomOpen ? "grid-cols-[72px_240px_minmax(0,1fr)]" : threadOpen ? "grid-cols-[72px_240px_minmax(0,1fr)_clamp(300px,32vw,420px)]" : "grid-cols-[72px_240px_minmax(0,1fr)_240px]"}`}>
         <div className="col-span-2 flex min-h-0 flex-col">
           <div className="grid min-h-0 flex-1 grid-cols-[72px_240px]">
             <ServerRail />
@@ -224,7 +229,11 @@ export function Shell() {
           )}
         </main>
 
-        {!voiceRoomOpen && (
+        {threadOpen && guildId && openThread ? (
+          <aside aria-label={t("thread.aside")} data-thread-panel className="flex min-h-0 min-w-0 flex-col border-l border-hair bg-surface-2">
+            <ThreadPanel key={openThread.id} guildId={guildId} thread={openThread} />
+          </aside>
+        ) : !voiceRoomOpen && (
           <aside aria-label={t("shell.members")} className="grain flex min-h-0 min-w-0 flex-col border-l border-hair bg-surface-1">
             {guildId ? (
               <MemberList guildId={guildId} />

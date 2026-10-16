@@ -43,7 +43,7 @@ describe("starting and answering", () => {
     const claims = await decodeToken(res.json().token);
     expect(claims.video).toMatchObject({ room: f.room, canPublish: true, canPublishSources: ["microphone", "camera", "screen_share", "screen_share_audio"], canPublishData: false });
     await until(() => f.benSock.got["call:incoming"]!.length);
-    expect(f.benSock.got["call:incoming"]).toEqual([{ dmChannelId: f.dm.id, from: { id: f.ann.id, username: "ann" }, video: true }]);
+    expect(f.benSock.got["call:incoming"]).toEqual([{ dmChannelId: f.dm.id, from: { id: f.ann.id, username: "ann", displayName: null, avatarHash: null }, video: true }]);
     await settle();
     expect(f.annSock.got["call:incoming"]).toEqual([]);
   });

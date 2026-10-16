@@ -32,7 +32,7 @@ describe("register", () => {
     const res = await post("/auth/register", { ...creds, email: " Nam@Example.COM " });
     expect(res.statusCode).toBe(201);
     const body = res.json();
-    expect(body.user).toEqual({ id: expect.any(String), email: "nam@example.com", username: "nam_01" });
+    expect(body.user).toEqual({ id: expect.any(String), email: "nam@example.com", username: "nam_01", displayName: null, avatarHash: null });
     expect(body.accessToken).toBeTruthy();
     expect(body.refreshToken).toBeTruthy();
     expect(res.body).not.toMatch(/passwordHash|argon2/);

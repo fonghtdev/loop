@@ -86,7 +86,7 @@ describe("voice:update", () => {
     const res = await send({ event: "participant_joined", room: { name: f.room }, participant: { identity: f.alice.id, name: "alice" } });
     expect(res.statusCode).toBe(200);
     await until(() => watcher.got["voice:update"]!.length);
-    expect(watcher.got["voice:update"]![0]).toEqual({ channelId: f.voice.id, participants: [{ userId: f.alice.id, username: "alice", sharing: false }] });
+    expect(watcher.got["voice:update"]![0]).toEqual({ channelId: f.voice.id, participants: [{ userId: f.alice.id, username: "alice", sharing: false, serverMute: false, serverDeafen: false }] });
     await settle();
     expect(outsider.got["voice:update"]).toEqual([]);
   });

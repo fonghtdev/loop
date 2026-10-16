@@ -4,7 +4,7 @@ import { standingFor, type SettingsCtx } from "./admin";
 import type { Member, Role } from "./permissions";
 import type { FriendsData } from "./social";
 import { NEUTRAL_ROLE_COLOR } from "./role-colors";
-import { cardActions, cardDate, filterRoles, modView, placeCard, relationOf, roleChips, roleColor, rolesView, stepIndex } from "./user-card";
+import { cardActions, cardDate, cardIdentity, filterRoles, modView, placeCard, relationOf, roleChips, roleColor, rolesView, stepIndex } from "./user-card";
 
 const G = "g";
 const role = (id: string, position: number, permissions: number): Role => ({ id, guildId: G, name: id, permissions, position });
@@ -131,20 +131,23 @@ describe("roles block (Discord-like card)", () => {
     const v = modView({ ...ctxFor("m"), members: [...members, full] }, full);
     expect(v.assignable).toEqual([]);
     expect(v.canRoles).toBe(true);
-    expect(rolesView({ isOwner: false, chipCount: 2, mod: v }).canAdd).toBe(true);
+    expect(rolesView({ chipCount: 2, mod: v }).canAdd).toBe(true);
   });
   it("the plus shows with no role and with one role; nobody who cannot manage roles gets it", () => {
-    expect(rolesView({ isOwner: false, chipCount: 0, mod: modView(ctxFor("m"), target("plain")) })).toEqual({ show: true, canAdd: true });
-    expect(rolesView({ isOwner: false, chipCount: 1, mod: modView(ctxFor("m"), target("n")) })).toEqual({ show: true, canAdd: true });
-    expect(rolesView({ isOwner: false, chipCount: 1, mod: modView(ctxFor("h"), target("n")) })).toEqual({ show: true, canAdd: false });
+    expect(rolesView({ chipCount: 0, mod: modView(ctxFor("m"), target("plain")) })).toEqual({ show: true, canAdd: true });
+    expect(rolesView({ chipCount: 1, mod: modView(ctxFor("m"), target("n")) })).toEqual({ show: true, canAdd: true });
+    expect(rolesView({ chipCount: 1, mod: modView(ctxFor("h"), target("n")) })).toEqual({ show: true, canAdd: false });
   });
   it("no right and no roles hides the block; the roles are not loaded yet (mod null) behaves the same", () => {
-    expect(rolesView({ isOwner: false, chipCount: 0, mod: modView(ctxFor("plain"), target("n")) }).show).toBe(false);
-    expect(rolesView({ isOwner: false, chipCount: 0, mod: null }).show).toBe(false);
-    expect(rolesView({ isOwner: false, chipCount: 2, mod: null })).toEqual({ show: true, canAdd: false });
+    expect(rolesView({ chipCount: 0, mod: modView(ctxFor("plain"), target("n")) }).show).toBe(false);
+    expect(rolesView({ chipCount: 0, mod: null }).show).toBe(false);
+    expect(rolesView({ chipCount: 2, mod: null })).toEqual({ show: true, canAdd: false });
   });
-  it("the guild owner gets no roles block at all, even with roles", () => {
-    expect(rolesView({ isOwner: true, chipCount: 3, mod: modView(ctxFor("m"), target("owner")) })).toEqual({ show: false, canAdd: false });
+  it("the owner gets the block on their own card (add and remove), like anyone else", () => {
+    const own = target("owner");
+    const view = modView(ctxFor("owner"), own);
+    expect(rolesView({ chipCount: 0, mod: view })).toEqual({ show: true, canAdd: true });
+    expect(view.assignable.map((r) => r.id)).toEqual(["mod", "helper", "newbie"]);
   });
   it("a manager cannot add roles to the owner (canRoles false)", () => {
     expect(modView(ctxFor("m"), target("owner")).canRoles).toBe(false);
@@ -173,5 +176,22 @@ describe("roleColor", () => {
   it("a role without color (missing or null) gets the same neutral color, whatever its id", () => {
     expect(roleColor({})).toBe(NEUTRAL_ROLE_COLOR);
     expect(roleColor({ color: null })).toBe(NEUTRAL_ROLE_COLOR);
+  });
+});
+
+describe("cardIdentity (the head of the card)", () => {
+  it("falls back to the username when nobody told a display name", () => {
+    expect(cardIdentity("an", undefined, undefined)).toEqual({ title: "an", handle: null, statusText: null, bannerHash: null, bio: null });
+  });
+  it("a display name is the title and @username becomes the small handle", () => {
+    expect(cardIdentity("an", { displayName: "Anh Nhỏ" }, undefined)).toMatchObject({ title: "Anh Nhỏ", handle: "@an" });
+  });
+  it("the fetched profile wins over the store, including a removed name or status (null)", () => {
+    const stored = { displayName: "Cũ", statusText: "bận", bannerHash: "b1" };
+    const r = cardIdentity("an", stored, { displayName: null, statusText: null, bannerHash: "b2", bio: "Xin chào" });
+    expect(r).toEqual({ title: "an", handle: null, statusText: null, bannerHash: "b2", bio: "Xin chào" });
+  });
+  it("while the profile loads (or failed) the card still shows what the store knows", () => {
+    expect(cardIdentity("an", { displayName: "Anh", statusText: "rảnh", bannerHash: "b1" }, undefined)).toMatchObject({ title: "Anh", statusText: "rảnh", bannerHash: "b1", bio: null });
   });
 });

@@ -12,7 +12,7 @@ import { channelKey, dmKey, parseKey, type ConvKey } from "./conversation";
 export type SettingsView = SettingsTab | "user";
 export type Place = { guildId: string | null; channelId: string | null; dmId: string | null; settings: SettingsView | null };
 const HOME: Place = { guildId: null, channelId: null, dmId: null, settings: null };
-const TABS: unknown[] = ["roles", "members", "overwrites", "danger"];
+const TABS: unknown[] = ["overview", "roles", "members", "overwrites", "danger"];
 const key = (userId: string) => `loop.lastPlace.${userId}`;
 
 export const useNav = create<Place>(() => HOME);
@@ -61,10 +61,15 @@ export function openConversation(p: Place): ConvKey | null {
   return p.dmId ? dmKey(p.dmId) : null;
 }
 
-/** Where a clicked notification leads, re-checked against what we still know: only a DM that is still in the list. */
-export function placeForKey(key: ConvKey, dmIds: readonly string[] | undefined): Place | null {
+/**
+ * Where a clicked notification leads, re-checked against what we still know: a DM that is still in the list, or a
+ * channel whose server `guildOf` still knows (a mention remembered it).
+ */
+export function placeForKey(key: ConvKey, dmIds: readonly string[] | undefined, guildOf: (channelId: string) => string | undefined = () => undefined): Place | null {
   const { kind, id } = parseKey(key);
-  return kind === "dm" && dmIds?.includes(id) ? { ...HOME, dmId: id } : null;
+  if (kind === "dm") return dmIds?.includes(id) ? { ...HOME, dmId: id } : null;
+  const guildId = guildOf(id);
+  return guildId ? { guildId, channelId: id, dmId: null, settings: null } : null;
 }
 
 /**

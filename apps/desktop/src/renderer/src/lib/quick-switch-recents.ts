@@ -45,12 +45,12 @@ export function recordRecent(userId: string, key: string) {
 
 type PlaceLike = { guildId: string | null; channelId: string | null; dmId: string | null; settings: string | null };
 /** The key of where the user is, or null when it cannot be told (a DM not in the list yet, a server with no channel open). */
-export function recentKeyOf(p: PlaceLike, dms: readonly { id: string; user: { id: string } }[] | undefined): string | null {
+export function recentKeyOf(p: PlaceLike, dms: readonly { id: string; user?: { id: string } }[] | undefined): string | null {
   if (p.settings === "user") return "place:settings";
   if (p.guildId) return p.channelId ? `channel:${p.guildId}:${p.channelId}` : null;
   if (p.dmId) {
     const dm = dms?.find((d) => d.id === p.dmId);
-    return dm ? `person:${dm.user.id}` : null;
+    return dm?.user ? `person:${dm.user.id}` : null; // ponytail: group DMs are not kept as recents
   }
   return "place:friends";
 }

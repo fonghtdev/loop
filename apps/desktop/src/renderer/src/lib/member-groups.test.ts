@@ -67,4 +67,11 @@ describe("groupMembers", () => {
     expect(shape(groupMembers([{ ...m, roleIds: ["mod"] }], roles, G, on("a")))).toEqual([["mod", ["a"]]]);
     expect(shape(groupMembers([m], roles, G, on()))).toEqual([["offline", ["a"]]]);
   });
+
+  it("sorts by the shown name when one is given, not by the login name", () => {
+    const list = [member("a"), member("b"), member("c")];
+    const shown: Record<string, string> = { a: "Zoe", b: "Ánh", c: "Minh" };
+    expect(shape(groupMembers(list, roles, G, on("a", "b", "c"), (m) => shown[m.userId]!))).toEqual([["online", ["b", "c", "a"]]]);
+    expect(shape(groupMembers(list, roles, G, on("a", "b", "c")))).toEqual([["online", ["a", "b", "c"]]]);
+  });
 });

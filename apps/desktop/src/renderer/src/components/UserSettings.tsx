@@ -8,6 +8,8 @@ import { t } from "../i18n/t";
 import type { MessageKey } from "../i18n/vi";
 import { appearance, MOTIONS, useAppearance, type Appearance } from "../lib/appearance";
 import { density, DENSITIES, useDensity, type Density } from "../lib/density";
+import { linkPreviews, useLinkPreviews } from "../lib/embeds";
+import { gifPref, useShowGifs } from "../lib/gifs";
 import { appSettings, devices, noiseLevel, session, sounds, unlockDeviceLabels } from "../lib/app";
 import { DEVICE_KINDS, labelsAvailable, optionsFor, type DeviceKind } from "../lib/devices";
 import { useNav } from "../lib/nav";
@@ -17,6 +19,7 @@ import { toast } from "../lib/toast";
 import { Button } from "./Button";
 import { ConfirmBody } from "./Confirm";
 import { Dialog, DialogActions } from "./Dialog";
+import { ProfileSettings } from "./ProfileSettings";
 import { Segmented } from "./Segmented";
 import { Switch } from "./Switch";
 import { Tooltip } from "./Tooltip";
@@ -60,6 +63,9 @@ export function UserSettings() {
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto flex max-w-2xl flex-col gap-4">
+          <Group id="profile" title="userSettings.profile">
+            <ProfileSettings />
+          </Group>
           <Group id="notifications" title="userSettings.notifications">
             <Switch label={t("userSettings.notify")} description={t("userSettings.notifyHint")} checked={settings.notifications} onChange={save("notifications")} />
             <Switch label={t("userSettings.preview")} description={t("userSettings.previewHint")} checked={settings.preview} onChange={save("preview")} disabled={!settings.notifications} />
@@ -186,12 +192,19 @@ const DENSITY_LABEL: Record<Density, MessageKey> = { comfy: "userSettings.densit
 /** Per-ACCOUNT look: how tight the message list is. Applied at once, stored under the account's id (lib/density). */
 function LooksSection() {
   const current = useDensity();
+  const previews = useLinkPreviews();
+  const gifs = useShowGifs();
   return (
-    <fieldset className="px-3 py-2">
-      <legend className="text-[15px] font-medium">{t("userSettings.density")}</legend>
-      <p className="mt-0.5 mb-2 text-[13px] leading-relaxed text-ink-muted">{t("userSettings.densityHint")}</p>
-      <Segmented name="density" value={current} onChange={(d) => density.set(d)} options={DENSITIES.map((d) => ({ value: d, label: t(DENSITY_LABEL[d]) }))} />
-    </fieldset>
+    <>
+      <fieldset className="px-3 py-2">
+        <legend className="text-[15px] font-medium">{t("userSettings.density")}</legend>
+        <p className="mt-0.5 mb-2 text-[13px] leading-relaxed text-ink-muted">{t("userSettings.densityHint")}</p>
+        <Segmented name="density" value={current} onChange={(d) => density.set(d)} options={DENSITIES.map((d) => ({ value: d, label: t(DENSITY_LABEL[d]) }))} />
+      </fieldset>
+      {/* per device, applied at once (lib/embeds); hides the cards only, the server still fetches */}
+      <Switch label={t("userSettings.linkPreviews")} description={t("userSettings.linkPreviewsHint")} checked={previews} onChange={(on) => linkPreviews.set(on)} />
+      <Switch label={t("userSettings.gifs")} description={t("userSettings.gifsHint")} checked={gifs} onChange={(on) => gifPref.set(on)} />
+    </>
   );
 }
 

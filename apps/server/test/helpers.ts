@@ -1,6 +1,8 @@
 import type { buildApp } from "../src/app.js";
 import { removeObjects } from "../src/attachments/sweep.js";
+import { imageKey, pendingKey } from "../src/profiles/images.js";
 import { prisma } from "../src/db.js";
+import { thumbKey } from "../src/embeds/dto.js";
 import { createStorage } from "../src/storage.js";
 import { dmRoom, voiceRoom } from "../src/voice/rooms.js";
 import { createLivekit } from "../src/voice/livekit.js";
@@ -17,6 +19,8 @@ export const env = {
   },
   port: 0,
   rateLimit: false, // the suite signs up dozens of users from one address; rate-limit tests turn it on
+  linkPreviews: false, // never fetch the real web from tests; embeds tests turn it on with a fake fetcher
+  giphyApiKey: undefined as string | undefined, // GIF tests give a key and a fake provider
   trustProxy: false as boolean | number,
   corsOrigins: [] as string[],
   s3: {
@@ -57,10 +61,28 @@ async function closeKnownRooms() {
   for (const room of await livekit.listRooms(names)) await livekit.deleteRoom(room.name);
 }
 
-/** Empties the test bucket's known objects (every key is in an Attachment row), the LiveKit rooms, then the tables. */
+/** Every profile image and pending image upload that a row points at. */
+async function removeProfileObjects() {
+  const [users, guilds, pending] = await Promise.all([
+    prisma.user.findMany({ select: { id: true, avatarHash: true, bannerHash: true } }),
+    prisma.guild.findMany({ select: { id: true, iconHash: true } }),
+    prisma.profileUpload.findMany({ select: { id: true } }),
+  ]);
+  const keys = [
+    ...users.flatMap((u) => [u.avatarHash && imageKey(`profile/${u.id}`, "avatar", u.avatarHash), u.bannerHash && imageKey(`profile/${u.id}`, "banner", u.bannerHash)]),
+    ...guilds.map((g) => g.iconHash && imageKey(`guilds/${g.id}`, "icon", g.iconHash)),
+    ...pending.map((p) => pendingKey(p.id)),
+  ];
+  await Promise.allSettled(keys.filter((k): k is string => !!k).map((k) => testStorage.remove(k)));
+}
+
+/** Empties the test bucket's known objects (attachments, profile images), the LiveKit rooms, then the tables. */
 export async function resetDb() {
   await closeKnownRooms();
   await removeObjects(testStorage, (await prisma.attachment.findMany({ select: { id: true } })).map((a) => a.id));
+  await removeProfileObjects();
+  const thumbs = await prisma.messageEmbed.findMany({ where: { thumbHash: { not: null } }, select: { thumbHash: true } });
+  await Promise.allSettled(thumbs.map((e) => testStorage.remove(thumbKey(e.thumbHash!))));
   // Presence work of the previous test's disconnects may still be reading Friendship/Member/Block; Postgres can pick
   // the TRUNCATE as the deadlock victim (40P01), so try again.
   for (let attempt = 1; ; attempt++) {
@@ -137,4 +159,22 @@ export async function uploadAttachment(
   const put = uploadUrl ? await fetch(uploadUrl, { method: "PUT", headers, body: bytes }) : undefined;
   const complete = id ? await call("POST", `/attachments/${id}/complete`, token) : undefined;
   return { id: id as string, create, put, complete: complete!, dto: complete?.json() };
+}
+
+export const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(16)]);
+
+/** Steps 1-3 of an image upload at `base` (`/me/avatar`, `/me/banner`, `/guilds/:id/icon`). `declared` overrides the announced type / size. */
+export async function uploadImage(
+  app: App,
+  token: string,
+  base: string,
+  bytes: Uint8Array = PNG,
+  declared: { contentType?: string; size?: number } = {},
+) {
+  const call = caller(app);
+  const create = await call("POST", `${base}/upload`, token, { contentType: "image/png", size: bytes.length, ...declared });
+  const { id, uploadUrl, headers } = create.json();
+  const put = uploadUrl ? await fetch(uploadUrl, { method: "PUT", headers, body: bytes }) : undefined;
+  const complete = id ? await call("POST", `${base}/complete`, token, { id }) : undefined;
+  return { id: id as string, create, put, complete: complete! };
 }

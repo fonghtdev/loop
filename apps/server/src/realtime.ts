@@ -6,12 +6,12 @@ import { Server } from "socket.io";
 import { z } from "zod";
 import { verifyAccessToken } from "./auth/tokens.js";
 import { HttpError } from "./http.js";
-import { hasPermission, Permission, type PresenceStatus, presenceAwaySchema, type StatusPref } from "@loop/shared";
+import { hasPermission, Permission, type PresenceStatus, presenceAwaySchema, type StatusPref, type TypingEvent, typingSchema } from "@loop/shared";
 import { prisma } from "./db.js";
-import { hiddenChannels, memberChannelPermissions, requireChannelPermission } from "./guilds/access.js";
+import { hiddenChannels, memberChannelPermissions, requireChannelPermission, requireWritableChannel } from "./guilds/access.js";
 import type { Limits } from "./limiter.js";
 import { effectiveStatus, presenceFields } from "./presence.js";
-import { blockedWith, presenceAudience } from "./social/access.js";
+import { blockedWith, presenceAudience, requireDmWritable } from "./social/access.js";
 import type { Voice } from "./voice/enforce.js";
 
 declare module "fastify" {
@@ -23,23 +23,39 @@ declare module "fastify" {
 /**
  * Socket.IO is only a push channel: writes and history go through REST.
  * Client -> server: `channel:subscribe` / `channel:unsubscribe` {channelId}, acked {ok:true} | {ok:false,error};
- * `presence:away` {away: boolean} (no ack; anything else is ignored).
+ * `presence:away` {away: boolean} (no ack; anything else is ignored); `typing` {channelId} | {dmChannelId} (no ack; dropped unless the
+ * sender could post there, at most one per 2 s per socket).
+ * `typing` {channelId|dmChannelId, userId, at(ms)} goes to the channel room (never to the sender's own rooms) or the other DM participants' rooms.
+ * `read:updated` {channelId|dmChannelId, lastReadSeq} goes to the reader's own user room when a read pointer moves forward.
  * Server -> room `channel:<id>`: `message:new` | `message:update` (message JSON as in REST), `message:delete` {id, channelId}.
- * The sender receives its own events too; clients dedupe by message id.
+ * `message:pin` {messageId, channelId, pinned} goes to the same room. The sender receives its own events too; clients dedupe by message id.
  * User rooms `user:<id>` (every authenticated socket joins its own) carry DM, friend and presence events:
- * `dm:message:new|update` (message JSON), `dm:message:delete` {id, dmChannelId}, `dm:new` {id, user},
+ * `dm:message:new|update` (message JSON), `dm:message:delete` {id, dmChannelId}, `dm:message:pin` {messageId, dmChannelId, pinned} (to every participant),
+ * `dm:new` {id, user} (pair) | group DM JSON (to whoever was added), `dm:updated` group DM JSON (to every current participant),
+ * `dm:removed` {dmChannelId} (to whoever left or was removed),
  * `friend:request` {from}, `friend:accepted` {user}, `friend:removed` {userId},
  * `presence:update` {userId, online, status} (to friends + guild co-members, never across a block; `online` = status !== "offline"),
  * `me:status` {status} (the user's own preference, so their other devices follow),
- * `call:incoming` {dmChannelId, from, video}, `call:declined` {dmChannelId, by}, `call:ended` {dmChannelId}.
+ * `call:incoming` {dmChannelId, from, video}, `call:declined` {dmChannelId, by}, `call:ended` {dmChannelId},
+ * `voice:moved` {channelId, by:{id,username}} (only the moved member: rejoin that voice channel).
  * Guild layout events go to the members' `user:<id>` rooms: `channel:created` (channel JSON), `category:created|updated`
  * (category JSON), `category:deleted`, `layout:updated` (payloads in packages/shared); channel data is filtered per member by VIEW_CHANNEL.
+ * `user:updated` {id, username, displayName, avatarHash, bannerHash, statusText} goes to the presence audience + the user (profile or image changed);
+ * `guild:updated` {id, name, iconHash} to every member; `channel:updated` (channel JSON) to members who can VIEW it.
+ * `mention:new` {guildId, channelId, message} goes to the mentioned people (every member who can VIEW the channel for @everyone / @here), never the author,
+ * so a channel they have not subscribed to still reaches them.
  * `member:joined` {guildId, user:{id,username,isBot}} goes to every member (the newcomer included) when someone joins by invite.
+ * Threads are channels (room `channel:<threadId>`, same message events, permissions from the parent): `thread:created` |
+ * `thread:updated` (thread JSON) and `thread:deleted` {id, guildId, parentChannelId, starterMessageId} go to the user room of
+ * every member who can VIEW the parent; `mention:new` carries `parentChannelId` (null outside a thread).
  * Rooms span instances through the Redis adapter.
  */
-export type MessageEvent = "message:new" | "message:update" | "message:delete";
-/** Also pushed to room `channel:<id>` of a voice channel: `voice:update` {channelId, participants:[{userId, username}]}. */
-export type ChannelEvent = MessageEvent | "voice:update";
+export type MessageEvent = "message:new" | "message:update" | "message:delete" | "message:reaction" | "message:pin";
+/**
+ * Also pushed to room `channel:<id>` of a voice channel: `voice:update` {channelId, participants:[{userId, username}]};
+ * and to a text channel's room when one of its threads got or lost a message: `thread:updated` (thread JSON).
+ */
+export type ChannelEvent = MessageEvent | "voice:update" | "thread:updated";
 
 const channelRoom = (channelId: string) => `channel:${channelId}`;
 const userRoom = (userId: string) => `user:${userId}`;
@@ -142,6 +158,7 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
     // ponytail: per socket and in memory; reconnecting resets them, but connects are limited per IP
     const subscribeAllowed = limits.socketBudget("socket-subscribe");
     const presenceAllowed = limits.socketBudget("socket-presence");
+    const typingAllowed = limits.socketBudget("socket-typing");
     let away = false; // the latest flag asked for; socket.data.away follows it in queue order
     socket.on("presence:away", (payload: unknown) => {
       const parsed = presenceAwaySchema.safeParse(payload);
@@ -152,6 +169,25 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
         socket.data.away = flag;
         if (live) await announceChange(userId, (now) => now.map((f) => (f.id === socket.id ? { ...f, away: !flag } : f)));
       }).catch(() => {});
+    });
+    // Relays "is typing" to whoever could read a message from this user; nothing is stored and failures are silent.
+    socket.on("typing", async (payload: unknown) => {
+      const parsed = typingSchema.safeParse(payload);
+      if (closing || !parsed.success || !typingAllowed()) return;
+      try {
+        const at = Date.now();
+        if ("channelId" in parsed.data) {
+          const { channelId } = parsed.data;
+          await requireWritableChannel(channelId, userId);
+          io.to(channelRoom(channelId)).except(userRoom(userId)).emit("typing", { channelId, userId, at } satisfies TypingEvent);
+        } else {
+          const { dmChannelId } = parsed.data;
+          const { otherIds } = await requireDmWritable(dmChannelId, userId);
+          emitToUsers(otherIds, "typing", { dmChannelId, userId, at } satisfies TypingEvent);
+        }
+      } catch {
+        // not allowed to write there (or gone): drop
+      }
     });
     const handle = (action: "join" | "leave") => async (payload: unknown, ack?: unknown) => {
       const reply = typeof ack === "function" ? ack : () => {};
@@ -206,9 +242,9 @@ export function createRealtime(httpServer: HttpServer, jwtSecret: string, redisU
     },
     /** Liveness probe of the shared Redis connection (used by GET /health). */
     ping: () => pub.ping(),
-    /** Both participants' user rooms; no subscribe step. */
-    emitDm: (dm: { userLowId: string; userHighId: string }, event: "new" | "update" | "delete", payload: object) =>
-      emitToUsers([dm.userLowId, dm.userHighId], `dm:message:${event}`, payload),
+    /** Every current participant's user room (pair or group); no subscribe step. Pass the ids read with the access check. */
+    emitDm: (participantIds: string[], event: "new" | "update" | "delete" | "reaction" | "pin", payload: object) =>
+      emitToUsers(participantIds, `dm:message:${event}`, payload),
     statusOf,
     /**
      * Stores the user's preference in their presence queue (so presence work queued before it still sees the old

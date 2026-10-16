@@ -17,11 +17,13 @@ RUN pnpm --filter @loop/bot-music deploy --prod /out \
  && cp -r packages/bots/music/dist /out/dist
 
 FROM ${NODE_IMAGE} AS runtime
-# ffmpeg from apt; yt-dlp as the standalone binary (needs no python). YouTube extraction needs a JS runtime: node is already here.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg tini \
+# ffmpeg from apt; yt-dlp from pip in a pre-compiled venv (starts 1.5-3x faster than the PyInstaller binary on a 0.1 CPU host).
+# YouTube extraction needs a JS runtime: node is already here ([default] brings yt-dlp-ejs).
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg tini python3 python3-venv \
  && rm -rf /var/lib/apt/lists/* \
- && curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o /usr/local/bin/yt-dlp \
- && chmod 755 /usr/local/bin/yt-dlp \
+ && python3 -m venv /opt/ytdlp && /opt/ytdlp/bin/pip install --no-cache-dir "yt-dlp[default]" \
+ && /opt/ytdlp/bin/python -m compileall -q /opt/ytdlp/lib >/dev/null \
+ && ln -s /opt/ytdlp/bin/yt-dlp /usr/local/bin/yt-dlp \
  && echo "--js-runtimes node" > /etc/yt-dlp.conf
 ENV NODE_ENV=production \
     NODE_OPTIONS=--max-old-space-size=200

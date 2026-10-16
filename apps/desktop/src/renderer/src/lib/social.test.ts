@@ -4,12 +4,21 @@ import { describe, expect, it } from "vitest";
 import type { Message } from "./chat";
 import {
   addDm,
+  addableFriends,
   addFriend,
   addIncoming,
   addOutgoing,
   applySocialEvent,
   bumpDm,
+  canCreateGroup,
   dmComposerState,
+  dmPeople,
+  filterFriends,
+  groupRights,
+  groupTitle,
+  MAX_INVITEES,
+  pairWith,
+  toggleInvitee,
   DMS_KEY,
   FRIENDS_KEY,
   isOnline,
@@ -21,6 +30,8 @@ import {
   type Dm,
   type Friend,
   type FriendsData,
+  type GroupDm,
+  type PairDm,
 } from "./social";
 
 const user = (id: string, status: PresenceStatus = "offline"): Friend => ({ id, username: id, status });
@@ -56,7 +67,7 @@ describe("presence", () => {
     expect(setFriendPresence(d, "a", "offline")).toBe(d);
     expect(setFriendPresence(d, "stranger", "online")).toBe(d);
     const dms = [dm("d1", "a", null)];
-    expect(setDmPresence(dms, "a", "dnd")[0].user.status).toBe("dnd");
+    expect((setDmPresence(dms, "a", "dnd")[0] as PairDm).user.status).toBe("dnd");
     expect(setDmPresence(dms, "a", "offline")).toBe(dms);
   });
 });
@@ -114,7 +125,7 @@ describe("applySocialEvent (TanStack caches, in place)", () => {
     expect(qc.getQueryData<FriendsData>(FRIENDS_KEY)!.incoming.map((u) => u.id)).toEqual(["r"]);
     applySocialEvent(qc, { type: "presence", userId: "a", status: "idle" });
     expect(qc.getQueryData<FriendsData>(FRIENDS_KEY)!.friends[0].status).toBe("idle");
-    expect(qc.getQueryData<Dm[]>(DMS_KEY)![0].user.status).toBe("idle");
+    expect((qc.getQueryData<Dm[]>(DMS_KEY)![0] as PairDm).user.status).toBe("idle");
     applySocialEvent(qc, { type: "dm:new", dm: { id: "d2", user: user("n") } });
     expect(qc.getQueryData<Dm[]>(DMS_KEY)!.map((x) => x.id)).toEqual(["d2", "d1"]);
     applySocialEvent(qc, { type: "friend:removed", userId: "a" });
@@ -156,5 +167,94 @@ describe("dmComposerState", () => {
   });
   it("once the friends list was refreshed after the 403 and says friends again, it opens", () => {
     expect(dmComposerState({ ...base, forbiddenAt: 90, friendsUpdatedAt: 100 })).toBe("ok");
+  });
+});
+
+const group = (id: string, ids: string[], over: Partial<GroupDm> = {}): GroupDm => ({
+  id,
+  kind: "GROUP",
+  name: null,
+  ownerId: ids[0] ?? null,
+  participants: ids.map((x) => user(x)),
+  lastMessageAt: null,
+  ...over,
+});
+const plainName = (_id: string, username: string) => username;
+
+describe("group DMs: list model", () => {
+  it("dmPeople and pairWith tell the kinds apart (a group never counts as the DM with someone)", () => {
+    const list: Dm[] = [group("g", ["me", "a", "b"]), dm("p", "a", null)];
+    expect(list.map((d) => dmPeople(d).map((u) => u.id))).toEqual([["me", "a", "b"], ["a"]]);
+    expect(pairWith(list, "a")?.id).toBe("p");
+    expect(pairWith(list, "b")).toBeUndefined();
+  });
+
+  it("presence reaches group participants too", () => {
+    const list: Dm[] = [group("g", ["me", "a"])];
+    expect((setDmPresence(list, "a", "online")[0] as GroupDm).participants.map((u) => u.status)).toEqual(["offline", "online"]);
+    expect(setDmPresence(list, "zz", "online")).toBe(list);
+  });
+
+  it("title: the name, else the others' names (shown names, at most 3 then +n), else 'alone'", () => {
+    expect(groupTitle(group("g", ["me", "a"], { name: "Crew" }), "me", plainName, "ALONE")).toBe("Crew");
+    expect(groupTitle(group("g", ["me", "ann", "bob"]), "me", plainName, "ALONE")).toBe("ann, bob");
+    expect(groupTitle(group("g", ["me", "a", "b", "c", "d", "e"]), "me", plainName, "ALONE")).toBe("a, b, c +2");
+    expect(groupTitle(group("g", ["me"]), "me", plainName, "ALONE")).toBe("ALONE");
+    expect(groupTitle(group("g", ["me", "a"]), "me", (id) => `Shown ${id}`, "ALONE")).toBe("Shown a");
+  });
+
+  it("dm:group upserts (dm:new of a group and dm:updated), dm:removed drops it; both idempotent", () => {
+    const qc = new QueryClient();
+    qc.setQueryData<Dm[]>(DMS_KEY, [dm("p", "a", null)]);
+    applySocialEvent(qc, { type: "dm:group", dm: group("g", ["me", "a", "b"]) });
+    expect(qc.getQueryData<Dm[]>(DMS_KEY)!.map((x) => x.id)).toEqual(["g", "p"]);
+    applySocialEvent(qc, { type: "dm:group", dm: group("g", ["me", "a"], { name: "New" }) });
+    const g = qc.getQueryData<Dm[]>(DMS_KEY)![0] as GroupDm;
+    expect([g.name, g.participants.length, qc.getQueryData<Dm[]>(DMS_KEY)!.length]).toEqual(["New", 2, 2]);
+    applySocialEvent(qc, { type: "dm:removed", dmChannelId: "g" });
+    applySocialEvent(qc, { type: "dm:removed", dmChannelId: "g" });
+    expect(qc.getQueryData<Dm[]>(DMS_KEY)!.map((x) => x.id)).toEqual(["p"]);
+    expect((qc.getQueryData<Dm[]>(DMS_KEY)![0] as PairDm).user.id).toBe("a");
+  });
+});
+
+describe("group DMs: create dialog and owner actions", () => {
+  it("picking: 2..9 others; toggling past the cap does nothing; unselecting always works", () => {
+    let sel: string[] = [];
+    sel = toggleInvitee(sel, "a");
+    expect(canCreateGroup(sel)).toBe(false);
+    sel = toggleInvitee(sel, "b");
+    expect(canCreateGroup(sel)).toBe(true);
+    for (let i = 0; i < 20; i++) sel = toggleInvitee(sel, `x${i}`);
+    expect(sel).toHaveLength(MAX_INVITEES);
+    expect(canCreateGroup(sel)).toBe(true);
+    expect(toggleInvitee(sel, "late")).toEqual(sel);
+    expect(toggleInvitee(sel, "a")).not.toContain("a");
+    expect(toggleInvitee(["a"], "b", 1)).toEqual(["a"]); // adding to a group with one free seat
+  });
+
+  it("search ignores accents and case, matches the shown or login name, sorts by shown name", () => {
+    const friends = [user("zed"), user("dat"), user("anh")];
+    const shown = (id: string, u: string) => ({ dat: "Đạt", anh: "Ánh" })[id] ?? u;
+    expect(filterFriends(friends, "", shown).map((f) => f.id)).toEqual(["anh", "dat", "zed"]);
+    expect(filterFriends(friends, "dat", shown).map((f) => f.id)).toEqual(["dat"]);
+    expect(filterFriends(friends, "ANH", shown).map((f) => f.id)).toEqual(["anh"]);
+    expect(filterFriends(friends, "ze", shown).map((f) => f.id)).toEqual(["zed"]);
+  });
+
+  it("only the owner may remove, never themself nor an outsider; adding stops at the cap", () => {
+    const g = group("g", ["owner", "a"]);
+    expect(groupRights(g, "owner").canRemove("a")).toBe(true);
+    expect(groupRights(g, "owner").canRemove("owner")).toBe(false);
+    expect(groupRights(g, "owner").canRemove("stranger")).toBe(false);
+    expect(groupRights(g, "a").canRemove("owner")).toBe(false);
+    expect(groupRights(g, undefined).owner).toBe(false);
+    expect(groupRights(g, "a").canAdd).toBe(true);
+    expect(groupRights(group("g", Array.from({ length: 10 }, (_, i) => `u${i}`)), "u0").canAdd).toBe(false);
+  });
+
+  it("people to add: friends not in the group and not blocked", () => {
+    const g = group("g", ["me", "a"]);
+    expect(addableFriends([user("a"), user("b"), user("c")], g, new Set(["c"])).map((f) => f.id)).toEqual(["b"]);
   });
 });

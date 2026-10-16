@@ -171,7 +171,7 @@ describe("privacy: invisible looks exactly like offline", () => {
     sb.emit("presence:away", { away: true });
     sb.emit("presence:away", { away: false });
     const dm = await call("POST", "/dms", a.token, { userId: b.id });
-    expect(dm.json().user).toEqual({ id: b.id, username: "bob", online: false, status: "offline" });
+    expect(dm.json().user).toEqual({ id: b.id, username: "bob", displayName: null, avatarHash: null, online: false, status: "offline" });
     // bob uses the app: messages, opening a DM (alice is told of it with bob offline), reading lists.
     expect((await call("POST", `/dms/${dm.json().id}/messages`, b.token, { content: "hi" })).statusCode).toBe(201);
     const sc = await connect(c);
@@ -179,7 +179,7 @@ describe("privacy: invisible looks exactly like offline", () => {
     await befriend(app, b, c);
     expect((await call("POST", "/dms", b.token, { userId: c.id })).statusCode).toBe(201);
     await until(() => sc.got["dm:new"]!.length);
-    expect(sc.got["dm:new"]![0].user).toEqual({ id: b.id, username: "bob", online: false, status: "offline" });
+    expect(sc.got["dm:new"]![0].user).toEqual({ id: b.id, username: "bob", displayName: null, avatarHash: null, online: false, status: "offline" });
     expect((await call("GET", "/friends", b.token)).statusCode).toBe(200);
     expect(await memberStatus(b, guild.id)).toEqual({ alice: "online", bob: "offline" }); // bob sees himself as others do
 

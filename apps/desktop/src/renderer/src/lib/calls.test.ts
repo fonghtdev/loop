@@ -3,13 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import { createCalls, FRESH_CALL_MS, RING_MS } from "./calls";
 import { setupVoice } from "./voice-fakes";
 
-function setup(onRoom?: Parameters<typeof setupVoice>[1]) {
+function setup(onRoom?: Parameters<typeof setupVoice>[1], groups: string[] = []) {
   const v = setupVoice({}, onRoom);
   const timers: { fn: () => void; ms: number; id: number; live: boolean }[] = [];
   const declineRequest = vi.fn(async () => undefined);
   const calls = createCalls({
     voice: v.voice,
     request: declineRequest,
+    isGroup: (id) => groups.includes(id),
     now: () => v.tick(0),
     setTimer: (fn, ms) => {
       timers.push({ fn, ms, id: timers.length, live: true });
@@ -87,6 +88,15 @@ describe("outgoing calls", () => {
     expect(s.state().status).toBe("idle");
     expect(s.state().notice).toBe("Lan đã từ chối cuộc gọi.");
     expect(s.st().ringing).toBeNull();
+  });
+
+  it("in a group, one person declining keeps the call ringing for the others", async () => {
+    const s = setup(undefined, ["g1"]);
+    await s.calls.start("g1", "Nhóm", false);
+    s.calls.handle({ type: "declined", dmChannelId: "g1", by: { id: "u2" } });
+    expect(s.state().status).toBe("connected");
+    expect(s.st().ringing).not.toBeNull();
+    expect(s.state().notice).toBeNull();
   });
 
   it("a stale decline (no outgoing call) does nothing", async () => {

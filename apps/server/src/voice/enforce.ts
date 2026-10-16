@@ -2,7 +2,7 @@ import { hasPermission, Permission } from "@loop/shared";
 import type { FastifyBaseLogger } from "fastify";
 import { prisma } from "../db.js";
 import { memberChannelPermissions } from "../guilds/access.js";
-import type { Livekit } from "./livekit.js";
+import type { Livekit, Seat } from "./livekit.js";
 import { channelIdOfRoom, voiceRoom } from "./rooms.js";
 
 declare module "fastify" {
@@ -11,13 +11,31 @@ declare module "fastify" {
   }
 }
 
-/** What a member may do in a voice channel, from their bits there. */
-export const voiceRights = (perms: number) => ({
+export type VoiceMod = { serverMute: boolean; serverDeafen: boolean } | null | undefined;
+
+/**
+ * What a member may do in a voice channel: their bits there MINUS a moderator's server mute / deafen (never plus).
+ * A deafen takes the microphone too (nobody talks into a room they cannot hear).
+ */
+export const voiceRights = (perms: number, mod?: VoiceMod) => ({
   connect: hasPermission(perms, Permission.VIEW_CHANNEL | Permission.CONNECT),
-  speak: hasPermission(perms, Permission.SPEAK),
+  speak: hasPermission(perms, Permission.SPEAK) && !mod?.serverMute && !mod?.serverDeafen,
   video: hasPermission(perms, Permission.VIDEO),
   stream: hasPermission(perms, Permission.STREAM),
+  listen: !mod?.serverDeafen,
 });
+
+/** The participant list clients get (`voice:update`, GET .../voice): server mute / deafen come from the database, never from client metadata. */
+export async function seatDtos(guildId: string, seats: Seat[]) {
+  const mods = seats.length ? await voiceMods(guildId, seats.map((s) => s.userId)) : new Map();
+  return seats.map(({ userId, username, sharing }) => ({ userId, username, sharing, serverMute: !!mods.get(userId)?.serverMute, serverDeafen: !!mods.get(userId)?.serverDeafen }));
+}
+
+/** The server mute / deafen of these members of a guild, by user id. */
+export async function voiceMods(guildId: string, userIds: string[]) {
+  const rows = await prisma.voiceModState.findMany({ where: { guildId, userId: { in: userIds } } });
+  return new Map(rows.map((r) => [r.userId, r]));
+}
 
 /**
  * Keeps live LiveKit sessions inside the member's current rights. Tokens are only checked when LiveKit lets
@@ -47,15 +65,16 @@ export function createVoice(livekit: Livekit, log: FastifyBaseLogger) {
     const wanted = rooms.flatMap((r) => r.seats.map((s) => s.userId)).filter((u) => !userIds || userIds.includes(u));
     if (!wanted.length) return;
     const perms = new Map((await memberChannelPermissions(guildId, wanted)).map((m) => [m.userId, m.perms]));
+    const mods = await voiceMods(guildId, wanted);
     const jobs: Promise<void>[] = [];
     for (const { id, seats } of rooms) {
       for (const seat of seats) {
         if (userIds && !userIds.includes(seat.userId)) continue;
         // a non-member has no entry: no bits at all
-        const rights = voiceRights(perms.get(seat.userId)?.get(id) ?? 0);
+        const rights = voiceRights(perms.get(seat.userId)?.get(id) ?? 0, mods.get(seat.userId));
         const room = voiceRoom(id);
         if (!rights.connect) jobs.push(guard("remove", () => livekit.removeParticipant(room, seat.userId)));
-        else if (rights.speak !== seat.speak || rights.video !== seat.video || rights.stream !== seat.stream) {
+        else if (rights.speak !== seat.speak || rights.video !== seat.video || rights.stream !== seat.stream || rights.listen !== seat.listen) {
           jobs.push(guard("downgrade", () => livekit.setRights(room, seat.userId, rights)));
         }
       }

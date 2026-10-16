@@ -1,15 +1,17 @@
 import { hasPermission, Permission } from "@loop/shared";
-import { Crown, ShieldCheck, UserMinus } from "@phosphor-icons/react";
+import { Crown, Prohibit, ShieldCheck, UserMinus } from "@phosphor-icons/react";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { t } from "../i18n/t";
-import { callerChannelBits, canHandOutRole, canManageMember, type SettingsCtx } from "../lib/admin";
+import { BAN_DELETE_OPTIONS, banReasonError, callerChannelBits, canBan, canHandOutRole, canManageMember, type SettingsCtx } from "../lib/admin";
 import { admin } from "../lib/app";
 import type { Member } from "../lib/permissions";
 import { Avatar } from "./Avatar";
 import { ConfirmBody } from "./Confirm";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
 import { Button } from "./Button";
+import { Select } from "./OverwritesPanel";
+import { TextField } from "./TextField";
 import { errorMessage } from "../lib/errors";
 import { MenuItem, RowMenu } from "./RowMenu";
 import { Tooltip } from "./Tooltip";
@@ -18,13 +20,14 @@ const CHIPS = 3;
 
 /** Everyone sees the members; the row menu appears only where the caller may do something to that member. */
 export function MembersPanel({ ctx }: { ctx: SettingsCtx }) {
-  const [dialog, setDialog] = useState<{ kind: "roles" | "kick"; userId: string } | null>(null);
+  const [dialog, setDialog] = useState<{ kind: "roles" | "kick" | "ban"; userId: string } | null>(null);
   const { standing, ownerId, roles } = ctx;
   const byPosition = [...roles].sort((a, b) => b.position - a.position);
   const target = ctx.members.find((m) => m.userId === dialog?.userId);
   const close = () => setDialog(null);
   const mayAssign = (m: Member) => hasPermission(standing.bits, Permission.MANAGE_ROLES) && canManageMember(standing, m, ownerId, roles, "roles");
   const mayKick = (m: Member) => hasPermission(standing.bits, Permission.KICK_MEMBERS) && canManageMember(standing, m, ownerId, roles, "kick");
+  const mayBan = (m: Member) => canBan(standing, m, ownerId, roles);
 
   return (
     <div className="flex max-w-2xl flex-col gap-3">
@@ -62,7 +65,7 @@ export function MembersPanel({ ctx }: { ctx: SettingsCtx }) {
                   </ul>
                 )}
               </div>
-              {(mayAssign(m) || mayKick(m)) && (
+              {(mayAssign(m) || mayKick(m) || mayBan(m)) && (
                 <RowMenu id={`m-${m.userId}`} label={t("settingsMembers.menu", { name: m.username })}>
                   {(closeMenu) => (
                     <>
@@ -87,6 +90,17 @@ export function MembersPanel({ ctx }: { ctx: SettingsCtx }) {
                           }}
                         />
                       )}
+                      {mayBan(m) && (
+                        <MenuItem
+                          icon={<Prohibit aria-hidden="true" />}
+                          label={t("settingsMembers.ban")}
+                          danger
+                          onClick={() => {
+                            closeMenu();
+                            setDialog({ kind: "ban", userId: m.userId });
+                          }}
+                        />
+                      )}
                     </>
                   )}
                 </RowMenu>
@@ -100,6 +114,9 @@ export function MembersPanel({ ctx }: { ctx: SettingsCtx }) {
       </Dialog>
       <Dialog open={dialog?.kind === "kick" && !!target} onClose={close} title={t("settingsMembers.kickTitle", { name: target?.username ?? "" })}>
         {target && <ConfirmBody body={t("settingsMembers.kickBody")} submit={t("settingsMembers.kick")} onDone={close} action={() => admin.kick(ctx.guildId, target.userId)} />}
+      </Dialog>
+      <Dialog open={dialog?.kind === "ban" && !!target} onClose={close} title={t("settingsMembers.banTitle", { name: target?.username ?? "" })}>
+        {target && <BanBody guildId={ctx.guildId} member={target} onDone={close} />}
       </Dialog>
     </div>
   );
@@ -146,5 +163,42 @@ function AssignBody({ ctx, member, onDone }: { ctx: SettingsCtx; member: Member;
         </Button>
       </DialogActions>
     </>
+  );
+}
+
+/** Reason (moderators only) and how much of their recent history to delete, then the ban itself. */
+function BanBody({ guildId, member, onDone }: { guildId: string; member: Member; onDone: () => void }) {
+  const [reason, setReason] = useState("");
+  const [hours, setHours] = useState("0");
+  const reasonError = banReasonError(reason);
+  const ban = useMutation({ mutationFn: () => admin.ban(guildId, member.userId, { reason: reason.trim() || null, deleteMessageHours: Number(hours) }), onSuccess: onDone });
+  return (
+    <form
+      noValidate
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!reasonError && !ban.isPending) ban.mutate();
+      }}
+      className="flex flex-col gap-3"
+    >
+      <p className="text-sm leading-relaxed text-ink-muted">{t("settingsMembers.banBody")}</p>
+      <TextField label={t("settingsMembers.banReason")} hint={t("settingsMembers.banReasonHint")} value={reason} onChange={(e) => setReason(e.target.value)} error={reasonError} />
+      <Select label={t("settingsMembers.banDelete")} value={hours} onChange={setHours}>
+        {BAN_DELETE_OPTIONS.map((o) => (
+          <option key={o.hours} value={String(o.hours)}>
+            {t(o.label)}
+          </option>
+        ))}
+      </Select>
+      <DialogError message={ban.isError ? errorMessage(ban.error) : ""} />
+      <DialogActions>
+        <Button type="button" variant="ghost" onClick={onDone} autoFocus>
+          {t("common.cancel")}
+        </Button>
+        <Button type="submit" variant="danger" loading={ban.isPending} disabled={!!reasonError}>
+          {t("settingsMembers.ban")}
+        </Button>
+      </DialogActions>
+    </form>
   );
 }

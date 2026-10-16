@@ -1,13 +1,11 @@
 import { useStore } from "zustand";
 import { unread } from "./app";
-import { dmTotal, unreadOf, type UnreadState } from "./unread";
+import { dmTotal, mentionsOf, unreadOf } from "./unread";
 
-/** What a conversation row shows: a live count, a dot (restart detection / channels), or nothing. */
-export function useUnreadMark(key: string): { count: number; dot: boolean } {
-  const count = useStore(unread.store, (s: UnreadState) => s.counts[key] ?? 0);
-  const dot = useStore(unread.store, (s) => !!s.dots[key]);
-  return { count, dot: dot && count === 0 };
-}
 /** Unread DMs in total (the Home button). */
 export const useDmTotal = () => useStore(unread.store, dmTotal);
+/** Unread messages of one conversation (the badge on its row). */
 export const useUnreadCount = (key: string) => useStore(unread.store, (s) => unreadOf(s, key));
+/** Unread mentions of one conversation (the red badge on a channel row) and of one server (the rail badge). */
+export const useMentionCount = (key: string) => useStore(unread.store, (s) => mentionsOf(s, key));
+export const useGuildMentions = (guildId: string) => useStore(unread.store, (s) => s.guildMentions[guildId] ?? 0);

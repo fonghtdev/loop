@@ -32,7 +32,7 @@ describe("send", () => {
     expect(res.statusCode).toBe(201);
     const msg = res.json();
     expect(msg).toMatchObject({ channelId: channel.id, content: "hello", editedAt: null, author: { id: member.id, username: "member" } });
-    expect(Object.keys(msg.author).sort()).toEqual(["id", "isBot", "username"]);
+    expect(Object.keys(msg.author).sort()).toEqual(["avatarHash", "displayName", "id", "isBot", "username"]);
     expect(typeof msg.seq).toBe("string");
   });
 

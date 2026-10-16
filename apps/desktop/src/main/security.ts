@@ -24,9 +24,16 @@ export const isValidRefreshToken = (t: unknown): t is string =>
   typeof t === "string" && t.length <= 512 && /^[A-Za-z0-9_-]+$/.test(t);
 
 /**
+ * GIF previews and messages load straight from GIPHY's CDN (exact hosts, no wildcard). Kept in step with `GIF_HOSTS` of
+ * @loop/shared by a test (the main process does not import the shared package). The CSP is fixed at startup, so these are
+ * allowed even when the server has no GIF provider; nothing is requested from them unless a GIF is shown.
+ */
+export const GIF_IMG_HOSTS = ["media0", "media1", "media2", "media3", "media4", "i"].map((h) => `https://${h}.giphy.com`);
+
+/**
  * The CSP for every renderer response. Production: no inline code at all; the network is the API origin, its
  * websocket, the storage origin (upload PUTs) and LiveKit (its websocket, plus the http twin it fetches to explain a
- * failed connection; the media itself is WebRTC, which a CSP does not govern); images also from the storage origin (attachments) and
+ * failed connection; the media itself is WebRTC, which a CSP does not govern); images also from the storage origin (attachments), GIPHY's CDN hosts and
  * data:/blob: (local previews). Dev: the Vite dev server needs inline scripts/styles (React refresh preamble,
  * injected CSS) and its HMR websocket. `'wasm-unsafe-eval'` (compiling WebAssembly, NOT eval of strings) is the one script
  * relaxation, in both: the noise-suppression AudioWorklet inherits this policy and instantiates RNNoise's wasm. The
@@ -40,7 +47,7 @@ export function buildCsp({ api, ws, storage, livekit }: { api: string; ws: strin
     `script-src 'self' 'wasm-unsafe-eval'${inline}`,
     `style-src 'self'${inline}`,
     "font-src 'self'",
-    `img-src 'self' data: blob: ${api} ${storage}`,
+    `img-src 'self' data: blob: ${api} ${storage} ${GIF_IMG_HOSTS.join(" ")}`,
     `connect-src 'self' ${api} ${ws} ${storage} ${livekit} ${livekit.replace(/^ws/, "http")}${devWs}`,
     "base-uri 'none'",
     "form-action 'none'",

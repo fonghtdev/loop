@@ -31,7 +31,7 @@ export const areFriends = async (a: string, b: string) =>
   (await prisma.friendship.count({ where: { ...pair(a, b), status: "ACCEPTED" } })) > 0;
 
 /**
- * Who receives `userId`'s presence: accepted friends and members of every guild shared with them, minus anyone
+ * Who receives `userId`'s presence: accepted friends, members of every guild and group DM shared with them, minus anyone
  * with a block in either direction, never the user themself. One query.
  */
 // ponytail: O(members of every shared guild) per presence transition; upgrade = per-guild rooms (kept in sync on
@@ -45,6 +45,11 @@ export async function presenceAudience(userId: string) {
       UNION
       SELECT other."userId" FROM "Member" mine JOIN "Member" other ON other."guildId" = mine."guildId"
         WHERE mine."userId" = ${userId}::uuid
+      UNION
+      SELECT other."userId" FROM "DmParticipant" mine
+        JOIN "DmChannel" d ON d.id = mine."dmChannelId" AND d.kind = 'GROUP'
+        JOIN "DmParticipant" other ON other."dmChannelId" = mine."dmChannelId"
+        WHERE mine."userId" = ${userId}::uuid
     ) a
     WHERE a.id <> ${userId}::uuid AND NOT EXISTS (
       SELECT 1 FROM "Block" b
@@ -53,7 +58,7 @@ export async function presenceAudience(userId: string) {
   return rows.map((r) => r.id);
 }
 
-export const userSelect = { id: true, username: true } as const; // never email/passwordHash
+export const userSelect = { id: true, username: true, displayName: true, avatarHash: true } as const; // never email/passwordHash
 
 /** Malformed and unknown ids/usernames both give 404. */
 export async function requireUser(where: { id: string } | { username: string }) {
@@ -78,9 +83,35 @@ export async function requireFriendsUnblocked(a: string, b: string) {
   if (!(await areFriends(a, b)) || (await isBlockedBetween(a, b))) throw new HttpError(403, "Not friends");
 }
 
-/** The DM channel and the other participant. Non-participants, unknown and malformed ids all give 404. */
+/**
+ * The DM channel (pair or group) with its participants, oldest first, and the others besides `userId`.
+ * Membership of both kinds is the DmParticipant table. Non-participants, unknown and malformed ids all give 404.
+ */
 export async function requireDm(dmId: string, userId: string) {
-  const dm = isUuid(dmId) ? await prisma.dmChannel.findUnique({ where: { id: dmId } }) : null;
-  if (!dm || (dm.userLowId !== userId && dm.userHighId !== userId)) throw NOT_FOUND;
-  return { dm, otherId: otherOf(dm, userId) };
+  const dm = isUuid(dmId)
+    ? await prisma.dmChannel.findUnique({
+        where: { id: dmId },
+        include: { participants: { select: { userId: true }, orderBy: [{ joinedAt: "asc" }, { userId: "asc" }] } },
+      })
+    : null;
+  if (!dm || !dm.participants.some((p) => p.userId === userId)) throw NOT_FOUND;
+  const participantIds = dm.participants.map((p) => p.userId);
+  return { dm, participantIds, otherIds: participantIds.filter((id) => id !== userId) };
+}
+
+/**
+ * Writing in a DM (send, react, pin, typing, upload, call): a pair also needs a live friendship with no block
+ * (403 `Not friends`); in a group being a participant is enough (members need not be friends with each other).
+ */
+export async function requireDmWritable(dmId: string, userId: string) {
+  const found = await requireDm(dmId, userId);
+  if (found.dm.kind === "PAIR") await requireFriendsUnblocked(userId, found.otherIds[0]!);
+  return found;
+}
+
+/** Group-only routes: a pair answers 400 (it is visible to the caller, so nothing leaks). */
+export async function requireGroupDm(dmId: string, userId: string) {
+  const found = await requireDm(dmId, userId);
+  if (found.dm.kind !== "GROUP") throw new HttpError(400, "Not a group DM");
+  return found;
 }

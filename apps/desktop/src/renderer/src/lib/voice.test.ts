@@ -814,6 +814,14 @@ describe("watching a screen share", () => {
   };
   const sound = () => ({ kind: "audio", source: "screen_share_audio", attach: () => document.createElement("audio"), detach: () => undefined }) as never;
 
+  it("announces the streams we watch in our metadata, and clears it when we stop", async () => {
+    const { s, room } = await withSharer();
+    s.voice.watch("u2");
+    await vi.waitFor(() => expect(room.metadata.at(-1)).toBe('{"watching":["u2"]}'));
+    s.voice.unwatch("u2");
+    await vi.waitFor(() => expect(room.metadata.at(-1)).toBe(""));
+  });
+
   it("is not watched by default: picture and sound are unsubscribed, the microphone is not touched", async () => {
     const { s, pubs } = await withSharer();
     expect(s.state().watching).toEqual([]);
@@ -896,5 +904,19 @@ describe("watching a screen share", () => {
     s.voice.watch("u2");
     expect(s.state().streamVolume.u2).toBe(0.3);
     expect(s.sink.volumes.get(track)).toBe(0.3);
+  });
+});
+
+describe("server moderation", () => {
+  it("the token says we are server-muted / deafened; voice:moderated updates only the channel we are in", async () => {
+    const s = await joined({ canSpeak: false, serverMuted: true, serverDeafened: false });
+    expect(s.state()).toMatchObject({ serverMuted: true, serverDeafened: false, canSpeak: false, micEnabled: false });
+    expect(s.voice.moderated({ channelId: "other", serverMute: false, serverDeafen: true })).toBeNull();
+    expect(s.state()).toMatchObject({ serverMuted: true, serverDeafened: false });
+    expect(s.voice.moderated({ channelId: "c1", serverMute: false, serverDeafen: true })).toEqual({ serverMuted: true, serverDeafened: false });
+    expect(s.state()).toMatchObject({ serverMuted: false, serverDeafened: true });
+    s.voice.leave();
+    expect(s.state()).toMatchObject({ serverMuted: false, serverDeafened: false });
+    expect(s.voice.moderated({ channelId: "c1", serverMute: true, serverDeafen: false })).toBeNull(); // no session: an old event
   });
 });

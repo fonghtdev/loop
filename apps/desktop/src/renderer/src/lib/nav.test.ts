@@ -74,4 +74,9 @@ describe("openConversation / placeForKey", () => {
     expect(placeForKey("dm:d1", undefined)).toBeNull();
     expect(placeForKey("channel:c1", ["c1"])).toBeNull();
   });
+  it("a mention notification leads to its channel while the server is still known", () => {
+    const guildOf = (id: string) => (id === "c1" ? "g1" : undefined);
+    expect(placeForKey("channel:c1", [], guildOf)).toEqual({ guildId: "g1", channelId: "c1", dmId: null, settings: null });
+    expect(placeForKey("channel:c2", [], guildOf)).toBeNull();
+  });
 });

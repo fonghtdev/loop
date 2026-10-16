@@ -1,9 +1,9 @@
 import { Permission } from "@loop/shared";
-import { CaretLeft, Lock, Plus } from "@phosphor-icons/react";
+import { ArrowDown, ArrowUp, CaretLeft, DotsSixVertical, Lock, Plus } from "@phosphor-icons/react";
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type DragEvent } from "react";
 import { t } from "../i18n/t";
-import { canManageRole, grantableBits, patchRole, PERMISSION_GROUPS, roleNameError, setBit, unknownBits, type SettingsCtx } from "../lib/admin";
+import { canManageRole, dropRole, grantableBits, patchRole, PERMISSION_GROUPS, roleNameError, roleOrder, setBit, shiftRole, unknownBits, type SettingsCtx } from "../lib/admin";
 import { admin } from "../lib/app";
 import { errorMessage } from "../lib/errors";
 import type { Role } from "../lib/permissions";
@@ -18,13 +18,50 @@ import { Switch } from "./Switch";
 import { TextField } from "./TextField";
 import { Tooltip } from "./Tooltip";
 
-/** Roles, most powerful first, @everyone last; click one to edit. No reordering: the server has no endpoint for it. */
+/** Internal drag of a role row (never `Files`, never the channel layout's type). */
+const ROLE_DRAG = "application/x-loop-role";
+type Over = { id: string; where: "before" | "after" };
+
+/**
+ * Roles, most powerful first, @everyone last; click one to edit. Reorder with the up/down buttons (keyboard and
+ * single pointer) or by dragging; both go through `dropRole`, which refuses what the server would (lib/admin.ts).
+ */
 export function RolesPanel({ ctx }: { ctx: SettingsCtx }) {
   const [editing, setEditing] = useState<string | "new" | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<Over | null>(null);
   const { standing, guildId } = ctx;
   const roles = [...ctx.roles].sort((a, b) => b.position - a.position);
+  const order = roleOrder(ctx.roles, guildId);
+  const reorder = useMutation({
+    mutationFn: ({ next }: { next: string[]; focus?: string }) => admin.reorderRoles(guildId, next),
+    onSuccess: (_r, { focus }) => {
+      toast.push(t("roles.reordered"));
+      // the row moved in the DOM: put focus back on the button that was pressed, or the row when it is now disabled
+      requestAnimationFrame(() => {
+        const button = focus ? document.getElementById(focus) : null;
+        (button && !(button as HTMLButtonElement).disabled ? button : document.getElementById(`role-${focus?.split(":")[1]}`))?.focus();
+      });
+    },
+    onError: (e) => toast.push(errorMessage(e), "error"),
+  });
   const role = roles.find((r) => r.id === editing);
   if (editing === "new" || role) return <RoleEditor key={editing} ctx={ctx} role={role ?? null} onBack={() => setEditing(null)} />;
+
+  const shift = (id: string, delta: -1 | 1) => shiftRole(standing, ctx.roles, guildId, order, id, delta);
+  const placeOf = (e: DragEvent<HTMLLIElement>): "before" | "after" => {
+    const box = e.currentTarget.getBoundingClientRect();
+    return e.clientY < box.top + box.height / 2 ? "before" : "after";
+  };
+  const dragTarget = (e: DragEvent<HTMLLIElement>, id: string) => {
+    if (!dragging || !e.dataTransfer.types.includes(ROLE_DRAG)) return null;
+    const where = placeOf(e);
+    return dropRole(standing, ctx.roles, guildId, order, dragging, id, where) && { id, where };
+  };
+  const endDrag = () => {
+    setDragging(null);
+    setOver(null);
+  };
 
   const canCreate = standing.isOwner || standing.top >= 1; // server: a caller with only @everyone cannot create roles
   const create = (
@@ -46,29 +83,81 @@ export function RolesPanel({ ctx }: { ctx: SettingsCtx }) {
         )}
       </div>
       <ul aria-label={t("roles.list")} className="relative edge flex flex-col gap-0.5 rounded-panel bg-raise p-2 shadow-e2">
-        {roles.map((r) => (
-          <li key={r.id}>
-            <button
-              type="button"
-              onClick={() => setEditing(r.id)}
-              className="flex min-h-12 w-full items-center gap-3 rounded-control px-3 text-left transition-colors duration-(--duration-fast) hover:bg-white/[.045] active:scale-[.99]"
+        {roles.map((r) => {
+          const everyone = r.id === guildId;
+          const movable = !everyone && !reorder.isPending && (!!shift(r.id, -1) || !!shift(r.id, 1));
+          const line = over?.id === r.id ? (over.where === "before" ? "shadow-[inset_0_2px_0_var(--color-moss-400)]" : "shadow-[inset_0_-2px_0_var(--color-moss-400)]") : "";
+          return (
+            <li
+              key={r.id}
+              data-role-row={r.id}
+              draggable={movable || undefined}
+              onDragStart={(e) => {
+                if (!movable) return e.preventDefault();
+                e.dataTransfer.setData(ROLE_DRAG, r.id);
+                e.dataTransfer.effectAllowed = "move";
+                setTimeout(() => setDragging(r.id)); // after the browser took its drag image
+              }}
+              onDragEnd={endDrag}
+              onDragOver={(e) => {
+                const target = dragTarget(e, r.id);
+                if (!target) return setOver(null);
+                e.preventDefault();
+                setOver(target);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const next = dragging ? dropRole(standing, ctx.roles, guildId, order, dragging, r.id, placeOf(e)) : null;
+                endDrag();
+                if (next) reorder.mutate({ next });
+              }}
+              className={`flex items-center gap-1 rounded-control ${line} ${dragging === r.id ? "opacity-50" : ""}`}
             >
-              {r.id !== guildId && <span aria-hidden="true" className="size-3 shrink-0 rounded-full" style={{ backgroundColor: roleColor(r) }} />}
-              <Tooltip label={r.name}>
-                <span className={`min-w-0 flex-1 truncate ${r.id === guildId ? "text-ink-muted italic" : "font-medium"}`}>{r.name}</span>
-              </Tooltip>
-              {r.id === guildId && <span className="shrink-0 text-caption text-ink-muted">{t("roles.everyoneTag")}</span>}
-              {!canManageRole(standing, r) && (
-                <Tooltip label={t("roles.readOnly")}>
-                  <span className="shrink-0 text-ink-muted">
-                    <Lock aria-hidden="true" size={16} />
-                    <span className="sr-only">{t("roles.readOnly")}</span>
-                  </span>
+              {movable && <DotsSixVertical aria-hidden="true" className="ml-1 shrink-0 cursor-grab text-ink-faint" />}
+              <button
+                type="button"
+                id={`role-${r.id}`}
+                onClick={() => setEditing(r.id)}
+                className="flex min-h-12 min-w-0 flex-1 items-center gap-3 rounded-control px-3 text-left transition-colors duration-(--duration-fast) hover:bg-white/[.045] active:scale-[.99]"
+              >
+                {!everyone && <span aria-hidden="true" className="size-3 shrink-0 rounded-full" style={{ backgroundColor: roleColor(r) }} />}
+                <Tooltip label={r.name}>
+                  <span className={`min-w-0 flex-1 truncate ${everyone ? "text-ink-muted italic" : "font-medium"}`}>{r.name}</span>
                 </Tooltip>
-              )}
-            </button>
-          </li>
-        ))}
+                {everyone && <span className="shrink-0 text-caption text-ink-muted">{t("roles.everyoneTag")}</span>}
+                {!canManageRole(standing, r) && (
+                  <Tooltip label={t("roles.readOnly")}>
+                    <span className="shrink-0 text-ink-muted">
+                      <Lock aria-hidden="true" size={16} />
+                      <span className="sr-only">{t("roles.readOnly")}</span>
+                    </span>
+                  </Tooltip>
+                )}
+              </button>
+              {!everyone &&
+                ([-1, 1] as const).map((delta) => {
+                  const next = shift(r.id, delta);
+                  const label = t(delta < 0 ? "roles.moveUp" : "roles.moveDown", { name: r.name });
+                  return (
+                    <Tooltip key={delta} label={label}>
+                      <span className="inline-flex">
+                        <button
+                          type="button"
+                          id={`role-${delta < 0 ? "up" : "down"}:${r.id}`}
+                          aria-label={label}
+                          disabled={!next || reorder.isPending}
+                          onClick={() => next && reorder.mutate({ next, focus: `role-${delta < 0 ? "up" : "down"}:${r.id}` })}
+                          className="grid size-10 shrink-0 place-items-center rounded-control text-ink-muted enabled:hover:bg-surface-4 enabled:hover:text-ink enabled:active:scale-[.98] disabled:opacity-40"
+                        >
+                          {delta < 0 ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" />}
+                        </button>
+                      </span>
+                    </Tooltip>
+                  );
+                })}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

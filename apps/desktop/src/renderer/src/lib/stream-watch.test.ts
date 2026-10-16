@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampVolume, effectiveVolume, pruneWatching, subscriptionChanges } from "./stream-watch";
+import { clampVolume, effectiveVolume, pruneWatching, subscriptionChanges, viewersOf } from "./stream-watch";
 
 describe("clampVolume", () => {
   it.each([[-1, 0], [0.4, 0.4], [7, 1], [Number.NaN, 1]])("%s -> %s", (v, want) => expect(clampVolume(v)).toBe(want));
@@ -36,5 +36,13 @@ describe("pruneWatching", () => {
     const w = ["a", "b"];
     expect(pruneWatching(w, new Set(["a", "b", "c"]))).toBe(w);
     expect(pruneWatching(w, new Set(["b"]))).toEqual(["b"]);
+  });
+});
+
+describe("viewersOf", () => {
+  const room = [{ userId: "s", watching: ["s"] }, { userId: "a", watching: ["s", "x"] }, { userId: "b", watching: ["x"] }, { userId: "c" }];
+  it("lists those who announce watching the streamer, not the streamer, not the rest", () => {
+    expect(viewersOf(room, "s").map((p) => p.userId)).toEqual(["a"]);
+    expect(viewersOf(room, "x").map((p) => p.userId)).toEqual(["a", "b"]);
   });
 });

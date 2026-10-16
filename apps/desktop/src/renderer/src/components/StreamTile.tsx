@@ -1,5 +1,6 @@
 import { Monitor } from "@phosphor-icons/react";
 import { t } from "../i18n/t";
+import { useDisplayName } from "../lib/identity-hooks";
 import type { Participant } from "../lib/voice-presence";
 import { LiveBadge } from "./LiveBadge";
 import { Video } from "./ParticipantTile";
@@ -10,7 +11,8 @@ import { Tooltip } from "./Tooltip";
  * own), a monitor otherwise, the red live badge, and the owner's name. Pressing it puts that stream on the stage.
  */
 export function StreamTile({ p, watched, className = "", onSelect }: { p: Participant; watched: boolean; className?: string; onSelect: (userId: string) => void }) {
-  const label = t("voice.stream.show", { name: p.username });
+  const name = useDisplayName(p.userId, p.username);
+  const label = t("voice.stream.show", { name });
   return (
     <li data-stream-tile={p.userId} className={`relative edge aspect-[16/10] min-w-0 overflow-hidden rounded-panel bg-raise shadow-e2 ${className}`}>
       <Tooltip label={label}>
@@ -25,7 +27,7 @@ export function StreamTile({ p, watched, className = "", onSelect }: { p: Partic
         </button>
       </Tooltip>
       <div className="pointer-events-none absolute bottom-2 left-2 z-1 flex max-w-[calc(100%-16px)] items-center gap-1.5">
-        <span className="min-w-0 truncate rounded-control bg-surface-0/80 px-2.5 py-1 text-caption font-medium text-ink">{t("voice.screenOf", { name: p.username })}</span>
+        <span className="min-w-0 truncate rounded-control bg-surface-0/80 px-2.5 py-1 text-caption font-medium text-ink">{t("voice.screenOf", { name })}</span>
         <LiveBadge />
       </div>
     </li>

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LoopBot } from "@loop/bot-sdk";
 import { attachMusic } from "./music.js";
-import { createSource } from "./source.js";
+import { createSource, parseSources } from "./source.js";
 
 const apiUrl = process.env.LOOP_API_URL;
 const token = process.env.LOOP_BOT_TOKEN;
@@ -27,7 +27,10 @@ function cookieCopy() {
     return undefined;
   }
 }
-attachMusic(bot, createSource({ ytdlp: process.env.YTDLP_PATH, ffmpeg: process.env.FFMPEG_PATH, cookies: cookieCopy() }));
+attachMusic(
+  bot,
+  createSource({ ytdlp: process.env.YTDLP_PATH, ffmpeg: process.env.FFMPEG_PATH, cookies: cookieCopy(), ytClient: process.env.YTDLP_YT_CLIENT, sources: parseSources(process.env.MUSIC_SOURCES) }),
+);
 // Hosts that only run web services (Render free) need a port to answer on, and an uptime pinger hitting it keeps the bot awake.
 const port = process.env.PORT;
 const health = port ? createServer((_req, res) => res.end("ok")).listen(Number(port)) : undefined;

@@ -18,8 +18,8 @@ const INVALID_REFRESH = new AuthError(401, "Invalid refresh token");
 // Verified when the email is unknown so response time does not reveal which emails exist.
 const dummyHash = argon2.hash("dummy-password-for-timing");
 
-type PublicUser = { id: string; email: string; username: string };
-const toPublic = ({ id, email, username }: PublicUser): PublicUser => ({ id, email, username });
+type PublicUser = { id: string; email: string; username: string; displayName: string | null; avatarHash: string | null };
+const toPublic = ({ id, email, username, displayName, avatarHash }: PublicUser): PublicUser => ({ id, email, username, displayName, avatarHash });
 
 const newSession = (userId: string, refreshToken: string) => ({
   userId,

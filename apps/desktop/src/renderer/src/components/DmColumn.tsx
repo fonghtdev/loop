@@ -1,21 +1,23 @@
 import { UsersThree } from "@phosphor-icons/react";
 import type { PresenceStatus } from "@loop/shared";
-import type { Dm } from "../lib/social";
+import { isGroup, type GroupDm, type PairDm } from "../lib/social";
 import { t } from "../i18n/t";
 import { errorMessage } from "../lib/errors";
 import { arrowNav } from "../lib/focus";
 import { useNav } from "../lib/nav";
 import { dmKey } from "../lib/conversation";
+import { useDisplayName } from "../lib/identity-hooks";
 import { useStatusOf } from "../lib/presence-hooks";
 import { useDms } from "../lib/queries";
-import { useUnreadMark } from "../lib/unread-hooks";
-import { Badge, UnreadDot } from "./Badge";
+import { useUnreadCount } from "../lib/unread-hooks";
+import { Badge } from "./Badge";
 import { navRow } from "./navRow";
 import { QuickSwitchButton } from "./QuickSwitcher";
 import { PresenceAvatar } from "./Avatar";
 import { FriendsArt } from "./Illustrations";
 import { ColumnHeader, EmptyState, LoadError, Skeleton } from "./States";
 import { Tooltip } from "./Tooltip";
+import { CreateGroupButton, GroupAvatar, useGroupTitle } from "./GroupDm";
 
 /** Home's channel column: the Friends entry, then the DMs (newest activity first) with an online dot. */
 export function DmColumn() {
@@ -26,6 +28,7 @@ export function DmColumn() {
     <>
       <ColumnHeader>
         <span className="min-w-0 flex-1 truncate">{t("home.dms")}</span>
+        <CreateGroupButton />
         <QuickSwitchButton />
       </ColumnHeader>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
@@ -44,7 +47,7 @@ export function DmColumn() {
           </li>
           {dms.data?.map((dm) => (
             <li key={dm.id}>
-              <DmRow dm={dm} active={dm.id === dmId} status={statusOf(dm.user.id)} />
+              {isGroup(dm) ? <GroupRow dm={dm} active={dm.id === dmId} /> : <DmRow dm={dm} active={dm.id === dmId} status={statusOf(dm.user.id)} />}
             </li>
           ))}
         </ul>
@@ -68,9 +71,11 @@ export function DmColumn() {
   );
 }
 
-function DmRow({ dm, active, status }: { dm: Dm; active: boolean; status: PresenceStatus }) {
-  const { count, dot } = useUnreadMark(dmKey(dm.id));
-  const unread = count > 0 || dot;
+/** A group row: stacked avatars, the name (or "A, B, C") and how many people are in it. */
+function GroupRow({ dm, active }: { dm: GroupDm; active: boolean }) {
+  const name = useGroupTitle(dm);
+  const count = useUnreadCount(dmKey(dm.id));
+  const unread = count > 0;
   return (
     <button
       type="button"
@@ -80,12 +85,36 @@ function DmRow({ dm, active, status }: { dm: Dm; active: boolean; status: Presen
       onClick={() => useNav.setState({ dmId: dm.id })}
       className={`h-12 w-full ${navRow(active, unread, "gap-2.5 px-2")}`}
     >
-      <PresenceAvatar id={dm.user.id} name={dm.user.username} status={status} className="size-8 rounded-full text-xs" />
-      <Tooltip label={dm.user.username}>
-        <span className="min-w-0 flex-1 truncate">{dm.user.username}</span>
+      <GroupAvatar g={dm} />
+      <span className="flex min-w-0 flex-1 flex-col text-left">
+        <Tooltip label={name}>
+          <span className="truncate">{name}</span>
+        </Tooltip>
+        <span className="numeric truncate text-caption font-normal text-ink-faint">{t("group.memberCount", { count: String(dm.participants.length) })}</span>
+      </span>
+      {count > 0 && <Badge count={count} />}
+    </button>
+  );
+}
+
+function DmRow({ dm, active, status }: { dm: PairDm; active: boolean; status: PresenceStatus }) {
+  const name = useDisplayName(dm.user.id, dm.user.username);
+  const count = useUnreadCount(dmKey(dm.id));
+  const unread = count > 0;
+  return (
+    <button
+      type="button"
+      data-nav-item
+      data-unread={unread ? "true" : undefined}
+      aria-current={active ? "page" : undefined}
+      onClick={() => useNav.setState({ dmId: dm.id })}
+      className={`h-12 w-full ${navRow(active, unread, "gap-2.5 px-2")}`}
+    >
+      <PresenceAvatar id={dm.user.id} name={name} status={status} className="size-8 rounded-full text-xs" />
+      <Tooltip label={name}>
+        <span className="min-w-0 flex-1 truncate">{name}</span>
       </Tooltip>
       {count > 0 && <Badge count={count} />}
-      {dot && <UnreadDot />}
     </button>
   );
 }

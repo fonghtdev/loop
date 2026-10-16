@@ -19,6 +19,15 @@ describe("buildItems", () => {
     expect(items.filter((i) => i.name === "an")).toHaveLength(1);
     expect(items.find((i) => i.name === "an")!.key).toBe("person:u1");
   });
+  it("a person with a display name shows it, and the login name stays searchable as the scope", () => {
+    const named = buildItems({ guilds: [], channels: {}, dms: [{ id: "d1", user: an, lastMessageAt: null }], friends: [bo], profiles: { u1: { displayName: "Anh Nhỏ" } } });
+    expect(named.find((i) => i.key === "person:u1")).toMatchObject({ name: "Anh Nhỏ", scope: "an" });
+    expect(named.find((i) => i.key === "person:u2")).toMatchObject({ name: "bo", scope: undefined });
+  });
+  it("a server with an icon carries its image URL", () => {
+    const [server] = buildItems({ guilds: [{ ...guild, iconHash: "abc123" }], channels: {}, dms: [], friends: [] });
+    expect(server!.image).toMatch(/\/guilds\/g1\/icon\?v=abc123$/);
+  });
   it("channels not loaded yet are simply absent", () => {
     expect(buildItems({ guilds: [guild], channels: {}, dms: [], friends: [] }).filter((i) => i.kind === "channel")).toEqual([]);
   });

@@ -5,6 +5,7 @@ import { errorMessage } from "../lib/errors";
 import { groupMembers } from "../lib/member-groups";
 import type { Member, Role } from "../lib/permissions";
 import { useGuild, useMembers, useRoles } from "../lib/queries";
+import { useNameOf } from "../lib/identity-hooks";
 import { useStatusOf } from "../lib/presence-hooks";
 import { nameColorOf } from "../lib/role-colors";
 import { PresenceAvatar } from "./Avatar";
@@ -21,7 +22,8 @@ export function MemberList({ guildId }: { guildId: string }) {
   const roles = useRoles(guildId);
   const ownerId = useGuild(guildId).data?.guild.ownerId;
   const statusOf = useStatusOf();
-  const groups = members.data ? groupMembers(members.data, roles.data ?? [], guildId, statusOf) : null;
+  const nameOf = useNameOf();
+  const groups = members.data ? groupMembers(members.data, roles.data ?? [], guildId, statusOf, (m) => nameOf(m.userId, m.username)) : null;
   return (
     <>
       <ColumnHeader>{members.data ? t("members.count", { count: String(members.data.length) }) : t("shell.members")}</ColumnHeader>
@@ -45,14 +47,15 @@ export function MemberList({ guildId }: { guildId: string }) {
 type MemberRowsProps = { list: Member[]; roles: Role[]; ownerId: string | undefined; guildId: string; statusOf: (userId: string) => PresenceStatus };
 
 function MemberRows({ list, roles, ownerId, guildId, statusOf }: MemberRowsProps) {
+  const nameOf = useNameOf();
   return (
     <ul className="flex flex-col gap-0.5">
       {list.map((m) => (
         <li key={m.userId} className="flex h-11 items-center gap-2.5 rounded-control px-2 hover:bg-white/[.045]">
           <UserCardTrigger user={{ id: m.userId, username: m.username }} guildId={guildId} className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-control text-ui text-ink-muted">
-            <PresenceAvatar id={m.userId} name={m.username} status={statusOf(m.userId)} size={12} className="size-8 rounded-full text-xs" />
+            <PresenceAvatar id={m.userId} name={nameOf(m.userId, m.username)} status={statusOf(m.userId)} size={12} className="size-8 rounded-full text-xs" />
             <span className="min-w-0 flex-1 truncate" style={{ color: nameColorOf(m.roleIds, roles, guildId) }}>
-              {m.username}
+              {nameOf(m.userId, m.username)}
             </span>
           </UserCardTrigger>
           {m.userId === ownerId && (

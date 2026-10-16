@@ -25,6 +25,7 @@ type Row = {
   ok: number;
   miss: number;
   url: (f: Fixture) => string;
+  body?: (f: Fixture) => object;
   lacking?: { why: string; status: number; revoke: (f: Fixture) => Promise<unknown> };
 };
 
@@ -41,7 +42,17 @@ const ROWS: Row[] = [
     route: "POST /dms/:dmId/call", ok: 200, miss: 404, url: (f) => `/dms/${f.dm.id}/call`,
     lacking: { why: "friendship", status: 403, revoke: (f) => call("DELETE", `/friends/${f.friend.id}`, f.actor.token) },
   },
+  {
+    // the plain member holds no MOVE_MEMBERS by default; the owner passes the rights and then meets "target not in a room"
+    route: "POST /channels/:channelId/voice/move", ok: 409, miss: 404, url: (f) => `/channels/${f.voice.id}/voice/move`, body: (f) => ({ userId: f.member.id }),
+    lacking: { why: "MOVE_MEMBERS", status: 403, revoke: async () => {} },
+  },
   { route: "POST /dms/:dmId/call/decline", ok: 204, miss: 404, url: (f) => `/dms/${f.dm.id}/call/decline` },
+  {
+    // the owner passes the rights and the rank, then meets "target not in this room" (voice/moderation.test.ts has the rest)
+    route: "PUT /channels/:channelId/voice/members/:userId/state", ok: 409, miss: 404, url: (f) => `/channels/${f.voice.id}/voice/members/${f.member.id}/state`, body: () => ({ mute: true }),
+    lacking: { why: "MUTE_MEMBERS", status: 403, revoke: async () => {} },
+  },
 ];
 
 /**
@@ -57,7 +68,7 @@ async function fixture() {
   return { actor, friend, stranger, member, guild, voice, dm };
 }
 
-const send = (row: Row, f: Fixture, token?: string) => call(row.route.split(" ")[0] as Method, row.url(f), token);
+const send = (row: Row, f: Fixture, token?: string) => call(row.route.split(" ")[0] as Method, row.url(f), token, row.body?.(f));
 
 beforeEach(resetDb);
 afterAll(async () => {

@@ -19,6 +19,10 @@ const member = (patch: Partial<PermissionInput> = {}): PermissionInput => ({
   ...patch,
 });
 const privateChannel = [ow("guild", 0, P.VIEW_CHANNEL), ow("x", P.VIEW_CHANNEL)];
+const mo = (userId: string, allow = 0, deny = 0) => ({ userId, allow, deny });
+/** The member "me" with role x, in a channel with role and member overwrites. */
+const me = (overwrites: ReturnType<typeof ow>[], memberOverwrites: ReturnType<typeof mo>[], patch: Partial<PermissionInput> = {}) =>
+  member({ userId: "me", memberRoles: [role("x")], overwrites, memberOverwrites, ...patch });
 
 describe("computePermissions", () => {
   it.each<[string, PermissionInput, number]>([
@@ -42,11 +46,27 @@ describe("computePermissions", () => {
     ["no VIEW masks SEND and everything else", member({ memberRoles: [role("a", P.MANAGE_CHANNELS)], overwrites: [ow("guild", 0, P.VIEW_CHANNEL)] }), 0],
     ["no VIEW in the guild masks every channel perm", member({ everyoneRole: role("guild", P.SEND_MESSAGES), overwrites: [] }), 0],
     ["voice bits are in the default @everyone", member(), 19 | P.CONNECT | P.SPEAK | P.VIDEO | P.STREAM],
+    ["MOVE_MEMBERS is not in the default @everyone", member(), DEFAULT_EVERYONE_PERMISSIONS & ~P.MOVE_MEMBERS],
+    ["MENTION_EVERYONE is not in the default @everyone", member(), DEFAULT_EVERYONE_PERMISSIONS & ~P.MENTION_EVERYONE],
+    ["a channel overwrite can allow MOVE_MEMBERS", member({ overwrites: [ow("guild", P.MOVE_MEMBERS)] }), DEFAULT_EVERYONE_PERMISSIONS | P.MOVE_MEMBERS],
     ["channel overwrite denies STREAM only", member({ overwrites: [ow("guild", 0, P.STREAM)] }), DEFAULT_EVERYONE_PERMISSIONS & ~P.STREAM],
     ["channel overwrite denies SPEAK only", member({ overwrites: [ow("guild", 0, P.SPEAK)] }), DEFAULT_EVERYONE_PERMISSIONS & ~P.SPEAK],
     ["role allow of SPEAK beats @everyone deny", member({ memberRoles: [role("x")], overwrites: [ow("guild", 0, P.SPEAK), ow("x", P.SPEAK)] }), DEFAULT_EVERYONE_PERMISSIONS],
     ["no VIEW also masks CONNECT, SPEAK, VIDEO and STREAM", member({ memberRoles: [role("a", P.CONNECT | P.SPEAK | P.VIDEO | P.STREAM)], overwrites: [ow("guild", 0, P.VIEW_CHANNEL)] }), 0],
     ["no VIEW still keeps guild-wide perms outside a channel", member({ everyoneRole: role("guild", P.SEND_MESSAGES) }), P.SEND_MESSAGES],
+    ["BAN_MEMBERS is not in the default @everyone", member(), DEFAULT_EVERYONE_PERMISSIONS & ~P.BAN_MEMBERS],
+    // member overwrites: applied last, after every role overwrite
+    ["member allow beats a role deny", me([ow("x", 0, P.SEND_MESSAGES)], [mo("me", P.SEND_MESSAGES)]), DEFAULT_EVERYONE_PERMISSIONS],
+    ["member deny beats a role allow", me([ow("x", P.MANAGE_MESSAGES)], [mo("me", 0, P.MANAGE_MESSAGES)]), DEFAULT_EVERYONE_PERMISSIONS],
+    ["member deny beats a role's own bit", me([], [mo("me", 0, P.SEND_MESSAGES)], { memberRoles: [role("x", P.SEND_MESSAGES)] }), DEFAULT_EVERYONE_PERMISSIONS & ~P.SEND_MESSAGES],
+    ["member allow beats the @everyone deny", me([ow("guild", 0, P.SPEAK)], [mo("me", P.SPEAK)]), DEFAULT_EVERYONE_PERMISSIONS],
+    ["member VIEW deny hides a channel a role opens", me(privateChannel, [mo("me", 0, P.VIEW_CHANNEL)]), 0],
+    ["member VIEW allow opens a private channel", me([ow("guild", 0, P.VIEW_CHANNEL)], [mo("me", P.VIEW_CHANNEL)], { memberRoles: [] }), DEFAULT_EVERYONE_PERMISSIONS],
+    ["someone else's member overwrite is ignored", me([], [mo("other", 0, P.VIEW_CHANNEL)]), DEFAULT_EVERYONE_PERMISSIONS],
+    ["member overwrites are ignored without a userId", member({ overwrites: [], memberOverwrites: [mo("me", 0, P.VIEW_CHANNEL)] }), DEFAULT_EVERYONE_PERMISSIONS],
+    ["member overwrites are ignored outside a channel", member({ userId: "me", memberOverwrites: [mo("me", 0, P.VIEW_CHANNEL)] }), DEFAULT_EVERYONE_PERMISSIONS],
+    ["the owner ignores a member deny", me([], [mo("me", 0, ALL_PERMISSIONS)], { isOwner: true }), ALL_PERMISSIONS],
+    ["ADMINISTRATOR ignores a member deny", me([], [mo("me", 0, P.VIEW_CHANNEL)], { memberRoles: [role("x", P.ADMINISTRATOR)] }), ALL_PERMISSIONS],
   ])("%s", (_name, input, expected) => {
     expect(computePermissions(input)).toBe(expected);
   });
@@ -62,7 +82,7 @@ describe("can", () => {
 });
 
 describe("permission input schemas", () => {
-  it.each([4096, -1, 1.5, 2 ** 31, "1"])("role permissions reject %j", (permissions) => {
+  it.each([1 << 18, -1, 1.5, 2 ** 31, "1"])("role permissions reject %j", (permissions) => {
     expect(createRoleSchema.safeParse({ name: "mod", permissions }).success).toBe(false);
   });
 
@@ -76,6 +96,22 @@ describe("permission input schemas", () => {
     expect(DEFAULT_EVERYONE_PERMISSIONS).toBe(3859);
     expect(createRoleSchema.safeParse({ name: "dj", permissions: P.CONNECT | P.SPEAK | P.VIDEO | P.STREAM }).success).toBe(true);
     expect(overwriteSchema.safeParse({ allow: P.SPEAK, deny: P.VIDEO | P.CONNECT }).success).toBe(true);
+    expect(overwriteSchema.safeParse({ allow: P.MOVE_MEMBERS, deny: 0 }).success).toBe(true);
+    expect(createRoleSchema.safeParse({ name: "mod", permissions: P.MOVE_MEMBERS }).success).toBe(true);
+  });
+
+  it("BAN_MEMBERS is a guild bit: valid on roles, never in an overwrite", () => {
+    expect(P.BAN_MEMBERS).toBe(16384);
+    expect(createRoleSchema.safeParse({ name: "mod", permissions: P.BAN_MEMBERS }).success).toBe(true);
+    expect(overwriteSchema.safeParse({ allow: P.BAN_MEMBERS, deny: 0 }).success).toBe(false);
+  });
+
+  it("VIEW_AUDIT_LOG is a guild bit; MUTE_MEMBERS / DEAFEN_MEMBERS are channel bits; none is in @everyone", () => {
+    expect([P.VIEW_AUDIT_LOG, P.MUTE_MEMBERS, P.DEAFEN_MEMBERS]).toEqual([32768, 65536, 131072]);
+    expect(createRoleSchema.safeParse({ name: "mod", permissions: P.VIEW_AUDIT_LOG | P.MUTE_MEMBERS | P.DEAFEN_MEMBERS }).success).toBe(true);
+    expect(overwriteSchema.safeParse({ allow: P.VIEW_AUDIT_LOG, deny: 0 }).success).toBe(false);
+    expect(overwriteSchema.safeParse({ allow: P.MUTE_MEMBERS, deny: P.DEAFEN_MEMBERS }).success).toBe(true);
+    expect(DEFAULT_EVERYONE_PERMISSIONS & (P.VIEW_AUDIT_LOG | P.MUTE_MEMBERS | P.DEAFEN_MEMBERS)).toBe(0);
   });
 
   it("@everyone is reserved as a role name", () => {

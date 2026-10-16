@@ -1,6 +1,6 @@
 import type { LoopApi } from "../../../preload/api";
 
-export type User = { id: string; email: string; username: string };
+export type User = { id: string; email: string; username: string; displayName?: string | null; avatarHash?: string | null };
 type Tokens = { user: User; accessToken: string; refreshToken: string };
 export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 

@@ -1,22 +1,32 @@
-import { Crown, Plus, X } from "@phosphor-icons/react";
+import { Crown, Plus, SpeakerHigh, X } from "@phosphor-icons/react";
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
-import { admin, presence, session } from "../lib/app";
+import { admin, presence, profileApi, session } from "../lib/app";
+import { profiles } from "../lib/profiles";
+import { bannerUrl } from "../lib/identity";
+import { profileKey } from "../lib/profile-api";
 import { errorMessage } from "../lib/errors";
+import { canManageMember } from "../lib/admin";
+import { moveOptions } from "../lib/move-members";
+import { voiceModButtons } from "../lib/voice-mod";
+import { arrowNav } from "../lib/focus";
 import { useNav } from "../lib/nav";
+import { useVoiceSnapshot } from "../lib/voice-hooks";
 import { useStatusOf } from "../lib/presence-hooks";
 import { dotOfPref, statusLabel } from "../lib/presence";
 import { useBlocks, useDms, useFriends, useGuild, useMembers, usePermissions, useRoles } from "../lib/queries";
 import { acceptRequest, blockUser, dismissRequest, openDm, sendFriendRequest, unblockUser, unfriend } from "../lib/social-actions";
+import { pairWith } from "../lib/social";
 import { toast } from "../lib/toast";
-import { cardActions, cardDate, closeUserCard, filterRoles, modView, openUserCard, placeCard, relationOf, roleChips, roleColor, rolesView, stepIndex, userCard, type CardTarget } from "../lib/user-card";
+import { cardActions, cardDate, cardIdentity, closeUserCard, filterRoles, modView, openUserCard, placeCard, relationOf, roleChips, roleColor, rolesView, stepIndex, userCard, type CardTarget } from "../lib/user-card";
 import { Avatar } from "./Avatar";
 import { ConfirmBody } from "./Confirm";
 import { StatusDot } from "./StatusDot";
 import { Dialog } from "./Dialog";
 import { Tooltip } from "./Tooltip";
-import type { Role } from "../lib/permissions";
+import type { Channel, Role } from "../lib/permissions";
 
 type Person = { id: string; username: string };
 
@@ -119,25 +129,36 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
   const members = useMembers(guildId).data;
   const roles = useRoles(guildId).data;
   const guild = useGuild(guildId).data;
-  const { standing } = usePermissions(guildId);
+  const { standing, bitsIn } = usePermissions(guildId);
+  const voiceNow = useVoiceSnapshot();
   const friends = useFriends().data;
   const blocks = useBlocks().data;
   const dms = useDms().data;
   const statusOf = useStatusOf();
   const myPref = useStore(presence.store, (s) => s.mine);
+  const stored = useStore(profiles.store, (s) => s.byId[userId]);
+  // quiet on failure: the card keeps showing what it already has
+  const fetched = useQuery({ queryKey: profileKey(userId), queryFn: () => profileApi.get(userId), retry: false }).data;
+  const who = cardIdentity(username, stored, fetched);
+  const banner = bannerUrl(userId, who.bannerHash);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [moving, setMoving] = useState(false);
 
   const member = members?.find((m) => m.userId === userId);
   const isBot = member?.isBot ?? false;
   const person = { id: userId, username };
-  const dm = dms?.find((d) => d.user.id === userId);
+  const dm = pairWith(dms, userId);
   const actions = cardActions({ selfId, userId, isBot, relation: relationOf(userId, friends), blocked: !!blocks?.some((u) => u.id === userId), hasDm: !!dm });
   const status = userId === selfId ? dotOfPref(myPref) : statusOf(userId);
   const mod = guild && members && roles && standing && member ? modView({ guildId: guildId!, guildName: guild.guild.name, ownerId: guild.guild.ownerId, standing, roles, members, channels: guild.channels }, member) : null;
   const chips = guildId && member && roles ? roleChips(member.roleIds, roles, guildId) : [];
   const isOwner = !!guild && guild.guild.ownerId === userId;
-  const view = rolesView({ isOwner, chipCount: chips.length, mod });
+  const view = rolesView({ chipCount: chips.length, mod });
+  const move = guild ? moveOptions({ userId, channels: guild.channels, ...voiceNow, bitsOf: bitsIn }) : null;
+  // server mute / deafen: the kick rule decides whom (the same `canManageMember` the server mirrors)
+  const canActOn = !!(standing && member && roles && guild && canManageMember(standing, member, guild.guild.ownerId, roles, "kick"));
+  const voiceMod = guild ? voiceModButtons({ userId, selfId, canActOn, channels: guild.channels, ...voiceNow, bitsOf: bitsIn }) : null;
 
   // every server answer is final: failures go to the toast, the caches are refreshed by the call itself
   async function run(fn: () => Promise<unknown>, done = false) {
@@ -168,11 +189,12 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
 
   return (
     <div className="flex flex-col gap-3">
+      {banner && <img key={banner} src={banner} alt="" decoding="async" className="-mx-4 -mt-4 h-20 max-w-none object-cover" />}
       <div className="flex items-center gap-3">
-        <Avatar id={userId} name={username} className="size-14 rounded-full text-lg" />
+        <Avatar id={userId} name={who.title} className="size-14 rounded-full text-lg" />
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
-            <h2 className="min-w-0 truncate font-display text-heading3 font-bold select-text">{username}</h2>
+            <h2 className="min-w-0 truncate font-display text-heading3 font-bold select-text">{who.title}</h2>
             {isOwner && (
               <Tooltip label={t("members.owner")}>
                 <span className="shrink-0 text-warning">
@@ -187,8 +209,15 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
             <StatusDot status={status} size={10} labelled={false} />
             {statusLabel(status)}
           </p>
+          {who.handle && <p className="truncate text-caption text-ink-faint select-text">{who.handle}</p>}
         </div>
       </div>
+      {who.statusText && <p className="text-small break-words text-ink select-text">{who.statusText}</p>}
+      {who.bio && (
+        <Section title={t("userCard.about")}>
+          <p className="text-small break-words whitespace-pre-wrap text-ink-muted select-text">{who.bio}</p>
+        </Section>
+      )}
 
       {member && guildId && (
         <>
@@ -228,7 +257,14 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
         </>
       )}
 
-      {(actions.message || actions.friend || actions.block || mod?.kick) && (
+      {userId === selfId && (
+        <div className="border-t border-hair pt-3">
+          <button type="button" onClick={() => (useNav.setState({ settings: "user" }), closeUserCard())} className={neutral}>
+            {t("userCard.editProfile")}
+          </button>
+        </div>
+      )}
+      {(actions.message || actions.friend || actions.block || mod?.kick || move || voiceMod) && (
         <div className="flex flex-wrap gap-2 border-t border-hair pt-3">
           {actions.message && (
             <button type="button" disabled={busy} onClick={() => (actions.message === "open" ? openExisting() : void run(() => openDm(userId), true))} className={neutral}>
@@ -246,6 +282,16 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
               {t("friends.unblock")}
             </button>
           )}
+          {move && (
+            <button type="button" aria-expanded={moving} aria-haspopup="menu" disabled={busy} onClick={() => setMoving((v) => !v)} className={neutral}>
+              {t("voice.move.to")}
+            </button>
+          )}
+          {voiceMod?.buttons.map((b) => (
+            <button key={b.label} type="button" disabled={busy} onClick={() => void run(() => admin.setVoiceState(voiceMod.channel.id, userId, b.body))} className={neutral}>
+              {t(b.label)}
+            </button>
+          ))}
           {mod?.kick && (
             <button type="button" disabled={busy} onClick={() => ask("kick")} className={danger}>
               {t("settingsMembers.kick")}
@@ -253,11 +299,39 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
           )}
         </div>
       )}
+      {moving && move && <MovePicker channels={move.targets} busy={busy} onClose={() => setMoving(false)} onPick={(c) => void run(() => admin.moveMember(c.id, userId), true)} />}
     </div>
   );
 }
 
 const RoleDot = ({ role }: { role: Role }) => <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: roleColor(role) }} />;
+
+/** The voice channels one may move this person to: arrows + Enter or a click; Esc closes only the picker. */
+function MovePicker({ channels, busy, onClose, onPick }: { channels: Channel[]; busy: boolean; onClose: () => void; onPick: (c: Channel) => void }) {
+  const list = useRef<HTMLDivElement>(null);
+  useEffect(() => list.current?.querySelector<HTMLElement>("[data-nav-item]")?.focus(), []);
+  return (
+    <div
+      ref={list}
+      role="menu"
+      aria-label={t("voice.move.pick")}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return arrowNav(e);
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }}
+      className="flex max-h-40 flex-col overflow-y-auto rounded-control bg-surface-3 p-1 shadow-lg"
+    >
+      {channels.map((c) => (
+        <button key={c.id} type="button" role="menuitem" data-nav-item disabled={busy} onClick={() => onPick(c)} className="flex h-9 w-full items-center gap-2 rounded-sm px-2.5 text-left text-sm hover:bg-surface-4 focus-visible:bg-surface-4">
+          <SpeakerHigh aria-hidden="true" className="shrink-0 text-ink-muted" />
+          <span className="min-w-0 truncate">{c.name}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /** Search box over a list of roles: type to filter, arrows + Enter or a click to pick; Esc closes only the picker. */
 function RolePicker({ roles, busy, onClose, onPick }: { roles: Role[]; busy: boolean; onClose: () => void; onPick: (r: Role) => void }) {

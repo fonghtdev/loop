@@ -1,12 +1,16 @@
 import { sweepStaleAttachments } from "./attachments/sweep.js";
 import { buildApp } from "./app.js";
 import { loadEnv } from "./env.js";
+import { sweepAuditLog } from "./guilds/audit.js";
+import { sweepStaleProfileUploads } from "./profiles/images.js";
 
 const env = loadEnv();
 const app = buildApp(env, true);
 // ponytail: runs in this process; with several instances each one sweeps (harmless, deletes are conditional)
 const sweep = setInterval(() => {
   sweepStaleAttachments(app.storage).catch((e) => app.log.error({ err: String(e?.message) }, "attachment sweep failed"));
+  sweepStaleProfileUploads(app.storage).catch((e) => app.log.error({ err: String(e?.message) }, "profile upload sweep failed"));
+  sweepAuditLog().catch((e) => app.log.error({ err: String(e?.message) }, "audit log sweep failed"));
 }, 60 * 60 * 1000);
 app.addHook("onClose", async () => clearInterval(sweep));
 // ponytail: runs in this process; every instance runs it (removals are idempotent). Rights revoked while LiveKit

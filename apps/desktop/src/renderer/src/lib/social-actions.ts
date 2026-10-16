@@ -1,4 +1,5 @@
-import { queryClient, session } from "./app";
+import { presence, queryClient, session } from "./app";
+import { profiles } from "./profiles";
 import { useNav } from "./nav";
 import {
   addDm,
@@ -7,9 +8,12 @@ import {
   BLOCKS_KEY,
   DMS_KEY,
   FRIENDS_KEY,
+  removeDm,
   removePerson,
+  upsertGroup,
   type Dm,
   type Friend,
+  type GroupDm,
   type FriendsData,
   type PublicUser,
 } from "./social";
@@ -63,4 +67,33 @@ export async function openDm(userId: string) {
   const dm = await api<{ id: string; user: Friend }>("POST", "/dms", { userId });
   queryClient.setQueryData<Dm[]>(DMS_KEY, (d) => (d ? addDm(d, dm) : d));
   useNav.setState({ guildId: null, channelId: null, dmId: dm.id, settings: null });
+}
+
+const dmCache = (fn: (d: Dm[]) => Dm[]) => queryClient.setQueryData<Dm[]>(DMS_KEY, (d) => (d ? fn(d) : d));
+/** A group the server answered with: into the DM list, and its people into presence / profiles. */
+function keepGroup(g: GroupDm) {
+  presence.seed(g.participants, null);
+  profiles.seed(g.participants, null);
+  dmCache((d) => upsertGroup(d, g));
+  return g;
+}
+
+/** New group with 2..9 friends (and an optional name); opens it. */
+export async function createGroup(userIds: string[], name: string) {
+  const g = keepGroup(await api<GroupDm>("POST", "/dms/group", { userIds, ...(name.trim() ? { name } : {}) }));
+  useNav.setState({ guildId: null, channelId: null, dmId: g.id, settings: null });
+  return g;
+}
+
+export const addToGroup = async (dmId: string, userId: string) => keepGroup(await api<GroupDm>("POST", `/dms/${dmId}/participants`, { userId }));
+export const renameGroup = async (dmId: string, name: string) => keepGroup(await api<GroupDm>("PATCH", `/dms/${dmId}`, { name: name.trim() || null }));
+
+/** Owner only (server checks): the updated group arrives as `dm:updated`. */
+export const removeFromGroup = (dmId: string, userId: string) => api("DELETE", `/dms/${dmId}/participants/${userId}`);
+
+/** Leave and go back to the friends screen; the list drops it now (the `dm:removed` echo is idempotent). */
+export async function leaveGroup(dmId: string) {
+  await api("DELETE", `/dms/${dmId}/participants/me`);
+  dmCache((d) => removeDm(d, dmId));
+  if (useNav.getState().dmId === dmId) useNav.setState({ dmId: null });
 }

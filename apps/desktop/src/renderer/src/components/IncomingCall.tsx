@@ -2,6 +2,7 @@ import { Phone, VideoCamera } from "@phosphor-icons/react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
 import { calls, voice } from "../lib/app";
+import { useDisplayName } from "../lib/identity-hooks";
 import { isActive } from "../lib/voice-hooks";
 import { Avatar } from "./Avatar";
 import { Button } from "./Button";
@@ -26,7 +27,7 @@ export function RippleAvatar({ id, name, className = "size-24 text-3xl" }: { id:
 export function IncomingCall() {
   const incoming = useStore(calls.store, (s) => s.incoming);
   const busy = useStore(voice.store, (s) => isActive(s.status));
-  const name = incoming?.from.username ?? "";
+  const name = useDisplayName(incoming?.from.id ?? "", incoming?.from.username ?? "");
   const Kind = incoming?.video ? VideoCamera : Phone;
   return (
     <Dialog
