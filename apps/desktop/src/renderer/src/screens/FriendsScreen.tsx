@@ -18,7 +18,7 @@ import type { MessageKey } from "../i18n/vi";
 import { errorMessage } from "../lib/errors";
 import { isFirstRun } from "../lib/firstrun";
 import { useFirstRun } from "../lib/firstrun-hooks";
-import { useDisplayName } from "../lib/identity-hooks";
+import { useDisplayName, useNameOf } from "../lib/identity-hooks";
 import { useStatusOf } from "../lib/presence-hooks";
 import { statusLabel } from "../lib/presence";
 import { useBlocks, useFriends } from "../lib/queries";
@@ -63,11 +63,12 @@ export function FriendsScreen() {
   const incoming = friends.data?.incoming;
   const seen = useRef<Set<string> | null>(null);
   const [announce, setAnnounce] = useState("");
+  const nameOf = useNameOf();
   useEffect(() => {
     if (!incoming) return;
     const fresh = seen.current ? incoming.find((u) => !seen.current!.has(u.id)) : undefined;
     seen.current = new Set(incoming.map((u) => u.id));
-    if (fresh) setAnnounce(t("friends.announceRequest", { name: fresh.username }));
+    if (fresh) setAnnounce(t("friends.announceRequest", { name: nameOf(fresh.id, fresh.username) }));
   }, [incoming]);
 
   return (
@@ -132,6 +133,7 @@ function AddFriendForm({ inputRef }: { inputRef: Ref<HTMLInputElement> }) {
   const [busy, setBusy] = useState(false);
   const [serverError, setServerError] = useState("");
   const [done, setDone] = useState("");
+  const nameOf = useNameOf();
   const normalized = name.trim().toLowerCase();
   const error = serverError || (tried ? usernameError(normalized) : undefined);
 
@@ -144,7 +146,7 @@ function AddFriendForm({ inputRef }: { inputRef: Ref<HTMLInputElement> }) {
     setBusy(true);
     try {
       const { status, user } = await sendFriendRequest(normalized);
-      setDone(t(status === "ACCEPTED" ? "friends.nowFriends" : "friends.requestSent", { name: user.username }));
+      setDone(t(status === "ACCEPTED" ? "friends.nowFriends" : "friends.requestSent", { name: nameOf(user.id, user.username) }));
       setName("");
       setTried(false);
     } catch (err) {
@@ -235,6 +237,7 @@ function FriendList() {
   const blocks = useBlocks();
   const statusOf = useStatusOf();
   const [dialog, setDialog] = useState<{ kind: "unfriend" | "block"; user: Friend } | null>(null);
+  const nameOf = useNameOf();
   const action = useRowAction();
   const sorted = useMemo(() => sortFriends(friends.data?.friends ?? [], new Set(blocks.data?.map((u) => u.id))), [friends.data, blocks.data]);
 
@@ -250,7 +253,7 @@ function FriendList() {
         <ul aria-label={t("friends.list")} className="flex flex-col">
           {sorted.map((f) => (
             <Row key={f.id} user={f} status={statusOf(f.id)} subtitle={statusLabel(statusOf(f.id))}>
-              <IconButton label={t("friends.message", { name: f.username })} onClick={() => void action.run(f.id, () => openDm(f.id))}>
+              <IconButton label={t("friends.message", { name: nameOf(f.id, f.username) })} onClick={() => void action.run(f.id, () => openDm(f.id))}>
                 <ChatCircle aria-hidden="true" />
               </IconButton>
               <FriendMenu friend={f} onMessage={() => void action.run(f.id, () => openDm(f.id))} onPick={(kind) => setDialog({ kind, user: f })} />
@@ -258,10 +261,10 @@ function FriendList() {
           ))}
         </ul>
       )}
-      <Dialog open={dialog?.kind === "unfriend"} onClose={() => setDialog(null)} title={t("friends.unfriendTitle", { name: dialog?.user.username ?? "" })}>
+      <Dialog open={dialog?.kind === "unfriend"} onClose={() => setDialog(null)} title={t("friends.unfriendTitle", { name: dialog ? nameOf(dialog.user.id, dialog.user.username) : "" })}>
         {dialog && <ConfirmBody body={t("friends.unfriendBody")} submit={t("friends.unfriend")} onDone={() => setDialog(null)} action={() => unfriend(dialog.user.id)} />}
       </Dialog>
-      <Dialog open={dialog?.kind === "block"} onClose={() => setDialog(null)} title={t("friends.blockTitle", { name: dialog?.user.username ?? "" })}>
+      <Dialog open={dialog?.kind === "block"} onClose={() => setDialog(null)} title={t("friends.blockTitle", { name: dialog ? nameOf(dialog.user.id, dialog.user.username) : "" })}>
         {dialog && <ConfirmBody body={t("friends.blockBody")} submit={t("friends.block")} onDone={() => setDialog(null)} action={() => blockUser(dialog.user)} />}
       </Dialog>
     </>
@@ -280,8 +283,9 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
 
 /** Per-friend actions in the shared glass popover menu. */
 function FriendMenu({ friend, onMessage, onPick }: { friend: Friend; onMessage: () => void; onPick: (kind: "unfriend" | "block") => void }) {
+  const name = useDisplayName(friend.id, friend.username);
   return (
-    <RowMenu id={`friend-${friend.id}`} label={t("friends.options", { name: friend.username })}>
+    <RowMenu id={`friend-${friend.id}`} label={t("friends.options", { name })}>
       {(close) => {
         const pick = (fn: () => void) => () => {
           close();

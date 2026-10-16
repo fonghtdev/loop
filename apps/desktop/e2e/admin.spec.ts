@@ -182,14 +182,14 @@ test("channel overwrite via the channel menu: deny VIEW for @everyone, allow for
   const previewView = () => panel().locator('[data-bit="VIEW_CHANNEL"]');
   await panel().getByLabel("Vai trò", { exact: true }).selectOption({ label: "@everyone" });
   await expect(previewView()).toHaveAttribute("data-allowed", "true");
-  await view().getByText("Từ chối", { exact: true }).click();
+  await view().getByRole("radio", { name: "Từ chối" }).locator("..").click(); // icon-only: click the label around the sr-only radio
   await expect(previewView()).toHaveAttribute("data-allowed", "false"); // the live preview, before saving
   await panel().getByRole("button", { name: "Lưu", exact: true }).click();
   await expect(page.getByText("Đã lưu.")).toBeVisible();
   expect(await status(B.token, "GET", `/channels/${S2.general}`)).toBe(404);
 
   await panel().getByLabel("Vai trò", { exact: true }).selectOption({ label: `vip_${run}` });
-  await view().getByText("Cho phép", { exact: true }).click();
+  await view().getByRole("radio", { name: "Cho phép" }).locator("..").click();
   await expect(previewView()).toHaveAttribute("data-allowed", "true");
   await panel().getByRole("button", { name: "Lưu", exact: true }).click();
   await expect(page.getByText("Đã lưu.")).toBeVisible();

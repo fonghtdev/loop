@@ -1,5 +1,5 @@
 import type { InviteDto } from "@loop/shared";
-import { Check, Copy } from "@phosphor-icons/react";
+import { Check, Copy, Prohibit } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { t } from "../i18n/t";
@@ -8,7 +8,7 @@ import { admin } from "../lib/app";
 import { useCopy } from "../lib/clipboard";
 import { errorMessage } from "../lib/errors";
 import { canRevokeInvite, inviteStatus, seesAllInvites } from "../lib/invites";
-import { Button } from "./Button";
+import { IconButton } from "./IconButton";
 import { ConfirmBody } from "./Confirm";
 import { Dialog } from "./Dialog";
 import { LoadError, Skeleton } from "./States";
@@ -67,9 +67,7 @@ function InviteRow({ invite: i, status, canRevoke, onRevoke }: { invite: InviteD
         {copied ? t("common.copied") : ""}
       </p>
       {canRevoke && (
-        <Button type="button" variant="ghost" onClick={onRevoke} aria-label={t("invites.revokeLabel", { code: i.code })} className="text-danger!">
-          {t("invites.revoke")}
-        </Button>
+        <IconButton icon={<Prohibit />} label={t("invites.revokeLabel", { code: i.code })} tip={t("invites.revoke")} danger onClick={onRevoke} />
       )}
     </li>
   );

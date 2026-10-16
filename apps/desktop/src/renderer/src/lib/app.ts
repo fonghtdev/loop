@@ -27,6 +27,8 @@ import { pendingJump } from "./search";
 import { windowFocus } from "./window-focus";
 import { createUploader } from "./upload-client";
 import { soundPrefs } from "./sound-prefs";
+import { voiceVolumes } from "./voice-volume";
+import { createPttBridge } from "./ptt-bridge";
 import { createShortcutHandler } from "./shortcut-handler";
 import { createSounds, createTonePlayer, type SoundKind } from "./sounds";
 import { createNoiseLevel, noiseConfig } from "./noise";
@@ -201,7 +203,10 @@ export const voice = createVoice({
   // it starts on the microphone / camera chosen in settings (undefined = the system default)
   createRoom: () =>
     new Room({
-      adaptiveStream: true,
+      // sizes are asked in real pixels: livekit's default counts a Retina screen as 1x, so a stream stage under ~400 px
+      // tall got the small simulcast layer although the screen shows twice that.
+      // ponytail: this also applies to cameras (Retina viewers pull bigger camera layers); per-track density if bandwidth matters
+      adaptiveStream: { pixelDensity: "screen" },
       dynacast: true,
       // voice is always sent as stereo (a mono mic goes out as two equal channels), whatever the noise level
       audioCaptureDefaults: { deviceId: devices.effective("audioinput"), channelCount: 2 },
@@ -209,6 +214,7 @@ export const voice = createVoice({
       videoCaptureDefaults: { deviceId: devices.effective("videoinput") },
     }) as unknown as RoomLike,
   sink,
+  userVolumes: voiceVolumes,
   ensureMedia: (kind) => window.loop.media.ensureAccess(kind).catch(() => false),
   pickScreen: () => screenPicker.pick(),
   rememberShare: goLivePrefs.set,
@@ -226,6 +232,8 @@ export const voice = createVoice({
 });
 // the global mic / deafen shortcuts (main process) act on the live session
 window.loop.onShortcut(createShortcutHandler(voice));
+// push-to-talk: the main process's key hook feeds the session's mic, only while we are in a room
+createPttBridge({ api: window.loop.ptt, voice, settings: appSettings.store });
 // a dialog left open by a session that is gone would only be answered into nothing
 voice.store.subscribe((s) => s.status === "idle" && screenPicker.cancel());
 // joining is a click: the audio context is created / resumed right then (the autoplay policy of the window already allows it)
@@ -348,7 +356,7 @@ calls.store.subscribe((s, prev) => {
     myStatus: presence.store.getState().mine,
     mentioned: false,
   });
-  if (wanted) ask(() => window.loop.notify(callNotice(call.dmId, call.from.username, call.video)));
+  if (wanted) ask(() => window.loop.notify(callNotice(call.dmId, displayNameOf(profiles.store.getState().byId, call.from.id, call.from.displayName || call.from.username), call.video)));
 });
 
 // a clicked notification: go there, but only if the place is still valid

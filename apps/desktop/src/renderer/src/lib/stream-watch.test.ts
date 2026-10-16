@@ -11,6 +11,9 @@ describe("effectiveVolume", () => {
     expect(effectiveVolume(false, true, 0.8)).toBe(0);
     expect(effectiveVolume(false, false, 0.8)).toBe(0.8);
     expect(effectiveVolume(false, false, 3)).toBe(1);
+    expect(effectiveVolume(false, false, 1.5, 2)).toBe(1.5); // a person's microphone may go to 200%
+    expect(effectiveVolume(false, false, 3, 2)).toBe(2);
+    expect(effectiveVolume(true, false, 1.5, 2)).toBe(0);
   });
 });
 

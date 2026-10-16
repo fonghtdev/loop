@@ -39,6 +39,7 @@ test("register, restore the session after a relaunch, logout, wrong password", a
     "onShortcut",
     "openExternal",
     "platform",
+    "ptt",
     "screen",
     "session",
     "setBadge",

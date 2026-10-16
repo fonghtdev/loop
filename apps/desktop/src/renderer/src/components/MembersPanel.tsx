@@ -13,6 +13,7 @@ import { Button } from "./Button";
 import { Select } from "./OverwritesPanel";
 import { TextField } from "./TextField";
 import { errorMessage } from "../lib/errors";
+import { useNameOf } from "../lib/identity-hooks";
 import { MenuItem, RowMenu } from "./RowMenu";
 import { Tooltip } from "./Tooltip";
 
@@ -24,6 +25,8 @@ export function MembersPanel({ ctx }: { ctx: SettingsCtx }) {
   const { standing, ownerId, roles } = ctx;
   const byPosition = [...roles].sort((a, b) => b.position - a.position);
   const target = ctx.members.find((m) => m.userId === dialog?.userId);
+  const nameOf = useNameOf();
+  const targetName = target ? nameOf(target.userId, target.username) : "";
   const close = () => setDialog(null);
   const mayAssign = (m: Member) => hasPermission(standing.bits, Permission.MANAGE_ROLES) && canManageMember(standing, m, ownerId, roles, "roles");
   const mayKick = (m: Member) => hasPermission(standing.bits, Permission.KICK_MEMBERS) && canManageMember(standing, m, ownerId, roles, "kick");
@@ -66,7 +69,7 @@ export function MembersPanel({ ctx }: { ctx: SettingsCtx }) {
                 )}
               </div>
               {(mayAssign(m) || mayKick(m) || mayBan(m)) && (
-                <RowMenu id={`m-${m.userId}`} label={t("settingsMembers.menu", { name: m.username })}>
+                <RowMenu id={`m-${m.userId}`} label={t("settingsMembers.menu", { name: nameOf(m.userId, m.username) })}>
                   {(closeMenu) => (
                     <>
                       {mayAssign(m) && (
@@ -109,13 +112,13 @@ export function MembersPanel({ ctx }: { ctx: SettingsCtx }) {
           );
         })}
       </ul>
-      <Dialog open={dialog?.kind === "roles" && !!target} onClose={close} title={t("settingsMembers.assignTitle", { name: target?.username ?? "" })}>
+      <Dialog open={dialog?.kind === "roles" && !!target} onClose={close} title={t("settingsMembers.assignTitle", { name: targetName })}>
         {target && <AssignBody ctx={ctx} member={target} onDone={close} />}
       </Dialog>
-      <Dialog open={dialog?.kind === "kick" && !!target} onClose={close} title={t("settingsMembers.kickTitle", { name: target?.username ?? "" })}>
+      <Dialog open={dialog?.kind === "kick" && !!target} onClose={close} title={t("settingsMembers.kickTitle", { name: targetName })}>
         {target && <ConfirmBody body={t("settingsMembers.kickBody")} submit={t("settingsMembers.kick")} onDone={close} action={() => admin.kick(ctx.guildId, target.userId)} />}
       </Dialog>
-      <Dialog open={dialog?.kind === "ban" && !!target} onClose={close} title={t("settingsMembers.banTitle", { name: target?.username ?? "" })}>
+      <Dialog open={dialog?.kind === "ban" && !!target} onClose={close} title={t("settingsMembers.banTitle", { name: targetName })}>
         {target && <BanBody guildId={ctx.guildId} member={target} onDone={close} />}
       </Dialog>
     </div>

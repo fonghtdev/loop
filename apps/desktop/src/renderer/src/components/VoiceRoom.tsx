@@ -5,9 +5,8 @@ import { useStore } from "zustand";
 import { t } from "../i18n/t";
 import { voice } from "../lib/app";
 import { useGuild, usePermissions } from "../lib/queries";
-import { stageModel } from "../lib/stream-stage";
 import { reconcileTiles, TILE_GAP, tileLayout, type Tile } from "../lib/voice-grid";
-import { isActive, useVoiceParticipants } from "../lib/voice-hooks";
+import { isActive, useStreamStage, useVoiceParticipants } from "../lib/voice-hooks";
 import { Button } from "./Button";
 import { VoiceArt } from "./Illustrations";
 import { ParticipantTile } from "./ParticipantTile";
@@ -60,18 +59,9 @@ export function VoiceRoom({ guildId, channelId }: { guildId: string; channelId: 
   const busyElsewhere = isActive(status) && !here;
   const [box, size] = useContentSize<HTMLDivElement>();
   const [tiles, drop] = useTiles(people);
-  const watching = useStore(voice.store, (s) => s.watching);
-  // our own share shows as soon as it has a picture; someone else's only after Watch (and only in the room we are in)
-  const shared = people.filter((p) => (p.isLocal ? !!p.screen : here && !!p.sharing));
   const layout = tileLayout(tiles.length, size.w, size.h);
-  // one stream on the big stage (the viewer's pick, else the first we can see); the other streams get a tile in the strip
-  const [picked, setPicked] = useState<string | null>(null);
-  const { stage, strip } = stageModel(
-    shared.map((p) => ({ userId: p.userId, isLocal: !!p.isLocal })),
-    watching,
-    picked,
-  );
-  const staged = shared.find((p) => p.userId === stage?.userId);
+  // our own share shows as soon as it has a picture; someone else's only after Watch (and only in the room we are in)
+  const { stage, strip, staged, setPicked } = useStreamStage(people, here);
 
   return (
     <>

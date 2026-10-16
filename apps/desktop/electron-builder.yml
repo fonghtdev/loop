@@ -5,6 +5,9 @@ productName: Loop
 directories:
   output: release
   buildResources: build
+# uiohook-napi (push-to-talk key hook) ships N-API prebuilds for macOS/Windows; they load as they are, so no compiler is needed on the build machine.
+# electron-builder unpacks the .node files from the asar by itself.
+npmRebuild: false
 # Only the built app goes into the asar (the runtime dependency electron-updater is added automatically).
 files:
   - out/**

@@ -289,24 +289,26 @@ test("settings view: no horizontal overflow at 1280x800 and 960x600, with many u
   await setFocused(true);
 });
 
-test("restart: a DM that got a message while the app was closed shows unread again; settings survive", async () => {
+test("restart: a DM that got a message while the app was closed is unread again (from the server's /me/unread); settings survive", async () => {
+  const unreadOfDm = async () => (await api<{ dms: { dmChannelId: string; unread: number }[] }>(A.token, "GET", "/me/unread")).dms.find((d) => d.dmChannelId === dmId)?.unread ?? 0;
   await openDm();
   await expect.poll(() => page.getByRole("log").getByText("click me").count()).toBe(1);
+  await expect.poll(unreadOfDm).toBe(0); // the read pointer reached the server before the app closes
   await goFriends();
-  // everything the friends sent above is read by opening each? only B matters: clear the rest by marking nothing
   await page.evaluate(() => window.loop.settings.set({ startAtLogin: true, preview: false }));
   await app.close(); // a real quit: must exit although closeToTray is on
-  await new Promise((r) => setTimeout(r, 2500)); // later than the clock-skew margin after the last message A saw
   await bPost("while closed");
+  expect(await unreadOfDm()).toBe(1);
   ({ app, page } = await relaunch());
   await expect(dmButton(B)).toHaveAttribute("data-unread", "true");
-  await expect(dmButton(B).getByText("Có tin nhắn chưa đọc")).toBeVisible();
+  await expect(dmButton(B).getByText("1 tin nhắn chưa đọc")).toBeVisible();
   await expect(page).toHaveTitle(/^\(\d+\) Loop$/);
   expect(await page.evaluate(() => window.loop.settings.get())).toMatchObject({ startAtLogin: true, preview: false, notifications: true, closeToTray: true });
   await hook(app, "setFocused", true);
   await dmButton(B).click();
   await expect(page.getByRole("log").getByText("while closed")).toBeVisible();
   await expect(dmButton(B)).not.toHaveAttribute("data-unread", "true");
+  await expect.poll(unreadOfDm).toBe(0);
   await page.evaluate(() => window.loop.settings.set({ startAtLogin: false, preview: true }));
 });
 
@@ -383,7 +385,7 @@ test.describe("tray, close-to-tray, single instance, quit", () => {
   });
 });
 
-test("settings file holds only the six known keys", () => {
+test("settings file holds only the eight known keys", () => {
   const file = JSON.parse(readFileSync(join(userData, "settings.json"), "utf8"));
-  expect(Object.keys(file).sort()).toEqual(["closeToTray", "deafenShortcut", "micShortcut", "notifications", "preview", "startAtLogin"]);
+  expect(Object.keys(file).sort()).toEqual(["closeToTray", "deafenShortcut", "micShortcut", "notifications", "preview", "pttKey", "pttMode", "startAtLogin"]);
 });

@@ -19,6 +19,15 @@ const api: LoopApi = {
     ipcRenderer.on("shortcut:fire", listener);
     return () => void ipcRenderer.removeListener("shortcut:fire", listener);
   },
+  ptt: {
+    status: () => ipcRenderer.invoke("ptt:status"),
+    setRoom: (inRoom) => ipcRenderer.invoke("ptt:setRoom", inRoom),
+    onHeld: (cb) => {
+      const listener = (_e: unknown, held: unknown) => cb(held === true);
+      ipcRenderer.on("ptt:held", listener);
+      return () => void ipcRenderer.removeListener("ptt:held", listener);
+    },
+  },
   update: {
     get: () => ipcRenderer.invoke("update:get"),
     check: () => ipcRenderer.invoke("update:check"),

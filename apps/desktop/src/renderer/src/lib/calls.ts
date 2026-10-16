@@ -7,7 +7,7 @@ export type CallEvent =
   | { type: "declined"; dmChannelId: string; by: { id: string } }
   | { type: "ended"; dmChannelId: string };
 
-export type Incoming = { dmId: string; from: { id: string; username: string }; video: boolean };
+export type Incoming = { dmId: string; from: { id: string; username: string; displayName?: string | null }; video: boolean };
 /** An outgoing call nobody has answered yet; `sessionId` ties it to the voice session that placed it. */
 export type Ringing = { dmId: string; name: string; sessionId: number };
 

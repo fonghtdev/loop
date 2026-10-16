@@ -1,7 +1,8 @@
-import { Gear, SignOut, Trash, X } from "@phosphor-icons/react";
+import { Backspace, Gear, Keyboard, ListDashes, Microphone, Monitor, Pause, Play, Rows, SignOut, SpeakerHigh, Trash, X } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useStore } from "zustand";
 import type { BooleanSetting, Settings } from "../../../shared/settings";
+import type { PttStatus } from "../../../shared/ptt";
 import { acceleratorFromEvent, formatAccelerator, lacksRealModifier, type ShortcutAction } from "../../../shared/shortcut";
 import { UPDATE_ERROR_APP_LOCATION, type UpdateStatus } from "../../../shared/update";
 import { t } from "../i18n/t";
@@ -19,6 +20,7 @@ import { toast } from "../lib/toast";
 import { Button } from "./Button";
 import { ConfirmBody } from "./Confirm";
 import { Dialog, DialogActions } from "./Dialog";
+import { IconButton } from "./IconButton";
 import { ProfileSettings } from "./ProfileSettings";
 import { Segmented } from "./Segmented";
 import { Switch } from "./Switch";
@@ -88,6 +90,9 @@ export function UserSettings() {
           </Group>
           <Group id="shortcuts" title="userSettings.shortcuts">
             <ShortcutsSection settings={settings} />
+          </Group>
+          <Group id="ptt" title="userSettings.ptt">
+            <PushToTalkSection settings={settings} />
           </Group>
           <Group id="media" title="userSettings.media">
             <DevicePickers />
@@ -188,6 +193,8 @@ const MOTION_LABEL: Record<Appearance["motion"], MessageKey> = {
 };
 
 const DENSITY_LABEL: Record<Density, MessageKey> = { comfy: "userSettings.densityComfy", compact: "userSettings.densityCompact" };
+const DENSITY_ICON: Record<Density, ReactNode> = { comfy: <Rows />, compact: <ListDashes /> };
+const MOTION_ICON: Record<Appearance["motion"], ReactNode> = { system: <Monitor />, reduced: <Pause />, full: <Play /> };
 
 /** Per-ACCOUNT look: how tight the message list is. Applied at once, stored under the account's id (lib/density). */
 function LooksSection() {
@@ -199,7 +206,7 @@ function LooksSection() {
       <fieldset className="px-3 py-2">
         <legend className="text-[15px] font-medium">{t("userSettings.density")}</legend>
         <p className="mt-0.5 mb-2 text-[13px] leading-relaxed text-ink-muted">{t("userSettings.densityHint")}</p>
-        <Segmented name="density" value={current} onChange={(d) => density.set(d)} options={DENSITIES.map((d) => ({ value: d, label: t(DENSITY_LABEL[d]) }))} />
+        <Segmented name="density" value={current} onChange={(d) => density.set(d)} options={DENSITIES.map((d) => ({ value: d, label: t(DENSITY_LABEL[d]), icon: DENSITY_ICON[d] }))} />
       </fieldset>
       {/* per device, applied at once (lib/embeds); hides the cards only, the server still fetches */}
       <Switch label={t("userSettings.linkPreviews")} description={t("userSettings.linkPreviewsHint")} checked={previews} onChange={(on) => linkPreviews.set(on)} />
@@ -217,7 +224,7 @@ function PerformanceSection() {
       <fieldset className="px-3 py-2">
         <legend className="text-[15px] font-medium">{t("userSettings.motion")}</legend>
         <p className="mt-0.5 mb-2 text-[13px] leading-relaxed text-ink-muted">{t("userSettings.motionHint")}</p>
-        <Segmented name="motion" value={a.motion} onChange={(m) => appearance.set({ motion: m })} options={MOTIONS.map((m) => ({ value: m, label: t(MOTION_LABEL[m]) }))} />
+        <Segmented name="motion" value={a.motion} onChange={(m) => appearance.set({ motion: m })} options={MOTIONS.map((m) => ({ value: m, label: t(MOTION_LABEL[m]), icon: MOTION_ICON[m] }))} />
       </fieldset>
     </>
   );
@@ -239,9 +246,7 @@ function SoundsSection() {
           <span aria-hidden="true" className="w-10 shrink-0 text-right text-[13px] text-ink-muted tabular-nums">
             {prefs.volume}
           </span>
-          <Button variant="ghost" onClick={() => (sounds.unlock(), sounds.preview())}>
-            {t("userSettings.soundsTest")}
-          </Button>
+          <IconButton icon={<SpeakerHigh />} label={t("userSettings.soundsTest")} onClick={() => (sounds.unlock(), sounds.preview())} />
         </div>
       </div>
     </>
@@ -314,63 +319,109 @@ function UpdateSection() {
   );
 }
 
-const SHORTCUT_ROWS: { action: ShortcutAction; key: "micShortcut" | "deafenShortcut"; label: MessageKey }[] = [
-  { action: "mic", key: "micShortcut", label: "userSettings.shortcutMic" },
-  { action: "deafen", key: "deafenShortcut", label: "userSettings.shortcutDeafen" },
+type KeySetting = "micShortcut" | "deafenShortcut" | "pttKey";
+const SHORTCUT_ROWS: { key: Exclude<KeySetting, "pttKey">; label: MessageKey }[] = [
+  { key: "micShortcut", label: "userSettings.shortcutMic" },
+  { key: "deafenShortcut", label: "userSettings.shortcutDeafen" },
 ];
+
+/** Saves one key setting; false = refused because another one already has these keys (the same keys cannot do two things). */
+async function assignKey(settings: Settings, key: KeySetting, value: string): Promise<boolean> {
+  if (value && (["micShortcut", "deafenShortcut", "pttKey"] as const).some((k) => k !== key && settings[k] === value)) return false;
+  try {
+    await appSettings.save({ [key]: value });
+  } catch {
+    toast.push(t("userSettings.saveFailed"), "error");
+  }
+  return true;
+}
+
+/** A box that records the next key press as an accelerator (Esc / Backspace / Xoá clears it) next to its clear button. */
+function KeyBox({ label, value, onAssign }: { label: string; value: string; onAssign: (value: string) => void }) {
+  const [listening, setListening] = useState(false);
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    e.preventDefault();
+    e.stopPropagation(); // Esc here clears the key, it must not close the settings page
+    const acc = e.key === "Escape" || e.key === "Backspace" ? "" : acceleratorFromEvent(e.nativeEvent, window.loop.platform);
+    if (acc === null) return; // only modifiers so far
+    setListening(false);
+    onAssign(acc);
+  };
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <span className="min-w-0 flex-1 text-[15px] font-medium">{label}</span>
+      <button
+        type="button"
+        aria-label={label}
+        onClick={() => setListening(true)}
+        onBlur={() => setListening(false)}
+        onKeyDown={listening ? onKeyDown : undefined}
+        className="h-11 min-w-36 rounded-control bg-surface-4 px-3 text-[14px] text-ink hover:bg-surface-3 aria-pressed:outline-2"
+        aria-pressed={listening}
+      >
+        {listening ? t("userSettings.shortcutListening") : value ? formatAccelerator(value, window.loop.platform) : t("userSettings.shortcutNone")}
+      </button>
+      <IconButton icon={<Backspace />} label={t("userSettings.shortcutClear")} disabled={!value} onClick={() => onAssign("")} />
+    </div>
+  );
+}
 
 /** Two global shortcuts (the main process registers them). Click a box, press the keys; Esc / Backspace / Xoá clears. */
 function ShortcutsSection({ settings }: { settings: Settings }) {
-  const [listening, setListening] = useState<ShortcutAction | null>(null);
   const [failed, setFailed] = useState<ShortcutAction[]>([]);
   const [clash, setClash] = useState(false);
   const refreshFailed = () => void window.loop.failedShortcuts().then(setFailed, () => undefined);
   useEffect(refreshFailed, [settings.micShortcut, settings.deafenShortcut]);
 
-  const assign = async (key: "micShortcut" | "deafenShortcut", value: string) => {
-    const other = key === "micShortcut" ? settings.deafenShortcut : settings.micShortcut;
-    setClash(!!value && value === other);
-    if (value && value === other) return;
-    try {
-      await appSettings.save({ [key]: value });
-    } catch {
-      toast.push(t("userSettings.saveFailed"), "error");
-    }
-  };
-  const onKeyDown = (key: "micShortcut" | "deafenShortcut") => (e: React.KeyboardEvent) => {
-    e.preventDefault();
-    e.stopPropagation(); // Esc here clears the shortcut, it must not close the settings page
-    const acc = e.key === "Escape" || e.key === "Backspace" ? "" : acceleratorFromEvent(e.nativeEvent, window.loop.platform);
-    if (acc === null) return; // only modifiers so far
-    setListening(null);
-    void assign(key, acc);
-  };
-
   return (
     <div className="flex flex-col gap-1 px-3 py-2">
       <p className="mb-1 text-[13px] leading-relaxed text-ink-muted">{t("userSettings.shortcutsHint")}</p>
-      {SHORTCUT_ROWS.map(({ action, key, label }) => (
-        <div key={action} className="flex items-center gap-2 py-1">
-          <span className="min-w-0 flex-1 text-[15px] font-medium">{t(label)}</span>
-          <button
-            type="button"
-            aria-label={t(label)}
-            onClick={() => setListening(action)}
-            onBlur={() => setListening((l) => (l === action ? null : l))}
-            onKeyDown={listening === action ? onKeyDown(key) : undefined}
-            className="h-11 min-w-36 rounded-control bg-surface-4 px-3 text-[14px] text-ink hover:bg-surface-3 aria-pressed:outline-2"
-            aria-pressed={listening === action}
-          >
-            {listening === action ? t("userSettings.shortcutListening") : settings[key] ? formatAccelerator(settings[key], window.loop.platform) : t("userSettings.shortcutNone")}
-          </button>
-          <Button variant="ghost" disabled={!settings[key]} onClick={() => void assign(key, "")}>
-            {t("userSettings.shortcutClear")}
-          </Button>
-        </div>
+      {SHORTCUT_ROWS.map(({ key, label }) => (
+        <KeyBox key={key} label={t(label)} value={settings[key]} onAssign={(value) => void assignKey(settings, key, value).then((ok) => setClash(!ok))} />
       ))}
       {SHORTCUT_ROWS.some(({ key }) => settings[key] && lacksRealModifier(settings[key])) && <p className="text-[13px] text-warning">{t("userSettings.shortcutBare")}</p>}
       <p role="alert" className="min-h-5 text-[13px] text-danger">
         {clash ? t("userSettings.shortcutClash") : failed.length ? t("userSettings.shortcutTaken") : ""}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Input mode: voice activity or push-to-talk, and the talk key. The key hook itself lives in the main process; it can be
+ * missing (module not loadable, macOS permission), and then the session stays on voice activity: say so here.
+ */
+function PushToTalkSection({ settings }: { settings: Settings }) {
+  const [status, setStatus] = useState<PttStatus>("ready");
+  const [clash, setClash] = useState(false);
+  useEffect(() => void window.loop.ptt.status().then(setStatus, () => setStatus("unavailable")), [settings.pttMode, settings.pttKey]);
+  const setMode = async (pttMode: boolean) => {
+    try {
+      await appSettings.save({ pttMode });
+    } catch {
+      toast.push(t("userSettings.saveFailed"), "error");
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 px-3 py-2">
+      <fieldset>
+        <legend className="text-[15px] font-medium">{t("userSettings.pttMode")}</legend>
+        <div className="mt-2">
+          <Segmented
+            name="ptt-mode"
+            value={settings.pttMode ? "push" : "voice"}
+            onChange={(m) => void setMode(m === "push")}
+            options={[
+              { value: "voice", label: t("userSettings.pttVoice"), icon: <Microphone /> },
+              { value: "push", label: t("userSettings.pttPush"), icon: <Keyboard /> },
+            ]}
+          />
+        </div>
+      </fieldset>
+      <p className="text-[13px] leading-relaxed text-ink-muted">{t("userSettings.pttHint")}</p>
+      <KeyBox label={t("userSettings.pttKey")} value={settings.pttKey} onAssign={(value) => void assignKey(settings, "pttKey", value).then((ok) => setClash(!ok))} />
+      <p role="alert" className="min-h-5 text-[13px] text-danger">
+        {clash ? t("userSettings.shortcutClash") : settings.pttMode && !settings.pttKey ? t("userSettings.pttNeedKey") : settings.pttMode && status !== "ready" ? t(status === "permission" ? "userSettings.pttPermission" : "userSettings.pttUnavailable") : ""}
       </p>
     </div>
   );

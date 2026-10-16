@@ -5,8 +5,10 @@ import { isAllowedLivekitUrl } from "../../../shared/url";
 import type { AudioSink, AudioTrackLike } from "./audio-sink";
 import { errorMessage } from "./errors";
 import type { GoLivePrefs, Quality, ShareChoice, StreamProfile } from "./golive";
-import { streamProfile } from "./golive";
+import { screenPublishOptions, streamProfile } from "./golive";
+import { micLive } from "./mic-gate";
 import { clampVolume, effectiveVolume, pruneWatching, subscriptionChanges } from "./stream-watch";
+import { MAX_USER_VOLUME, type UserVolumes } from "./voice-volume";
 import { noiseConfig, reasonOf, type NoiseLevel } from "./noise";
 import { createSpeechDetector, type LevelProbe, type TapAudio } from "./speech-level";
 import type { SoundKind } from "./sounds";
@@ -61,6 +63,10 @@ export type VoiceState = {
   /** Per sharer, the viewer's own slider (0..1, default 1) and mute for that stream's sound; kept while the session lasts. */
   streamVolume: Record<string, number>;
   streamMuted: Record<string, boolean>;
+  /** Push-to-talk is in force (set from the settings by ptt-bridge, kept across sessions): the mic transmits only while `pttHeld`. */
+  ptt: boolean;
+  /** The push-to-talk key is down right now (reset with the session). */
+  pttHeld: boolean;
 };
 
 // ---- the slice of livekit-client's Room that is used (tests pass a fake) ----
@@ -96,6 +102,8 @@ type Deps = {
   request: <T>(method: "POST", path: string, body?: unknown) => Promise<T>;
   createRoom: () => RoomLike;
   sink: AudioSink;
+  /** Each other person's own loudness and mute-for-me (per account, persisted); the room only reads it and writes the user's changes. */
+  userVolumes: UserVolumes;
   /** The OS-level microphone/camera/screen permission (macOS asks in the main process); false = denied. */
   ensureMedia: (kind: "microphone" | "camera" | "screen") => Promise<boolean>;
   /** The Go Live dialog (source, quality, sound); null = the user cancelled (not an error). */
@@ -145,7 +153,7 @@ export function disconnectMessage(reason: DisconnectReason | undefined, kind: Vo
 const tokenPath = (target: VoiceTarget) => (target.kind === "channel" ? `/channels/${target.id}/voice/token` : `/dms/${target.id}/call`);
 const same = (a: VoiceTarget | null, b: VoiceTarget) => !!a && a.kind === b.kind && a.id === b.id;
 
-const RESET: Omit<VoiceState, "sessionId" | "notice"> = {
+const RESET: Omit<VoiceState, "sessionId" | "notice" | "ptt"> = {
   status: "idle",
   quality: "unknown",
   target: null,
@@ -167,6 +175,7 @@ const RESET: Omit<VoiceState, "sessionId" | "notice"> = {
   watching: [],
   streamVolume: {},
   streamMuted: {},
+  pttHeld: false,
 };
 
 /**
@@ -177,8 +186,8 @@ const RESET: Omit<VoiceState, "sessionId" | "notice"> = {
  * Publishing: a participant without SPEAK/VIDEO that tries to publish gets no error, the publish just hangs, so
  * the microphone/camera/screen are only ever started through `setMic`/`setCamera`/`setScreen`, which check `canSpeak`/`canVideo`/`canStream`.
  */
-export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen, capture, rememberShare, noise, tap, livekitOrigin, now = Date.now, onSound }: Deps) {
-  const store = createStore<VoiceState>(() => ({ ...RESET, sessionId: 0, notice: null }));
+export function createVoice({ request, createRoom, sink, userVolumes, ensureMedia, pickScreen, capture, rememberShare, noise, tap, livekitOrigin, now = Date.now, onSound }: Deps) {
+  const store = createStore<VoiceState>(() => ({ ...RESET, sessionId: 0, notice: null, ptt: false }));
   const get = store.getState;
   const set = store.setState;
   let room: RoomLike | null = null;
@@ -241,6 +250,13 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     return s.watching.includes(userId) ? effectiveVolume(s.deafened, !!s.streamMuted[userId], s.streamVolume[userId] ?? 1) : 0;
   };
   const applyStreamAudio = () => streamAudio.forEach((track, userId) => sink.setVolume(track, streamGain(userId)));
+  // Each other person's MICROPHONE sound: their slider (0..200%) and mute-for-me from `userVolumes`, silenced by our deafen.
+  const micAudio = new Map<string, AudioTrackLike>();
+  const micGain = (userId: string) => {
+    const { volume, muted } = userVolumes.get(userId);
+    return effectiveVolume(get().deafened, muted, volume, MAX_USER_VOLUME);
+  };
+  const applyMicAudio = () => micAudio.forEach((track, userId) => sink.setVolume(track, micGain(userId)));
   const syncStreams = () => {
     if (!room) return;
     const pubs = [...room.remoteParticipants.values()].flatMap((p) =>
@@ -312,6 +328,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
     liveSharers = null;
     sink.clear();
     streamAudio.clear();
+    micAudio.clear();
     stopShared();
     if (r) void Promise.resolve(r.disconnect()).catch(() => undefined);
   }
@@ -322,26 +339,30 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
   let queue: Promise<unknown> = Promise.resolve();
   const serial = (job: () => Promise<void>) => (queue = queue.then(job).catch(() => undefined));
 
-  type Device = { key: "micEnabled" | "camEnabled"; allowed: "canSpeak" | "canVideo"; kind: "microphone" | "camera"; osDenied: Parameters<typeof t>[0]; denied: Parameters<typeof t>[0]; apply: (r: RoomLike, on: boolean) => Promise<unknown> };
+  type Device = { key: "micEnabled" | "camEnabled"; allowed: "canSpeak" | "canVideo"; /** What the device should be doing now (the mic follows push-to-talk, the camera its switch). */ wanted: (s: VoiceState) => boolean; kind: "microphone" | "camera"; osDenied: Parameters<typeof t>[0]; denied: Parameters<typeof t>[0]; apply: (r: RoomLike, on: boolean) => Promise<unknown> };
   const noiseFailed = (reason?: string) => set({ mediaNote: t("voice.media.noiseFailed") + (reason ? ` (${reason})` : "") });
   /** How a NEW microphone track is captured at the current level (an existing one keeps what it has; `applyNoise` moves it). */
   const micCapture = (): AudioCaptureOptions => {
     const level = noise.level();
     return { noiseSuppression: noiseConfig(level).browserNoiseSuppression, processor: noise.processor(level, noiseFailed) ?? undefined };
   };
-  const MIC: Device = { key: "micEnabled", allowed: "canSpeak", kind: "microphone", osDenied: "voice.media.micOsDenied", denied: "voice.media.micDenied", apply: (r, on) => r.localParticipant.setMicrophoneEnabled(on, on ? micCapture() : undefined) };
-  const CAM: Device = { key: "camEnabled", allowed: "canVideo", kind: "camera", osDenied: "voice.media.camOsDenied", denied: "voice.media.camDenied", apply: (r, on) => r.localParticipant.setCameraEnabled(on) };
+  const MIC: Device = { key: "micEnabled", allowed: "canSpeak", wanted: micLive, kind: "microphone", osDenied: "voice.media.micOsDenied", denied: "voice.media.micDenied", apply: (r, on) => r.localParticipant.setMicrophoneEnabled(on, on ? micCapture() : undefined) };
+  const CAM: Device = { key: "camEnabled", allowed: "canVideo", wanted: (s) => s.camEnabled, kind: "camera", osDenied: "voice.media.camOsDenied", denied: "voice.media.camDenied", apply: (r, on) => r.localParticipant.setCameraEnabled(on) };
 
   function setDevice(d: Device, on: boolean) {
     if (!room || (on && !get()[d.allowed])) return Promise.resolve(); // never publish without the right (the publish would hang)
-    const id = session;
     set({ [d.key]: on, mediaNote: null });
+    return applyDevice(d);
+  }
+  /** Brings LiveKit to what the device should be doing now (queued; the intention itself is already in the store). */
+  function applyDevice(d: Device) {
+    const id = session;
     return serial(async () => {
       const r = room;
       if (!r || !active(id)) return;
-      const want = get()[d.key];
+      const want = d.wanted(get());
       const fail = (note?: Parameters<typeof t>[0]) => {
-        if (active(id) && get()[d.key] === want) set({ [d.key]: false, mediaNote: note ? t(note) : null });
+        if (active(id) && d.wanted(get()) === want) set({ [d.key]: false, mediaNote: note ? t(note) : null });
       };
       if (want && !(await ensureMedia(d.kind))) return fail(d.osDenied);
       if (!active(id)) return;
@@ -404,7 +425,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
       const tracks = (shared = await capture(choice, profile));
       for (const track of tracks) {
         const video = track.kind === "video";
-        await r.localParticipant.publishTrack(track, video ? { source: Track.Source.ScreenShare, screenShareEncoding: profile.publish, simulcast: false } : { source: Track.Source.ScreenShareAudio });
+        await r.localParticipant.publishTrack(track, video ? screenPublishOptions(profile) : { source: Track.Source.ScreenShareAudio });
       }
     } catch {
       await unshare(r);
@@ -514,6 +535,9 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
         if (track.source === Track.Source.ScreenShareAudio && p) {
           streamAudio.set(p.identity, track);
           sink.setVolume(track, streamGain(p.identity));
+        } else if (track.source === Track.Source.Microphone && p) {
+          micAudio.set(p.identity, track);
+          sink.setVolume(track, micGain(p.identity));
         }
       }
       refresh();
@@ -522,6 +546,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
       if (track.kind === "audio") {
         sink.remove(track);
         if (p && streamAudio.get(p.identity) === track) streamAudio.delete(p.identity);
+        if (p && micAudio.get(p.identity) === track) micAudio.delete(p.identity);
       }
       refresh();
     });
@@ -652,6 +677,23 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
       set({ streamMuted: { ...get().streamMuted, [userId]: muted } });
       applyStreamAudio();
     },
+    /** One person's loudness (0..200%) and mute-for-me, remembered per account; applies to their microphone only, never to their stream. */
+    setUserVolume(userId: string, patch: Partial<{ volume: number; muted: boolean }>) {
+      userVolumes.set(userId, patch);
+      applyMicAudio();
+    },
+    /** Push-to-talk switched on / off (the settings and the key hook's availability decide, see ptt-bridge); the mic follows at once. */
+    setPtt(ptt: boolean) {
+      if (get().ptt === ptt) return;
+      set({ ptt });
+      void applyDevice(MIC);
+    },
+    /** The push-to-talk key went down / up. Outside push-to-talk it changes nothing (the key is not bound to anything then). */
+    setPttHeld(pttHeld: boolean) {
+      if (get().pttHeld === pttHeld) return;
+      set({ pttHeld });
+      if (get().ptt) void applyDevice(MIC);
+    },
     /** Deafen silences every remote <audio> (nothing is unsubscribed) and the mic; undeafen restores the mic as it was. */
     async toggleDeafen() {
       const s = get();
@@ -661,6 +703,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
         sink.setMuted(true);
         set({ deafened: true, micBeforeDeafen: s.micEnabled });
         applyStreamAudio();
+        applyMicAudio();
         if (s.micEnabled) await setMic(false);
       } else {
         sink.setMuted(false);
@@ -668,6 +711,7 @@ export function createVoice({ request, createRoom, sink, ensureMedia, pickScreen
         set({ deafened: false, micBeforeDeafen: false });
         sound("unmute");
         applyStreamAudio();
+        applyMicAudio();
         if (restore) await setMic(true);
       }
     },

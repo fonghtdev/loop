@@ -1,3 +1,5 @@
+import { Track } from "livekit-client";
+
 export const RESOLUTIONS = ["720", "1080", "native"] as const;
 export const FPS_CHOICES = [15, 30, 60] as const;
 export type Resolution = (typeof RESOLUTIONS)[number];
@@ -23,7 +25,6 @@ const SIZE = { "720": { width: 1280, height: 720 }, "1080": { width: 1920, heigh
 /**
  * The capture constraints, the publish encoding and the encoder hint for a quality. "detail" keeps text sharp and drops
  * frames first (15/30 fps); "motion" keeps the frame rate and drops resolution first (60 fps).
- * ponytail: one layer (no simulcast): viewers on a weak link cannot step down, add a low layer if that is reported
  */
 export function streamProfile({ resolution, fps }: Quality) {
   return {
@@ -33,6 +34,13 @@ export function streamProfile({ resolution, fps }: Quality) {
   };
 }
 export type StreamProfile = ReturnType<typeof streamProfile>;
+
+/**
+ * How the screen picture is published: the profile's encoding on top plus livekit's own low layer (half the size, the SAME
+ * frame rate, a quarter of the bitrate), which the server sends only to a small tile or a weak link. No custom low layer:
+ * a 360p 15 fps one was what every viewer of a stage under ~400 px got, whatever the streamer picked.
+ */
+export const screenPublishOptions = ({ publish }: StreamProfile) => ({ source: Track.Source.ScreenShare, screenShareEncoding: publish, simulcast: true });
 
 /** System sound needs Electron's loopback capture (Windows; macOS 14.2+ through a CoreAudio tap), and a screen / window (a camera has none). */
 export const audioAllowed = (kind: ShareSource["kind"], platform: string) => kind === "display" && (platform === "win32" || platform === "darwin");

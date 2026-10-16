@@ -13,12 +13,16 @@ export type Settings = {
   /** Global shortcuts (work while the app has no focus); "" = none. */
   micShortcut: string;
   deafenShortcut: string;
+  /** Push-to-talk: the mic only transmits while `pttKey` is held (a system-wide key hook, main/ptt.ts); false = voice activity. */
+  pttMode: boolean;
+  /** The push-to-talk key (an accelerator, a bare key is fine); "" = none, and push-to-talk then does nothing. */
+  pttKey: string;
 };
-export const DEFAULT_SETTINGS: Settings = { notifications: true, preview: true, closeToTray: true, startAtLogin: false, micShortcut: "CommandOrControl+Shift+M", deafenShortcut: "CommandOrControl+Shift+D" };
+export const DEFAULT_SETTINGS: Settings = { notifications: true, preview: true, closeToTray: true, startAtLogin: false, micShortcut: "CommandOrControl+Shift+M", deafenShortcut: "CommandOrControl+Shift+D", pttMode: false, pttKey: "" };
 const KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[];
-export type BooleanSetting = Exclude<keyof Settings, "micShortcut" | "deafenShortcut">;
+export type BooleanSetting = Exclude<keyof Settings, "micShortcut" | "deafenShortcut" | "pttKey">;
 
-/** A boolean for the switches; for a shortcut, "" (none) or a valid accelerator. */
+/** A boolean for the switches; for a shortcut or the push-to-talk key, "" (none) or a valid accelerator. */
 const isValid = (k: keyof Settings, v: unknown) => (typeof DEFAULT_SETTINGS[k] === "boolean" ? typeof v === "boolean" : v === "" || isAccelerator(v));
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);

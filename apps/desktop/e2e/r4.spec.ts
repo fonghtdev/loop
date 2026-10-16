@@ -205,9 +205,10 @@ test("tri-state overwrite: the thumb slides to the chosen option and the radiogr
   const group = page.getByRole("radiogroup", { name: /^Xem kênh/ });
   await expect(group.getByRole("radio")).toHaveCount(3);
   const thumb = group.locator("[data-seg-thumb]");
-  const labelLeft = (name: string) => group.getByText(name, { exact: true }).evaluate((el) => el.getBoundingClientRect().left);
+  const option = (name: string) => group.getByRole("radio", { name }).locator(".."); // the label around the icon
+  const labelLeft = (name: string) => option(name).evaluate((el) => el.getBoundingClientRect().left);
   for (const [name, index] of [["Từ chối", 2], ["Cho phép", 0], ["Mặc định", 1]] as const) {
-    await group.getByText(name, { exact: true }).click();
+    await option(name).click();
     await expect(group.getByRole("radio", { name })).toBeChecked();
     await expect(thumb).toHaveAttribute("data-index", String(index));
     await expect.poll(async () => Math.abs((await thumb.evaluate((el) => el.getBoundingClientRect().left)) - (await labelLeft(name)))).toBeLessThan(2);

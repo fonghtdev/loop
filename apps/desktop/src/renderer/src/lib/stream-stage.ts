@@ -14,3 +14,6 @@ export function stageModel(streams: StreamRef[], watching: readonly string[], pi
   const stage = all.find((s) => s.userId === picked) ?? all.find((s) => s.watched) ?? all[0] ?? null;
   return { stage, strip: all.filter((s) => s !== stage) };
 }
+
+/** The people whose stream is up: our own once it has a picture, others' only inside the session we are in (`here`) and while published. */
+export const sharedStreams = <T extends { isLocal?: boolean; screen?: unknown; sharing?: boolean }>(people: T[], here: boolean): T[] => people.filter((p) => (p.isLocal ? !!p.screen : here && !!p.sharing));

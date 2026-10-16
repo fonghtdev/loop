@@ -3,10 +3,10 @@
 export const SCREEN_SOURCES = ["screen_share", "screen_share_audio"] as const;
 const isScreenSource = (source: string) => (SCREEN_SOURCES as readonly string[]).includes(source);
 
-export const clampVolume = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1);
+export const clampVolume = (v: number, max = 1) => (Number.isFinite(v) ? Math.min(max, Math.max(0, v)) : 1);
 
-/** What the stream's own <audio> plays at: deafen and the stream's mute both silence it, otherwise the viewer's slider. */
-export const effectiveVolume = (deafened: boolean, muted: boolean, volume: number) => (deafened || muted ? 0 : clampVolume(volume));
+/** What a track's own <audio> plays at: deafen and its mute both silence it, otherwise the viewer's slider (up to `max`; a person's microphone may go to 200%). */
+export const effectiveVolume = (deafened: boolean, muted: boolean, volume: number, max = 1) => (deafened || muted ? 0 : clampVolume(volume, max));
 
 type Pub = { userId: string; source: string; subscribed: boolean };
 

@@ -29,6 +29,7 @@ import { buildTree, displayOrder } from "../lib/categories";
 import { collapse } from "../lib/category-collapse";
 import { density } from "../lib/density";
 import { soundPrefs } from "../lib/sound-prefs";
+import { voiceVolumes } from "../lib/voice-volume";
 import { move, reducedNow } from "../lib/motion";
 import { goHome, readLastPlace, useNav } from "../lib/nav";
 import { stageShift, type StagePlace } from "../lib/stage";
@@ -141,10 +142,12 @@ export function Shell() {
     density.load(user?.id ?? null);
     collapse.load(user?.id ?? null);
     soundPrefs.load(user?.id ?? null);
+    voiceVolumes.load(user?.id ?? null);
     return () => {
       density.load(null);
       collapse.load(null);
       soundPrefs.load(null);
+      voiceVolumes.load(null);
     };
   }, [user?.id]);
 

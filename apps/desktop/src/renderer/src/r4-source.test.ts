@@ -35,4 +35,8 @@ describe("redesign R4 source rules", () => {
     expect(seg).toMatch(/type="radio"/);
     expect(seg).toMatch(/aria-hidden="true"\s+data-seg-thumb/);
   });
+  it("every tri-state option is an icon (its word lives in the radio's aria-label via Segmented)", () => {
+    const panel = read("components/OverwritesPanel.tsx");
+    expect(panel.match(/value: "(allow|inherit|deny)", label: "", icon: </g)).toHaveLength(3);
+  });
 });

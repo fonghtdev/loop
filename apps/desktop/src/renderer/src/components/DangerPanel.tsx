@@ -5,6 +5,7 @@ import { t } from "../i18n/t";
 import { nameMatches, type SettingsCtx } from "../lib/admin";
 import { admin } from "../lib/app";
 import { errorMessage } from "../lib/errors";
+import { useNameOf } from "../lib/identity-hooks";
 import { Button } from "./Button";
 import { ConfirmBody } from "./Confirm";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
@@ -17,6 +18,7 @@ export function DangerPanel({ ctx }: { ctx: SettingsCtx }) {
   const [pick, setPick] = useState("");
   const [dialog, setDialog] = useState<"transfer" | "delete" | null>(null);
   const target = others.find((m) => m.userId === pick);
+  const nameOf = useNameOf();
   const close = () => setDialog(null);
   return (
     <div className="flex max-w-2xl flex-col gap-4">
@@ -30,7 +32,7 @@ export function DangerPanel({ ctx }: { ctx: SettingsCtx }) {
             <option value="">{t("danger.transferPick")}</option>
             {others.map((m) => (
               <option key={m.userId} value={m.userId}>
-                {m.username}
+                {nameOf(m.userId, m.username)}
               </option>
             ))}
           </Select>
@@ -51,7 +53,7 @@ export function DangerPanel({ ctx }: { ctx: SettingsCtx }) {
           </Button>
         </div>
       </section>
-      <Dialog open={dialog === "transfer" && !!target} onClose={close} title={t("danger.transferTitle", { name: target?.username ?? "" })}>
+      <Dialog open={dialog === "transfer" && !!target} onClose={close} title={t("danger.transferTitle", { name: target ? nameOf(target.userId, target.username) : "" })}>
         {target && <ConfirmBody body={t("danger.transferConfirm")} submit={t("danger.transfer")} onDone={close} action={() => admin.transfer(ctx.guildId, target.userId).then(() => undefined)} />}
       </Dialog>
       <Dialog open={dialog === "delete"} onClose={close} title={t("danger.deleteTitle", { name: ctx.guildName })}>

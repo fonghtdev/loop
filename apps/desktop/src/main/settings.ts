@@ -14,12 +14,13 @@ export function createSettingsStore(file: string) {
   }
   return {
     get: (): Settings => current,
-    /** Merges a validated patch; throws on an invalid one or one that gives both shortcuts the same keys (nothing changes). */
+    /** Merges a validated patch; throws on an invalid one or one that gives two of the shortcut / push-to-talk keys the same keys (nothing changes). */
     set(raw: unknown): Settings {
       const patch = parsePatch(raw);
       if (!patch) throw new Error("invalid settings");
       const next = { ...current, ...patch };
-      if (next.micShortcut && next.micShortcut === next.deafenShortcut) throw new Error("shortcuts clash");
+      const keys = [next.micShortcut, next.deafenShortcut, next.pttKey].filter(Boolean);
+      if (new Set(keys).size !== keys.length) throw new Error("shortcuts clash");
       writeFileSync(`${file}.tmp`, JSON.stringify(next), { mode: 0o600 });
       renameSync(`${file}.tmp`, file);
       current = next;

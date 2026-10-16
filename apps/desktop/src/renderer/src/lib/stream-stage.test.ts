@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stageModel, type StreamRef } from "./stream-stage";
+import { sharedStreams, stageModel, type StreamRef } from "./stream-stage";
 
 const me: StreamRef = { userId: "me", isLocal: true };
 const ann: StreamRef = { userId: "ann", isLocal: false };
@@ -54,4 +54,16 @@ describe("stageModel", () => {
     expect(ids(stageModel([me, ann], ["ann"], null))).toEqual(["me", ["ann"]]);
     expect(ids(stageModel([me, ann], ["ann"], "ann"))).toEqual(["ann", ["me"]]);
   });
+});
+
+describe("sharedStreams", () => {
+  const people = [
+    { userId: "me", isLocal: true, screen: {}, sharing: true },
+    { userId: "noPicture", isLocal: true, sharing: true },
+    { userId: "ann", sharing: true },
+    { userId: "bob", sharing: false },
+  ];
+  const ids = (here: boolean) => sharedStreams(people, here).map((p) => p.userId);
+  it("in our session: our own share with a picture and everyone who publishes one", () => expect(ids(true)).toEqual(["me", "ann"]));
+  it("outside it (a room we only look at): only our own, never someone else's invitation", () => expect(ids(false)).toEqual(["me"]));
 });

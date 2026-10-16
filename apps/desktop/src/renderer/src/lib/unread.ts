@@ -14,6 +14,11 @@ export type UnreadState = {
   mentions: Record<string, number>;
   /** The same per server (the rail badge); a mention with no known server is counted only per conversation. */
   guildMentions: Record<string, number>;
+  /**
+   * Unread messages per server, from the server's counts only (so a server never opened this session still shows):
+   * live messages of other servers are not delivered, a refresh (`seed`) picks them up.
+   */
+  guildUnread: Record<string, number>;
 };
 /** Where a mention happened, so the rail can badge the server. */
 export type MentionInfo = { guildId: string | null };
@@ -29,7 +34,7 @@ type Mention = { guildId: string | null; seq: string };
  * conversation is not being read (open + window focused + list at the bottom).
  */
 export function createUnread({ report }: { report?: (key: ConvKey, seq: string) => void } = {}) {
-  const store = createStore<UnreadState>(() => ({ counts: {}, mentions: {}, guildMentions: {} }));
+  const store = createStore<UnreadState>(() => ({ counts: {}, mentions: {}, guildMentions: {}, guildUnread: {} }));
   let base: Record<string, Base> = {};
   let ids: Record<string, Map<string, string>> = {}; // live unread messages: id -> seq (dedupe; a delete removes its own)
   let mentionIds: Record<string, Map<string, Mention>> = {}; // live unread mentions
@@ -49,11 +54,15 @@ export function createUnread({ report }: { report?: (key: ConvKey, seq: string) 
     const counts: Record<string, number> = {};
     const mentions: Record<string, number> = {};
     const guildMentions: Record<string, number> = {};
+    const guildUnread: Record<string, number> = {};
     const add = (to: Record<string, number>, key: string, n: number) => n > 0 && (to[key] = (to[key] ?? 0) + n);
     for (const [key, b] of Object.entries(base)) {
       add(counts, key, b.unread);
       add(mentions, key, b.mentions);
-      if (b.guildId) add(guildMentions, b.guildId, b.mentions);
+      if (b.guildId) {
+        add(guildMentions, b.guildId, b.mentions);
+        add(guildUnread, b.guildId, b.unread);
+      }
     }
     for (const [key, m] of Object.entries(ids)) add(counts, key, m.size);
     for (const [key, m] of Object.entries(mentionIds))
@@ -61,7 +70,7 @@ export function createUnread({ report }: { report?: (key: ConvKey, seq: string) 
         add(mentions, key, 1);
         if (guildId) add(guildMentions, guildId, 1);
       }
-    store.setState({ counts, mentions, guildMentions });
+    store.setState({ counts, mentions, guildMentions, guildUnread });
   };
   const forget = (key: string) => {
     const had = !!(base[key] || ids[key]?.size || mentionIds[key]?.size);
@@ -97,7 +106,7 @@ export function createUnread({ report }: { report?: (key: ConvKey, seq: string) 
       newest = {};
       readUpTo = {};
       panes = { main: closed, side: closed };
-      store.setState({ counts: {}, mentions: {}, guildMentions: {} });
+      store.setState({ counts: {}, mentions: {}, guildMentions: {}, guildUnread: {} });
     },
     setFocused(next: boolean) {
       if (focused === next) return;
@@ -167,6 +176,8 @@ const sumUnread = (s: UnreadState, only: (key: string) => boolean) => Object.key
 export const mentionsOf = (s: UnreadState, key: string) => s.mentions[key] ?? 0;
 export const dmTotal = (s: UnreadState) => sumUnread(s, (k) => k.startsWith("dm:"));
 export const total = (s: UnreadState) => sumUnread(s, () => true);
+/** What the rail shows on a server: the red mention badge, else a dot when anything in it is unread, else nothing. */
+export const railMark = (s: UnreadState, guildId: string): "mentions" | "dot" | null => ((s.guildMentions[guildId] ?? 0) > 0 ? "mentions" : (s.guildUnread[guildId] ?? 0) > 0 ? "dot" : null);
 /** "9+" past nine, "" for none: the rail badge. */
 export const capped = (n: number) => (n <= 0 ? "" : n > 9 ? "9+" : String(n));
 export const titleWith = (n: number) => (n > 0 ? `(${n}) Loop` : "Loop");

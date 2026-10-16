@@ -27,10 +27,10 @@ import { TextField } from "./TextField";
 import { Tooltip } from "./Tooltip";
 
 /** The title of a group as the signed-in user sees it (name, else "A, B, C"). */
-export function useGroupTitle(g: GroupDm) {
+export function useGroupTitle(g: GroupDm | undefined) {
   const me = session.useSession((s) => s.user?.id);
   const nameOf = useNameOf();
-  return groupTitle(g, me, nameOf, t("group.alone"));
+  return g ? groupTitle(g, me, nameOf, t("group.alone")) : "";
 }
 
 /** Two overlapping avatars of the other participants (one when only one is left). */

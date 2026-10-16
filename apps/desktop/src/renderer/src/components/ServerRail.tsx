@@ -9,14 +9,14 @@ import { goHome, useNav } from "../lib/nav";
 import type { Channel, Guild } from "../lib/permissions";
 import { useGuilds } from "../lib/queries";
 import { pillOffset } from "../lib/rail";
-import { useDmTotal, useGuildMentions } from "../lib/unread-hooks";
+import { useDmTotal, useGuildMentions, useRailMark } from "../lib/unread-hooks";
 import { guildNameError, parseInviteCode } from "../lib/validation";
 import { guildIconUrl } from "../lib/identity";
 import { Avatar } from "./Avatar";
 import { Button } from "./Button";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
 import { LogoMark } from "./Logo";
-import { Badge } from "./Badge";
+import { Badge, UnreadDot } from "./Badge";
 import { Spinner } from "./Spinner";
 import { TextField } from "./TextField";
 import { Tooltip } from "./Tooltip";
@@ -110,14 +110,15 @@ export function ServerRail() {
 
 function GuildRailItem({ guild: g, active }: { guild: Guild; active: boolean }) {
   const mentions = useGuildMentions(g.id);
+  const dot = useRailMark(g.id) === "dot";
   return (
-    <RailItem id={g.id} label={g.name} active={active} onClick={() => openGuild(g.id)} mentions={mentions}>
+    <RailItem id={g.id} label={g.name} active={active} onClick={() => openGuild(g.id)} mentions={mentions} dot={dot}>
       <Avatar id={g.id} name={g.name} image={guildIconUrl(g.id, g.iconHash)} className="size-12 rounded-control text-base" />
     </RailItem>
   );
 }
 
-function RailItem({ id, label, active, onClick, unread = 0, mentions = 0, children }: { id: string; label: string; active: boolean; onClick: () => void; unread?: number; /** Mentions waiting in this server: a red badge with their count. */ mentions?: number; children: ReactNode }) {
+function RailItem({ id, label, active, onClick, unread = 0, mentions = 0, dot = false, children }: { id: string; label: string; active: boolean; onClick: () => void; unread?: number; /** Mentions waiting in this server: a red badge with their count. */ mentions?: number; /** Unread without mentions: a dot. */ dot?: boolean; children: ReactNode }) {
   return (
     <div data-rail-active={active ? id : undefined} className="relative shrink-0">
       <Tooltip side="right" label={label}>
@@ -134,7 +135,7 @@ function RailItem({ id, label, active, onClick, unread = 0, mentions = 0, childr
           {children}
         </button>
       </Tooltip>
-      {mentions > 0 ? <Badge count={mentions} label="unread.mentions" className="absolute -right-1 -bottom-1" /> : unread > 0 && <Badge count={unread} className="absolute -right-1 -bottom-1" />}
+      {mentions > 0 ? <Badge count={mentions} label="unread.mentions" className="absolute -right-1 -bottom-1" /> : unread > 0 ? <Badge count={unread} className="absolute -right-1 -bottom-1" /> : dot && <UnreadDot className="absolute -right-0.5 -bottom-0.5" />}
     </div>
   );
 }

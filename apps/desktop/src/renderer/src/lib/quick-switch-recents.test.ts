@@ -29,15 +29,17 @@ describe("recents", () => {
   });
   it("only the stored key formats are accepted", () => {
     expect(isRecentKey(`channel:${id(1)}:${id(2)}`)).toBe(true);
+    expect(isRecentKey(`group:${id(1)}`)).toBe(true);
     expect(isRecentKey(`guild:${id(1)}`)).toBe(false);
     expect(isRecentKey("place:friends")).toBe(true);
   });
   it("names where the user is: a channel, a DM's person, Friends, settings; unknown DMs and bare servers are nothing", () => {
-    const dms = [{ id: id(9), user: { id: id(8) } }];
+    const dms = [{ id: id(9), user: { id: id(8) } }, { id: id(6), kind: "GROUP" }];
     const here = { guildId: null, channelId: null, dmId: null, settings: null };
     expect(recentKeyOf({ ...here, guildId: id(1), channelId: id(2) }, dms)).toBe(`channel:${id(1)}:${id(2)}`);
     expect(recentKeyOf({ ...here, guildId: id(1) }, dms)).toBeNull();
     expect(recentKeyOf({ ...here, dmId: id(9) }, dms)).toBe(person(8));
+    expect(recentKeyOf({ ...here, dmId: id(6) }, dms)).toBe(`group:${id(6)}`);
     expect(recentKeyOf({ ...here, dmId: id(7) }, dms)).toBeNull();
     expect(recentKeyOf(here, dms)).toBe("place:friends");
     expect(recentKeyOf({ ...here, settings: "user" }, dms)).toBe("place:settings");

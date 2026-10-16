@@ -1,3 +1,4 @@
+import { ArrowCounterClockwise } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
@@ -11,6 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "../lib/toast";
 import { Avatar } from "./Avatar";
 import { Button } from "./Button";
+import { IconButton } from "./IconButton";
 import { ImagePicker } from "./ImagePicker";
 import { TextField } from "./TextField";
 
@@ -137,17 +139,15 @@ function Fields({ profile }: { profile: UserProfile }) {
         <Button type="submit" loading={busy} disabled={!patch}>
           {t("profile.save")}
         </Button>
-        <Button
-          type="button"
-          variant="ghost"
+        <IconButton
+          icon={<ArrowCounterClockwise />}
+          label={t("profile.discard")}
           disabled={busy || !changed}
           onClick={() => {
             setDraft(draftOf(profile));
             setServerError("");
           }}
-        >
-          {t("profile.discard")}
-        </Button>
+        />
       </div>
     </form>
   );

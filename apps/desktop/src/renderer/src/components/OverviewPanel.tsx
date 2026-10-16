@@ -1,3 +1,4 @@
+import { ArrowCounterClockwise } from "@phosphor-icons/react";
 import { useState } from "react";
 import { t } from "../i18n/t";
 import { guildNameError, type SettingsCtx } from "../lib/admin";
@@ -8,6 +9,7 @@ import { useGuild } from "../lib/queries";
 import { toast } from "../lib/toast";
 import { Avatar } from "./Avatar";
 import { Button } from "./Button";
+import { IconButton } from "./IconButton";
 import { ImagePicker } from "./ImagePicker";
 import { TextField } from "./TextField";
 
@@ -70,9 +72,7 @@ function NameForm({ guildId, current }: { guildId: string; current: string }) {
         <Button type="submit" loading={busy} disabled={!changed || !!error}>
           {t("profile.save")}
         </Button>
-        <Button type="button" variant="ghost" disabled={busy || !changed} onClick={() => (setName(current), setServerError(""))}>
-          {t("profile.discard")}
-        </Button>
+        <IconButton icon={<ArrowCounterClockwise />} label={t("profile.discard")} disabled={busy || !changed} onClick={() => (setName(current), setServerError(""))} />
       </div>
     </form>
   );

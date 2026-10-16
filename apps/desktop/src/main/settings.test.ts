@@ -36,6 +36,26 @@ describe("shortcut settings", () => {
   });
 });
 
+describe("push-to-talk settings", () => {
+  it("default to voice activity with no key; a stored key must be a valid accelerator or empty", () => {
+    expect(DEFAULT_SETTINGS).toMatchObject({ pttMode: false, pttKey: "" });
+    expect(parseSettings({ pttMode: "yes", pttKey: "Control+Shift" })).toEqual(DEFAULT_SETTINGS);
+    expect(parseSettings({ pttMode: true, pttKey: "F13" })).toMatchObject({ pttMode: true, pttKey: "F13" });
+  });
+  it("a patch takes a bare key and a boolean mode, refuses the rest", () => {
+    expect(parsePatch({ pttKey: "`", pttMode: true })).toEqual({ pttKey: "`", pttMode: true });
+    expect(parsePatch({ pttKey: "Escape" })).toBeNull();
+    expect(parsePatch({ pttMode: "on" })).toBeNull();
+  });
+  it("the push-to-talk key cannot share its keys with a shortcut", () => {
+    const s = createSettingsStore(join(mkdtempSync(join(tmpdir(), "loop-settings-")), "settings.json"));
+    expect(() => s.set({ pttKey: DEFAULT_SETTINGS.micShortcut })).toThrow();
+    expect(s.get().pttKey).toBe("");
+    expect(s.set({ pttKey: "F13" }).pttKey).toBe("F13");
+    expect(() => s.set({ deafenShortcut: "F13" })).toThrow();
+  });
+});
+
 describe("parsePatch (a change from the renderer)", () => {
   it("takes known boolean keys and drops unknown ones", () => {
     expect(parsePatch({ preview: false })).toEqual({ preview: false });

@@ -1,4 +1,5 @@
 import type { NotifyPayload } from "../shared/notify";
+import type { PttStatus } from "../shared/ptt";
 import type { Settings } from "../shared/settings";
 import type { ShortcutAction } from "../shared/shortcut";
 import type { UpdateStatus } from "../shared/update";
@@ -30,6 +31,14 @@ export type LoopApi = {
   failedShortcuts(): Promise<ShortcutAction[]>;
   /** A global shortcut was pressed (action already validated); returns the unsubscribe. */
   onShortcut(cb: (action: ShortcutAction) => void): () => void;
+  ptt: {
+    /** Whether push-to-talk can work here (key hook loaded, macOS permission given). */
+    status(): Promise<PttStatus>;
+    /** Tells the main process whether we are in a voice room: it listens for the push-to-talk key only then. Resolves to the status now. */
+    setRoom(inRoom: boolean): Promise<PttStatus>;
+    /** The bound push-to-talk key is held (true) or was released (false); no other key ever arrives. Returns the unsubscribe. */
+    onHeld(cb: (held: boolean) => void): () => void;
+  };
   update: {
     get(): Promise<UpdateStatus>;
     /** Starts a check when one makes sense; resolves to the status now in force. */

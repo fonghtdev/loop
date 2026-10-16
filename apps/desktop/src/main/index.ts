@@ -12,8 +12,10 @@ import { updatesEnabled, type UpdateStatus } from "../shared/update";
 import { APP_ORIGIN, buildCsp, ensureMediaAccess, isMediaKind, isPermissionAllowed, isSafeExternalUrl, isTrustedSender, isValidRefreshToken, resolveAppFile } from "./security";
 import { installE2eHook, newRecorder } from "./e2e-hook";
 import { createIdleWatch } from "./idle";
+import { loadKeyHook } from "./key-hook";
 import { createNotifier } from "./notifications";
 import { loginItemSettings, normalizeBadge, revealWindow, shouldHideOnClose, startsHidden, windowIsFocused } from "./policy";
+import { createPtt } from "./ptt";
 import { createScreenShare } from "./screen";
 import { createSettingsStore } from "./settings";
 import { createShortcuts } from "./shortcuts";
@@ -46,6 +48,13 @@ let uninstallAnswer = false; // e2e only: stands in for the click on the native 
 const screenShare = createScreenShare({ getSources: (o) => desktopCapturer.getSources(o), trusted: (url) => isTrustedSender(url, devServerUrl), platform: process.platform });
 let settings: ReturnType<typeof createSettingsStore>;
 const shortcuts = createShortcuts({ globalShortcut, onPress: (action) => win?.webContents.send("shortcut:fire", action) });
+const ptt = createPtt({
+  loadHook: loadKeyHook,
+  send: (held) => win && !win.isDestroyed() && win.webContents.send("ptt:held", held),
+  // macOS lists keyboard listening under Accessibility / Input Monitoring; the prompt appears once, when push-to-talk first starts in a room
+  permitted: (prompt) => process.platform !== "darwin" || systemPreferences.isTrustedAccessibilityClient(prompt),
+  platform: process.platform,
+});
 let updater: Pick<ReturnType<typeof createUpdater>, "status" | "check" | "install" | "start">;
 
 // A standard + secure scheme gives the renderer a real origin (app://loop) for CORS, unlike file://.
@@ -105,6 +114,11 @@ function registerIpc() {
     return next;
   });
   handle("shortcuts:failed", () => shortcuts.failed());
+  handle("ptt:status", () => ptt.status());
+  handle("ptt:setRoom", (inRoom) => {
+    if (typeof inRoom !== "boolean") throw new Error("invalid room flag");
+    return ptt.setRoom(inRoom);
+  });
   handle("update:get", () => updater.status());
   handle("update:check", () => {
     updater.check();
@@ -239,11 +253,12 @@ function createWindow(hidden: boolean) {
   w.loadURL(devServerUrl ?? `${APP_ORIGIN}/index.html`);
 }
 
-/** Applies what the settings say outside the renderer: the login item (installed app only), the global shortcuts and the tray menu. */
+/** Applies what the settings say outside the renderer: the login item (installed app only), the global shortcuts, push-to-talk and the tray menu. */
 function applySettings(s: Settings) {
   const item = loginItemSettings({ isPackaged: app.isPackaged, startAtLogin: s.startAtLogin });
   if (item) app.setLoginItemSettings(item);
   shortcuts.apply(s);
+  ptt.apply(s);
   tray?.refresh();
 }
 
@@ -326,6 +341,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("will-quit", () => {
     idleWatch.stop();
     shortcuts.dispose();
+    ptt.dispose();
   });
   app.whenReady().then(() => {
     // Microphone/camera/screen (voice) and writing text to the clipboard, for our own pages only; everything else is refused.

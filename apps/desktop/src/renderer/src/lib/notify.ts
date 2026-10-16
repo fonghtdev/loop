@@ -37,13 +37,13 @@ export function shouldNotify(d: NotifyDecision): boolean {
 const oneLine = (s: string, max: number) => s.replace(/\s+/g, " ").trim().slice(0, max);
 
 /**
- * A DM or channel message as a notification: the sender's name and the text (or "sent a file"), `<@id>` read as
+ * A DM or channel message as a notification: the sender's display name (else username) and the text (or "sent a file"), `<@id>` read as
  * `@name`; the main process redacts for no-preview.
  */
 export function messageNotice(m: Message, nameOf: (id: string) => string | undefined = () => undefined): NotifyPayload {
   return {
     conversationKey: m.dmChannelId ? dmKey(m.dmChannelId) : channelKey(m.channelId ?? ""),
-    title: oneLine(m.author.username, 80),
+    title: oneLine(nameOf(m.author.id) || m.author.displayName || m.author.username, 80),
     body: oneLine(readable(m.content, nameOf), 200) || t("notify.file"),
     kind: "message",
   };

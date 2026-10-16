@@ -1,5 +1,5 @@
 import { CHANNEL_PERMISSIONS, hasPermission, Permission } from "@loop/shared";
-import { Check, X } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, Check, Minus, X } from "@phosphor-icons/react";
 import { useMutation } from "@tanstack/react-query";
 import { useId, useState, type ReactNode } from "react";
 import { t } from "../i18n/t";
@@ -13,13 +13,14 @@ import type { Channel, Member, Role } from "../lib/permissions";
 import { toast } from "../lib/toast";
 import { Banner } from "./Banner";
 import { Button } from "./Button";
+import { IconButton } from "./IconButton";
 import { Segmented, type SegmentOption } from "./Segmented";
 import { TextField } from "./TextField";
 
 const TRI: SegmentOption<Tri>[] = [
-  { value: "allow", label: "", thumb: "bg-moss-900", on: "peer-checked:text-moss-200" },
-  { value: "inherit", label: "", thumb: "bg-surface-4", on: "peer-checked:text-ink" },
-  { value: "deny", label: "", thumb: "bg-danger-bg", on: "peer-checked:text-danger" },
+  { value: "allow", label: "", icon: <Check />, thumb: "bg-moss-900", on: "peer-checked:text-moss-200" },
+  { value: "inherit", label: "", icon: <Minus />, thumb: "bg-surface-4", on: "peer-checked:text-ink" },
+  { value: "deny", label: "", icon: <X />, thumb: "bg-danger-bg", on: "peer-checked:text-danger" },
 ];
 const TRI_LABEL: Record<Tri, MessageKey> = { allow: "overwrites.allow", inherit: "overwrites.inherit", deny: "overwrites.deny" };
 
@@ -213,9 +214,7 @@ function OverwriteEditor({ ctx, channel, target, name }: { ctx: SettingsCtx; cha
         <Button type="submit" loading={save.isPending} disabled={!changed}>
           {t("overwrites.save")}
         </Button>
-        <Button type="button" variant="ghost" disabled={empty} onClick={() => edit({ allow: 0, deny: 0 })}>
-          {t("overwrites.reset")}
-        </Button>
+        <IconButton icon={<ArrowCounterClockwise />} label={t("overwrites.reset")} disabled={empty} onClick={() => edit({ allow: 0, deny: 0 })} />
       </div>
     </form>
   );

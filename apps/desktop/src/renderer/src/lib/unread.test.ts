@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { capped, createUnread, dmTotal, mentionsOf, titleWith, total, unreadOf } from "./unread";
+import { capped, createUnread, dmTotal, mentionsOf, railMark, titleWith, total, unreadOf } from "./unread";
 
 const UUID = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
 const DM1 = `dm:${UUID(1)}` as const;
@@ -126,7 +126,7 @@ describe("sign-out and the server's read pointer", () => {
     u.message(DM1, msg("a", "1"), THEM, ME);
     u.seed({ channels: [], dms: [{ dmChannelId: UUID(2), unread: 4, mentions: 1 }] });
     u.reset();
-    expect(u.store.getState()).toEqual({ counts: {}, mentions: {}, guildMentions: {} });
+    expect(u.store.getState()).toEqual({ counts: {}, mentions: {}, guildMentions: {}, guildUnread: {} });
   });
 
   it("reading tells the server how far, once per new high-water mark", () => {
@@ -259,6 +259,24 @@ describe("mentions", () => {
     expect([count(u, CH1), mentionsOf(state(u), CH1)]).toEqual([2, 1]);
     expect([count(u, CH2), mentionsOf(state(u), CH2)]).toEqual([2, 2]);
     expect(state(u).guildMentions).toEqual({ [G1]: 1, [G2]: 2 });
+  });
+
+  it("a server never opened still marks the rail from the server's counts: mentions win, else a dot, else nothing", () => {
+    const { u } = make();
+    u.seed({
+      channels: [
+        { channelId: UUID(3), guildId: G1, unread: 4, mentions: 1 },
+        { channelId: UUID(4), guildId: G2, unread: 2, mentions: 0 },
+        { channelId: UUID(5), guildId: G2, unread: 1, mentions: 0 },
+      ],
+      dms: [],
+    });
+    expect(state(u).guildUnread).toEqual({ [G1]: 4, [G2]: 3 });
+    expect([railMark(state(u), G1), railMark(state(u), G2), railMark(state(u), "g3")]).toEqual(["mentions", "dot", null]);
+    u.serverRead(CH2, "99"); // read elsewhere: that channel stops counting, the other one still marks the server
+    expect(railMark(state(u), G2)).toBe("dot");
+    u.serverRead(`channel:${UUID(5)}`, "99");
+    expect(railMark(state(u), G2)).toBeNull();
   });
 
   it("never for my own message, even one that mentions me", () => {

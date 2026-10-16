@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type
 import { useQuery } from "@tanstack/react-query";
 import { useStore } from "zustand";
 import { t } from "../i18n/t";
-import { admin, presence, profileApi, session } from "../lib/app";
+import { admin, presence, profileApi, session, voice } from "../lib/app";
 import { profiles } from "../lib/profiles";
 import { bannerUrl } from "../lib/identity";
 import { profileKey } from "../lib/profile-api";
@@ -14,6 +14,8 @@ import { voiceModButtons } from "../lib/voice-mod";
 import { arrowNav } from "../lib/focus";
 import { useNav } from "../lib/nav";
 import { useVoiceSnapshot } from "../lib/voice-hooks";
+import { MAX_USER_VOLUME, useUserVolume } from "../lib/voice-volume";
+import { useNameOf } from "../lib/identity-hooks";
 import { useStatusOf } from "../lib/presence-hooks";
 import { dotOfPref, statusLabel } from "../lib/presence";
 import { useBlocks, useDms, useFriends, useGuild, useMembers, usePermissions, useRoles } from "../lib/queries";
@@ -62,6 +64,8 @@ export function UserCardHost() {
   const target = useStore(userCard, (s) => s.target);
   const box = useRef<HTMLDivElement>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const nameOf = useNameOf();
+  const confirmName = confirm ? nameOf(confirm.user.id, confirm.user.username) : "";
 
   useLayoutEffect(() => {
     const el = box.current;
@@ -99,20 +103,20 @@ export function UserCardHost() {
         ref={box}
         popover="auto"
         role={target ? "dialog" : undefined}
-        aria-label={target ? t("userCard.label", { name: target.username }) : undefined}
+        aria-label={target ? t("userCard.label", { name: nameOf(target.userId, target.username) }) : undefined}
         tabIndex={-1}
         onToggle={(e) => (e as unknown as ToggleEvent).newState === "closed" && dismissed()}
         className="m-0 max-h-[calc(100vh-16px)] w-[min(300px,calc(100vw-16px))] [inset:auto] glass overflow-y-auto rounded-card p-4 text-ink outline-none"
       >
         {target && <Card key={`${target.guildId}:${target.userId}`} target={target} onConfirm={setConfirm} />}
       </div>
-      <Dialog open={confirm?.kind === "block"} onClose={() => setConfirm(null)} title={t("friends.blockTitle", { name: confirm?.user.username ?? "" })}>
+      <Dialog open={confirm?.kind === "block"} onClose={() => setConfirm(null)} title={t("friends.blockTitle", { name: confirmName })}>
         {confirm && <ConfirmBody body={t("friends.blockBody")} submit={t("friends.block")} onDone={() => setConfirm(null)} action={() => blockUser(confirm.user)} />}
       </Dialog>
-      <Dialog open={confirm?.kind === "unfriend"} onClose={() => setConfirm(null)} title={t("friends.unfriendTitle", { name: confirm?.user.username ?? "" })}>
+      <Dialog open={confirm?.kind === "unfriend"} onClose={() => setConfirm(null)} title={t("friends.unfriendTitle", { name: confirmName })}>
         {confirm && <ConfirmBody body={t("friends.unfriendBody")} submit={t("friends.unfriend")} onDone={() => setConfirm(null)} action={() => unfriend(confirm.user.id)} />}
       </Dialog>
-      <Dialog open={confirm?.kind === "kick"} onClose={() => setConfirm(null)} title={t("settingsMembers.kickTitle", { name: confirm?.user.username ?? "" })}>
+      <Dialog open={confirm?.kind === "kick"} onClose={() => setConfirm(null)} title={t("settingsMembers.kickTitle", { name: confirmName })}>
         {confirm?.guildId && <ConfirmBody body={t("settingsMembers.kickBody")} submit={t("settingsMembers.kick")} onDone={() => setConfirm(null)} action={() => admin.kick(confirm.guildId!, confirm.user.id)} />}
       </Dialog>
     </>
@@ -131,6 +135,7 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
   const guild = useGuild(guildId).data;
   const { standing, bitsIn } = usePermissions(guildId);
   const voiceNow = useVoiceSnapshot();
+  const inRoomWithUs = useStore(voice.store, (s) => s.participants.some((p) => p.userId === userId && !p.isLocal));
   const friends = useFriends().data;
   const blocks = useBlocks().data;
   const dms = useDms().data;
@@ -257,6 +262,7 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
         </>
       )}
 
+      {inRoomWithUs && <UserVolume userId={userId} username={username} />}
       {userId === selfId && (
         <div className="border-t border-hair pt-3">
           <button type="button" onClick={() => (useNav.setState({ settings: "user" }), closeUserCard())} className={neutral}>
@@ -300,6 +306,41 @@ function Card({ target, onConfirm }: { target: CardTarget; onConfirm: (c: Confir
         </div>
       )}
       {moving && move && <MovePicker channels={move.targets} busy={busy} onClose={() => setMoving(false)} onPick={(c) => void run(() => admin.moveMember(c.id, userId), true)} />}
+    </div>
+  );
+}
+
+/** How loud this person is for me in the voice room (their microphone only; a stream has its own slider): 0-200%, or muted for me. */
+function UserVolume({ userId, username }: { userId: string; username: string }) {
+  const { volume, muted } = useUserVolume(userId);
+  const percent = muted ? 0 : Math.round(volume * 100);
+  return (
+    <div className="flex flex-col gap-2 border-t border-hair pt-3">
+      <span className="text-sm font-medium">{t("voice.userVolume.title", { name: username })}</span>
+      <div className="flex items-center gap-2">
+        <input
+          type="range"
+          min={0}
+          max={MAX_USER_VOLUME * 100}
+          step={5}
+          value={percent}
+          aria-label={t("voice.userVolume.slider", { name: username })}
+          aria-valuetext={t("voice.userVolume.percent", { percent: String(percent) })}
+          onChange={(e) => voice.setUserVolume(userId, { muted: false, volume: Number(e.target.value) / 100 })}
+          className="h-8 min-w-0 flex-1 accent-moss-400"
+        />
+        <span aria-hidden="true" className="w-10 shrink-0 text-right text-[13px] text-ink-muted tabular-nums">
+          {percent}%
+        </span>
+      </div>
+      <div className="flex gap-2">
+        <button type="button" aria-pressed={muted} onClick={() => voice.setUserVolume(userId, { muted: !muted })} className={neutral}>
+          {t(muted ? "voice.userVolume.unmute" : "voice.userVolume.mute")}
+        </button>
+        <button type="button" disabled={!muted && volume === 1} onClick={() => voice.setUserVolume(userId, { muted: false, volume: 1 })} className={neutral}>
+          {t("voice.userVolume.reset")}
+        </button>
+      </div>
     </div>
   );
 }

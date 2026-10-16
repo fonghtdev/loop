@@ -92,6 +92,12 @@ describe("notice builders", () => {
     expect(messageNotice(dm({ content: "x".repeat(500) })).body).toHaveLength(200);
     expect(messageNotice(dm({ content: "  " })).body).toBe("đã gửi một tệp");
   });
+  it("the title is the display name (live profile first), else the username", () => {
+    const withName = dm({ author: { id: U1, username: "ngoc", displayName: "Ngọc Lê" } });
+    expect(messageNotice(withName).title).toBe("Ngọc Lê");
+    expect(messageNotice(withName, () => "Mới").title).toBe("Mới");
+    expect(messageNotice(dm({ author: { id: U1, username: "ngoc", displayName: null } })).title).toBe("ngoc");
+  });
   it("a channel message notice points at its channel and reads mentions as names", () => {
     const m = dm({ dmChannelId: null, channelId: "0a1b2c3d-0000-4000-8000-0000000000c1", content: `hi <@${U1}> and <@${U2}>` });
     expect(messageNotice(m, (id) => (id === U1 ? "Ann" : undefined))).toEqual({

@@ -1,5 +1,6 @@
+import type { TrackPublishOptions } from "livekit-client";
 import { describe, expect, it, vi } from "vitest";
-import { audioAllowed, captureShare, createGoLivePrefs, DEFAULT_GOLIVE, FPS_CHOICES, parseGoLive, partitionSources, RESOLUTIONS, streamProfile } from "./golive";
+import { audioAllowed, captureShare, createGoLivePrefs, DEFAULT_GOLIVE, FPS_CHOICES, parseGoLive, partitionSources, RESOLUTIONS, screenPublishOptions, streamProfile } from "./golive";
 
 describe("streamProfile", () => {
   // the table the bitrates come from: [resolution, fps, bits/s]
@@ -32,6 +33,18 @@ describe("streamProfile", () => {
 
   it("detail for 15 and 30 fps, motion for 60", () => {
     expect(FPS_CHOICES.map((fps) => streamProfile({ resolution: "720", fps }).contentHint)).toEqual(["detail", "detail", "motion"]);
+  });
+});
+
+describe("screenPublishOptions", () => {
+  const QUALITIES = RESOLUTIONS.flatMap((resolution) => FPS_CHOICES.map((fps) => ({ resolution, fps })));
+  // a low layer below the chosen frame rate is what a viewer of a smallish stage gets: laggy and blurry whatever was picked
+  it.each(QUALITIES)("$resolution @ $fps fps: simulcast on the chosen encoding, and no layer drops the frame rate", (quality) => {
+    const profile = streamProfile(quality);
+    const opts: TrackPublishOptions = screenPublishOptions(profile);
+    expect(opts).toMatchObject({ source: "screen_share", screenShareEncoding: profile.publish, simulcast: true });
+    // no custom layers = livekit's default screen layer: half the size at the top layer's frame rate
+    expect((opts.screenShareSimulcastLayers ?? []).filter((layer) => layer.encoding.maxFramerate !== quality.fps)).toEqual([]);
   });
 });
 

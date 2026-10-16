@@ -220,7 +220,7 @@ describe("screen share", () => {
     expect(s.capture).toHaveBeenCalledWith(display(), streamProfile({ resolution: "720", fps: 60 }));
     expect(s.state()).toMatchObject({ screenEnabled: true, mediaNote: null });
     const [video, audio] = s.room().published;
-    expect(video.options).toEqual({ source: "screen_share", screenShareEncoding: { maxBitrate: 4_000_000, maxFramerate: 60 }, simulcast: false });
+    expect(video.options).toEqual({ source: "screen_share", screenShareEncoding: { maxBitrate: 4_000_000, maxFramerate: 60 }, simulcast: true });
     expect(audio.options).toEqual({ source: "screen_share_audio" });
     await s.voice.toggleScreen();
     expect(s.state().screenEnabled).toBe(false);
@@ -904,6 +904,28 @@ describe("watching a screen share", () => {
     s.voice.watch("u2");
     expect(s.state().streamVolume.u2).toBe(0.3);
     expect(s.sink.volumes.get(track)).toBe(0.3);
+  });
+});
+
+describe("watching a stream in a DM call", () => {
+  it("a sharer in a DM call is watched through the same store path: nothing subscribed until watch, then picture and sound", async () => {
+    const s = setupVoice();
+    await s.voice.joinDm("d1", "Lan", false);
+    const subscribe = (source: string) => {
+      const p = { isMuted: false, isSubscribed: true, setSubscribed: vi.fn() };
+      p.setSubscribed.mockImplementation((on: boolean) => void (p.isSubscribed = on));
+      return [source, p] as const;
+    };
+    const pubs = Object.fromEntries([subscribe("screen_share"), subscribe("screen_share_audio")]);
+    const sharer = { identity: "u2", name: "Lan", getTrackPublication: (source: string) => pubs[source] };
+    s.room().remoteParticipants.set("u2", sharer);
+    s.room().fire("participantConnected", sharer);
+    expect(s.state()).toMatchObject({ target: { kind: "dm", id: "d1" }, watching: [] });
+    expect(s.state().participants.find((p) => p.userId === "u2")).toMatchObject({ sharing: true });
+    expect(pubs.screen_share.isSubscribed).toBe(false);
+    s.voice.watch("u2");
+    expect(s.state().watching).toEqual(["u2"]);
+    expect(pubs.screen_share.isSubscribed && pubs.screen_share_audio.isSubscribed).toBe(true);
   });
 });
 

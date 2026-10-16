@@ -133,9 +133,13 @@ test("tooltips: after the delay with aria-describedby, on the right of rail butt
   await expect(tip).toHaveText(ALPHA, { timeout: 2000 });
   const id = await tip.getAttribute("id");
   await expect(button).toHaveAttribute("aria-describedby", id!);
-  const [t, b] = await Promise.all([tip.boundingBox(), button.boundingBox()]);
-  expect(t!.x).toBeGreaterThanOrEqual(b!.x + b!.width - 1); // to the right of the button
-  expect(Math.abs(t!.y + t!.height / 2 - (b!.y + b!.height / 2))).toBeLessThan(6);
+  // the tooltip springs in (scale), so poll for its settled position instead of measuring mid-animation
+  await expect
+    .poll(async () => {
+      const [t, b] = await Promise.all([tip.boundingBox(), button.boundingBox()]);
+      return t!.x >= b!.x + b!.width - 1 && Math.abs(t!.y + t!.height / 2 - (b!.y + b!.height / 2)) < 6; // right of the button, vertically centred
+    })
+    .toBe(true);
   await page.keyboard.press("Escape");
   await expect(tip).toHaveCount(0);
   await expect(button).not.toHaveAttribute("aria-describedby", /./);
@@ -183,12 +187,12 @@ test("chat rows: sticky day separator, toolbar buttons >= 40x40 in order Sửa/S
   await theirs.hover();
   const bar = theirs.getByRole("toolbar", { name: "Thao tác với tin nhắn" });
   await expect(bar).toBeVisible();
-  await expect(bar.getByRole("button")).toHaveText(["", ""]);
-  expect(await bar.getByRole("button").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))).toEqual(["Sao chép nội dung", "Xoá tin nhắn"]);
+  await expect(bar.getByRole("button")).toHaveText(["", "", "", "", "", ""]);
+  expect(await bar.getByRole("button").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))).toEqual(["Thêm biểu cảm", "Trả lời", "Tạo luồng", "Ghim tin nhắn", "Sao chép nội dung", "Xoá tin nhắn"]);
   const mine = log().getByRole("article").filter({ hasText: "Tin của chính mình" });
   await mine.hover();
   const myBar = mine.getByRole("toolbar");
-  expect(await myBar.getByRole("button").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))).toEqual(["Sửa tin nhắn", "Sao chép nội dung", "Xoá tin nhắn"]);
+  expect(await myBar.getByRole("button").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))).toEqual(["Thêm biểu cảm", "Trả lời", "Tạo luồng", "Ghim tin nhắn", "Sửa tin nhắn", "Sao chép nội dung", "Xoá tin nhắn"]);
   for (const button of await myBar.getByRole("button").all()) {
     const box = (await button.boundingBox())!;
     expect(box.width).toBeGreaterThanOrEqual(40);
@@ -381,6 +385,7 @@ test("glass stays on dialogs, popovers and tooltips only (the app columns are so
   for (const l of [rail(), page.getByRole("navigation", { name: "Kênh" }), page.getByRole("main"), members(), scroller()]) expect(await blur(l)).toBe("none");
   await log().getByRole("article").last().hover();
   expect(await blur(log().getByRole("article").last().getByRole("toolbar"))).toBe("none"); // the toolbar is raise + shadow, not glass
+  await page.mouse.move(600, 400);
   await railButton(/^Alpha/).hover();
   await expect(page.getByRole("tooltip")).toBeVisible({ timeout: 2000 });
   expect(await blur(page.getByRole("tooltip"))).toMatch(/^blur/);
@@ -394,7 +399,7 @@ test("density: Gọn is a switch in Giao diện, applies at once, persists acros
   await page.getByRole("button", { name: "Cài đặt của bạn" }).click();
   const group = page.getByRole("group", { name: "Mật độ tin nhắn" });
   await expect(group.getByRole("radio", { name: "Thoải mái" })).toBeChecked();
-  await group.getByText("Gọn", { exact: true }).click();
+  await group.getByRole("radio", { name: "Gọn" }).locator("..").click();
   await expect(group.getByRole("radio", { name: "Gọn" })).toBeChecked();
   await expect(html()).toHaveAttribute("data-density", "compact");
   expect(await page.evaluate((id) => localStorage.getItem(`loop.density.${id}`), A.user.id)).toBe("compact");
@@ -402,7 +407,7 @@ test("density: Gọn is a switch in Giao diện, applies at once, persists acros
   await channelButton(/^cuon/).click();
   await expect(log().getByRole("article").last()).toBeVisible();
   expect(Math.round((await avatar().boundingBox())!.width)).toBe(32);
-  expect(await log().getByRole("article").last().locator("p").last().evaluate((el) => getComputedStyle(el).fontSize)).toBe("14px");
+  expect(await log().getByRole("article").filter({ hasText: "Tin cuộn" }).last().locator("p", { hasText: "Tin cuộn" }).last().evaluate((el) => getComputedStyle(el).fontSize)).toBe("14px");
 
   // relaunch on the same profile: still compact
   await app.close();

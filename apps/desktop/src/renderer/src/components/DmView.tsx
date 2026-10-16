@@ -11,6 +11,7 @@ import { useBlocks, useDms, useFriends } from "../lib/queries";
 import { dmComposerState, isGroup, type DmComposerState, type GroupDm } from "../lib/social";
 import { isActive } from "../lib/voice-hooks";
 import { PresenceAvatar } from "./Avatar";
+import { CallStreams } from "./CallStreams";
 import { Conversation } from "./ChatView";
 import { ColumnHeader, Skeleton } from "./States";
 import { Tooltip } from "./Tooltip";
@@ -64,6 +65,7 @@ export function DmView({ dmId }: { dmId: string }) {
         </>
       }
       actions={<CallButtons dmId={dmId} name={name} open={state === "ok"} inCall={inCall} />}
+      banner={inCall && <CallStreams />}
       logLabel={t("dm.log", { name })}
       start={{ icon: <ChatsCircle size={24} />, title: t("dm.startTitle", { name }), body: t("dm.startBody"), emptyTitle: t("dm.startTitle", { name }), emptyBody: t("dm.emptyBody") }}
       canManage={false}
@@ -119,6 +121,7 @@ function GroupView({ dm, inCall }: { dm: GroupDm; inCall: boolean }) {
           <GroupMembersMenu g={dm} />
         </>
       }
+      banner={inCall && <CallStreams />}
       logLabel={t("dm.log", { name })}
       start={{ icon: <ChatsCircle size={24} />, title: t("group.startTitle", { name  }), body: t("group.startBody"), emptyTitle: t("group.startTitle", { name  }), emptyBody: t("dm.emptyBody") }}
       canManage={false}

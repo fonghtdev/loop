@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { useStore } from "zustand";
 import { voice, voicePresence } from "./app";
+import { sharedStreams, stageModel } from "./stream-stage";
 import { participantsFor, serverFlagsOf, type Participant } from "./voice-presence";
 import { indicatorsOf, type Indicator } from "./voice-flags";
 import { isActive, type VoiceStatus } from "./voice";
@@ -31,4 +33,17 @@ export function useIndicators(p: Participant): Indicator[] {
   const server = p.isLocal ? mine : theirs; // ours: the session (token + voice:moderated) knows first
   const flags = { serverMute: server.includes("mute"), serverDeafen: server.includes("deafen") };
   return indicatorsOf(p.isLocal ? { micOff: !micEnabled, deafened, ...flags } : { ...p, ...flags });
+}
+
+/** Which stream is on the big stage and which go to the strip (the viewer's pick, else see `stageModel`); `staged` is the participant on stage. */
+export function useStreamStage(people: Participant[], here: boolean) {
+  const watching = useStore(voice.store, (s) => s.watching);
+  const [picked, setPicked] = useState<string | null>(null);
+  const shared = sharedStreams(people, here);
+  const { stage, strip } = stageModel(
+    shared.map((p) => ({ userId: p.userId, isLocal: !!p.isLocal })),
+    watching,
+    picked,
+  );
+  return { stage, strip, staged: shared.find((p) => p.userId === stage?.userId), setPicked };
 }

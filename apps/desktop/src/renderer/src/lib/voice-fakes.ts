@@ -4,6 +4,7 @@ import type { AudioSink, AudioTrackLike } from "./audio-sink";
 import type { GoLivePrefs, ShareChoice } from "./golive";
 import type { NoiseLevel } from "./noise";
 import type { TapAudio } from "./speech-level";
+import { createVoiceVolumes } from "./voice-volume";
 import { createVoice, type LocalParticipantLike, type ParticipantLike, type RoomLike } from "./voice";
 
 /** A captured track: only what the voice session touches. */
@@ -158,6 +159,7 @@ export function setupVoice(token: Partial<{ canSpeak: boolean; canVideo: boolean
   const processors: { level: NoiseLevel; onFail: (reason?: string) => void }[] = [];
   let clock = 1000;
   const tap = vi.fn<TapAudio>();
+  const userVolumes = createVoiceVolumes(() => undefined);
   const voice = createVoice({
     request: request as never,
     createRoom: () => {
@@ -167,6 +169,7 @@ export function setupVoice(token: Partial<{ canSpeak: boolean; canVideo: boolean
       return r;
     },
     sink,
+    userVolumes,
     ensureMedia,
     pickScreen,
     rememberShare,
@@ -177,5 +180,5 @@ export function setupVoice(token: Partial<{ canSpeak: boolean; canVideo: boolean
     now: () => clock,
     onSound: (kind, deafened) => void sounds.push([kind, deafened]),
   });
-  return { voice, tap, rooms, processors, setLevel: (l: NoiseLevel) => (level = l), room: () => rooms[rooms.length - 1], sink, request, ensureMedia, pickScreen, rememberShare, capture, captured, sounds, state: () => voice.store.getState(), tick: (ms: number) => (clock += ms) };
+  return { voice, userVolumes, tap, rooms, processors, setLevel: (l: NoiseLevel) => (level = l), room: () => rooms[rooms.length - 1], sink, request, ensureMedia, pickScreen, rememberShare, capture, captured, sounds, state: () => voice.store.getState(), tick: (ms: number) => (clock += ms) };
 }

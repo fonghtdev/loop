@@ -127,6 +127,8 @@ type ConversationProps = {
   /** Buttons at the right end of the header, before the pins button. */
   actions?: ReactNode;
   composer: { label: string; placeholder: string; ready: boolean; closedReason: string | null };
+  /** Shown between the header and the messages (a DM call's streams). */
+  banner?: ReactNode;
   /** Where it is on screen: the main area (default) or the side panel of an open thread. */
   slot?: Slot;
   /** A channel whose messages can start threads (omitted in a DM and inside a thread). */
@@ -137,7 +139,7 @@ type ConversationProps = {
  * One conversation, a channel or a DM: header, message list, composer and the drop zone for files. Owns the
  * history load and the socket listening; everything else is the same for both kinds.
  */
-export function Conversation({ convKey, header, logLabel, start, canManage, mentionCandidates, actions, composer, slot = "main", threads }: ConversationProps) {
+export function Conversation({ convKey, header, logLabel, start, canManage, mentionCandidates, actions, composer, banner, slot = "main", threads }: ConversationProps) {
   const state = useStore(chat.store, (s) => s.convs[convKey] ?? EMPTY_CONV);
   const files = useComposerFiles(convKey);
   const [dragging, setDragging] = useState(false);
@@ -209,6 +211,7 @@ export function Conversation({ convKey, header, logLabel, start, canManage, ment
           <PinsPanel convKey={convKey} guildId={guildId} canUnpin={rights.unpin} onGoto={goto} />
         </span>
       </ColumnHeader>
+      {banner}
       {state.unavailable ? (
         <div className="flex-1 p-6">
           <EmptyState art={<OrbitArt />} title={t("chat.unavailableTitle")} body={t("chat.unavailableBody")} />

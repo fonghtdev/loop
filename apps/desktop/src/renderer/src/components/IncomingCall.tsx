@@ -3,10 +3,13 @@ import { useStore } from "zustand";
 import { t } from "../i18n/t";
 import { calls, voice } from "../lib/app";
 import { useDisplayName } from "../lib/identity-hooks";
+import { useDms } from "../lib/queries";
+import { isGroup } from "../lib/social";
 import { isActive } from "../lib/voice-hooks";
 import { Avatar } from "./Avatar";
 import { Button } from "./Button";
 import { Dialog } from "./Dialog";
+import { useGroupTitle } from "./GroupDm";
 
 /** The caller's avatar with three rings spreading out of it (CSS, transform + opacity; still under reduced motion). */
 export function RippleAvatar({ id, name, className = "size-24 text-3xl" }: { id: string; name: string; className?: string }) {
@@ -20,6 +23,9 @@ export function RippleAvatar({ id, name, className = "size-24 text-3xl" }: { id:
   );
 }
 
+const callTitle = (video: boolean, name: string, group: string) =>
+  group ? t(video ? "call.incomingGroupVideo" : "call.incomingGroupVoice", { name, group }) : t(video ? "call.incomingVideo" : "call.incomingVoice", { name });
+
 /**
  * The incoming-call dialog (native <dialog>, glass like every dialog): focus lands on Answer, Esc declines.
  * It never switches the current session by itself; answering is what leaves it.
@@ -28,12 +34,14 @@ export function IncomingCall() {
   const incoming = useStore(calls.store, (s) => s.incoming);
   const busy = useStore(voice.store, (s) => isActive(s.status));
   const name = useDisplayName(incoming?.from.id ?? "", incoming?.from.username ?? "");
+  const dm = useDms().data?.find((d) => d.id === incoming?.dmId);
+  const group = useGroupTitle(dm && isGroup(dm) ? dm : undefined);
   const Kind = incoming?.video ? VideoCamera : Phone;
   return (
     <Dialog
       open={!!incoming}
       onClose={() => void calls.decline()}
-      title={incoming?.video ? t("call.incomingVideo", { name }) : t("call.incomingVoice", { name })}
+      title={callTitle(!!incoming?.video, name, group)}
       hero={incoming && <RippleAvatar id={incoming.from.id} name={name} />}
     >
       <p className="-mt-2 inline-flex items-center justify-center gap-1.5 text-small text-ink-muted">

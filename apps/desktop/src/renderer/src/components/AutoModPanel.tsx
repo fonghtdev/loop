@@ -1,4 +1,5 @@
 import { type AutoModRuleDto, MAX_AUTOMOD_KEYWORDS, MAX_AUTOMOD_RULES } from "@loop/shared";
+import { PencilSimple, Trash } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useId, useState, type FormEvent } from "react";
 import { t } from "../i18n/t";
@@ -8,6 +9,7 @@ import { canAddRule, draftOf, parseKeywords, ruleFormErrors, rulePatch, type Rul
 import { errorMessage } from "../lib/errors";
 import { toast } from "../lib/toast";
 import { Button } from "./Button";
+import { IconButton } from "./IconButton";
 import { ConfirmBody } from "./Confirm";
 import { Dialog, DialogActions, DialogError } from "./Dialog";
 import { LoadError, Skeleton } from "./States";
@@ -57,12 +59,8 @@ export function AutoModPanel({ ctx }: { ctx: SettingsCtx }) {
               <div className="min-w-0 flex-1">
                 <Switch label={t("automod.enabled", { name: r.name })} description={t("automod.keywordCount", { count: String(r.keywords.length) })} checked={r.enabled} disabled={busy === r.id} onChange={(on) => void toggle(r, on)} />
               </div>
-              <Button type="button" variant="secondary" onClick={() => setEditing(r)} aria-label={t("automod.editLabel", { name: r.name })}>
-                {t("automod.edit")}
-              </Button>
-              <Button type="button" variant="ghost" className="text-danger" onClick={() => setDeleting(r)} aria-label={t("automod.deleteLabel", { name: r.name })}>
-                {t("automod.delete")}
-              </Button>
+              <IconButton icon={<PencilSimple />} label={t("automod.editLabel", { name: r.name })} tip={t("automod.edit")} onClick={() => setEditing(r)} />
+              <IconButton icon={<Trash />} label={t("automod.deleteLabel", { name: r.name })} tip={t("automod.delete")} danger onClick={() => setDeleting(r)} />
             </li>
           ))}
         </ul>
